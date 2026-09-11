@@ -142,6 +142,10 @@ class ProtocolCommand:
     reason: str = ""
     payload: Dict[str, Any] = field(default_factory=dict)
 
+    def __post_init__(self):
+        if isinstance(self.dispatch_identity, dict):
+            self.dispatch_identity = DispatchIdentity.from_dict(self.dispatch_identity)
+
 
 def state_projection(p_state: ProtocolState) -> ExecutionStatus:
     """Map authoritative ProtocolState to scheduler ExecutionStatus."""
@@ -270,7 +274,12 @@ class ProtocolEngine:
 
         # 4. Dispatch Identity Fencing for verdict actions
         if cmd.action == Action.ACCEPT_VERDICT:
-            active_dispatch: Optional[DispatchIdentity] = getattr(node, "active_dispatch", None)
+            active_dispatch_raw = getattr(node, "active_dispatch", None)
+            active_dispatch: Optional[DispatchIdentity] = (
+                DispatchIdentity.from_dict(active_dispatch_raw)
+                if isinstance(active_dispatch_raw, dict)
+                else active_dispatch_raw
+            )
             if not active_dispatch:
                 record = AuditRecord(
                     timestamp=datetime.now(timezone.utc).isoformat(),

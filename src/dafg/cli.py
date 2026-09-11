@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timezone
 from pathlib import Path
 import sys
 from typing import List, Optional
@@ -70,7 +71,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser = argparse.ArgumentParser(prog="dafg eval", description="Run DAFG Benchmark Evaluation Suite")
         parser.add_argument("--suite", choices=["v02-regression", "v03"], default="v03", help="Benchmark suite")
         parser.add_argument("--tier", choices=["dev", "calibration", "held_out"], default=None, help="Benchmark tier for v03")
-        parser.add_argument("--adapter", choices=["cli", "dispatch", "react"], default="cli", help="Execution adapter")
+        parser.add_argument("--adapter", choices=["cli", "dispatch", "react", "all"], default="cli", help="Execution adapter (or 'all' for full matrix)")
+        parser.add_argument("--all-adapters", action="store_true", help="Evaluate across all three adapters and generate full matrix")
+        parser.add_argument("--out", default=None, help="Output JSON file path")
         parser.add_argument("--json", action="store_true", help="Output summary JSON")
         args = parser.parse_args(sub_args)
 
@@ -78,38 +81,68 @@ def main(argv: Optional[List[str]] = None) -> int:
         from dafg.eval import EvaluationHarness
         from dafg.adapters import IterativeCLIAdapter, ToolDispatchAdapter, ReActStateAdapter
 
-        if args.adapter == "cli":
-            adapter = IterativeCLIAdapter()
-        elif args.adapter == "dispatch":
-            adapter = ToolDispatchAdapter()
+        eval_dir = Path("eval_results")
+        eval_dir.mkdir(parents=True, exist_ok=True)
+
+        adapters_to_run = ["cli", "dispatch", "react"] if (args.all_adapters or args.adapter == "all") else [args.adapter]
+        tier_suffix = f"_{args.tier}" if args.tier else ""
+        matrix_file = eval_dir / f"benchmark_matrix_{args.suite}{tier_suffix}.json"
+
+        last_metrics = None
+        for ad_name in adapters_to_run:
+            if ad_name == "cli":
+                adapter = IterativeCLIAdapter()
+            elif ad_name == "dispatch":
+                adapter = ToolDispatchAdapter()
+            else:
+                adapter = ReActStateAdapter()
+
+            harness = EvaluationHarness()
+            tasks = harness.load_builtin_tasks(suite=args.suite, tier=args.tier)
+            if not args.json:
+                print(f"Running benchmark '{args.suite}' (tier: {args.tier or 'all'}) with adapter '{adapter.name}' across {len(tasks)} tasks...")
+
+            for task in tasks:
+                harness.run_trial(task, adapter=adapter, condition_name=ad_name)
+
+            metrics = harness.compute_metrics(condition=ad_name)
+            last_metrics = metrics
+
+            out_file = Path(args.out) if (args.out and len(adapters_to_run) == 1) else eval_dir / f"benchmark_{args.suite}{tier_suffix}_{ad_name}.json"
+            harness.save_results(out_file, suite=args.suite, adapter_name=ad_name, tier=args.tier)
+            EvaluationHarness.update_benchmark_matrix(
+                matrix_file, suite=args.suite, adapter_name=ad_name, metrics=metrics, trials=harness.trials, tier=args.tier
+            )
+            if not args.json:
+                print(f"[{ad_name.upper()}] Persisted trial telemetry to {out_file}")
+                print("=" * 60)
+                print(f"BENCHMARK EVALUATION RESULTS ({args.suite.upper()} - {adapter.name})")
+                print("=" * 60)
+                print(f"Total Trials:                {metrics.total_trials}")
+                print(f"Correct-Outcome Rate:        {metrics.correct_outcome_rate * 100:.1f}% ({metrics.correct_outcomes}/{metrics.total_trials})")
+                print(f"Delivery Success (Feasible): {metrics.delivery_success_rate * 100:.1f}% ({metrics.verified_success_count}/{metrics.feasible_trials})")
+                print(f"Correct Blocking (Imposs.):  {metrics.correct_block_rate * 100:.1f}% ({metrics.correct_block_count}/{metrics.impossible_trials})")
+                print(f"Tokens / Correct Outcome:    {metrics.tokens_per_correct_outcome:.0f}")
+                print("=" * 60)
+
+        if not args.json:
+            print(f"Updated benchmark matrix at {matrix_file}")
         else:
-            adapter = ReActStateAdapter()
-
-        harness = EvaluationHarness()
-        tasks = harness.load_builtin_tasks(suite=args.suite, tier=args.tier)
-        print(f"Running benchmark '{args.suite}' (tier: {args.tier or 'all'}) with adapter '{adapter.name}' across {len(tasks)} tasks...")
-
-        for task in tasks:
-            harness.run_trial(task, adapter=adapter, condition_name=args.adapter)
-
-        metrics = harness.compute_metrics()
-        if args.json:
-            print(json.dumps(metrics.to_dict(), indent=2))
-        else:
-            print("=" * 60)
-            print(f"BENCHMARK EVALUATION RESULTS ({args.suite.upper()})")
-            print("=" * 60)
-            print(f"Total Trials:                {metrics.total_trials}")
-            print(f"Correct-Outcome Rate:        {metrics.correct_outcome_rate * 100:.1f}% ({metrics.correct_outcomes}/{metrics.total_trials})")
-            print(f"Delivery Success (Feasible): {metrics.delivery_success_rate * 100:.1f}% ({metrics.verified_success_count}/{metrics.feasible_trials})")
-            print(f"Correct Blocking (Imposs.):  {metrics.correct_block_rate * 100:.1f}% ({metrics.correct_block_count}/{metrics.impossible_trials})")
-            print(f"Tokens / Correct Outcome:    {metrics.tokens_per_correct_outcome:.0f}")
-            print("=" * 60)
+            if len(adapters_to_run) > 1:
+                with open(matrix_file, "r") as f:
+                    matrix_data = json.load(f)
+                print(json.dumps(matrix_data, indent=2))
+            elif last_metrics:
+                print(json.dumps(last_metrics.to_dict(), indent=2))
         return 0
 
     elif cmd == "audit":
         parser = argparse.ArgumentParser(prog="dafg audit", description="Run DAFG Protocol Formal Conformance Audit")
         parser.add_argument("--protocol", action="store_true", default=True, help="Run formal protocol state machine audit")
+        parser.add_argument("--trace", default=None, help="Path to domain events JSON trace to audit")
+        parser.add_argument("--state", default=None, help="Path to state.json to audit")
+        parser.add_argument("--gates", default="GATES.md", help="Path to GATES.md for evidence audit")
+        parser.add_argument("--out", default=None, help="Output audit report path")
         parser.add_argument("--json", action="store_true", help="Output audit report as JSON")
         args = parser.parse_args(sub_args)
 
@@ -117,19 +150,55 @@ def main(argv: Optional[List[str]] = None) -> int:
         from dafg.eval import ProtocolAuditRunner
 
         runner = ProtocolAuditRunner()
-        report = runner.run_all()
+        if args.trace:
+            trace_p = Path(args.trace)
+            if not trace_p.exists():
+                report = {
+                    "passed": False,
+                    "events_analyzed": 0,
+                    "violations": [f"Trace file '{args.trace}' does not exist (TRACE_FILE_NOT_FOUND)"],
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            else:
+                with open(trace_p, "r", encoding="utf-8") as f:
+                    trace_data = json.load(f)
+                report = runner.audit_event_trace(trace_data)
+        elif args.state:
+            gates_fp = Path(args.gates)
+            ledger = GateLedger.load(gates_fp) if gates_fp.exists() else None
+            report = runner.audit_state(args.state, ledger=ledger)
+        else:
+            report = runner.run_all()
+
+        eval_dir = Path("eval_results")
+        eval_dir.mkdir(parents=True, exist_ok=True)
+        audit_file = Path(args.out) if args.out else eval_dir / "audit_report.json"
+        with open(audit_file, "w") as f:
+            json.dump(report, f, indent=2)
+
         if args.json:
             print(json.dumps(report, indent=2))
         else:
             print("=" * 60)
             print("DAFG FORMAL PROTOCOL CONFORMANCE AUDIT")
             print("=" * 60)
-            for check_name, passed in report["checks"].items():
-                mark = "[PASS]" if passed else "[FAIL]"
-                print(f"{mark} {check_name}")
-            print("=" * 60)
-            status_str = "PASSED" if report["passed"] else "FAILED"
-            print(f"Overall Result: {status_str} ({report['passed_checks']}/{report['total_checks']} checks)")
+            if "checks" in report:
+                for check_name, passed in report["checks"].items():
+                    mark = "[PASS]" if passed else "[FAIL]"
+                    print(f"{mark} {check_name}")
+                print("=" * 60)
+                status_str = "PASSED" if report["passed"] else "FAILED"
+                print(f"Overall Result: {status_str} ({report['passed_checks']}/{report['total_checks']} checks)")
+            else:
+                status_str = "PASSED" if report["passed"] else "FAILED"
+                print(f"Overall Result: {status_str}")
+                if report.get("violations"):
+                    print(f"Violations detected ({len(report['violations'])}):")
+                    for v in report["violations"]:
+                        print(f"  - {v}")
+                else:
+                    print("0 violations found.")
+            print(f"Persisted audit report to {audit_file}")
             print("=" * 60)
         return 0 if report["passed"] else 1
 

@@ -1,0 +1,70 @@
+{
+  "suite": "v02-regression",
+  "updated_at": "2026-09-11T16:26:35.709988+00:00",
+  "adapters": {
+    "cli": {
+      "tier": "all",
+      "metrics": {
+        "total_trials": 40,
+        "feasible_trials": 36,
+        "impossible_trials": 4,
+        "verified_success": 36,
+        "correct_block": 4,
+        "verified_failure": 0,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 1.0,
+        "delivery_success_rate": 1.0,
+        "correct_block_rate": 1.0,
+        "total_tokens": 13476,
+        "feasible_tokens": 11484,
+        "tokens_per_correct_outcome": 336.9,
+        "tokens_per_delivery": 319.0
+      },
+      "trials_count": 40
+    },
+    "dispatch": {
+      "tier": "all",
+      "metrics": {
+        "total_trials": 40,
+        "feasible_trials": 36,
+        "impossible_trials": 4,
+        "verified_success": 36,
+        "correct_block": 4,
+        "verified_failure": 0,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 1.0,
+        "delivery_success_rate": 1.0,
+        "correct_block_rate": 1.0,
+        "total_tokens": 16626,
+        "feasible_tokens": 14184,
+        "tokens_per_correct_outcome": 415.65,
+        "tokens_per_delivery": 394.0
+      },
+      "trials_count": 40
+    },
+    "react": {
+      "tier": "all",
+      "metrics": {
+        "total_trials": 40,
+        "feasible_trials": 36,
+        "impossible_trials": 4,
+        "verified_success": 36,
+        "correct_block": 4,
+        "verified_failure": 0,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 1.0,
+        "delivery_success_rate": 1.0,
+        "correct_block_rate": 1.0,
+        "total_tokens": 17220,
+        "feasible_tokens": 14760,
+        "tokens_per_correct_outcome": 430.5,
+        "tokens_per_delivery": 410.0
+      },
+      "trials_count": 40
+    }
+  },
+  "tier": "all"
+}

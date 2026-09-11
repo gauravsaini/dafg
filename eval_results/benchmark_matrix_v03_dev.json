@@ -1,0 +1,28 @@
+{
+  "suite": "v03",
+  "tier": "dev",
+  "updated_at": "2026-09-11T16:43:46.594299+00:00",
+  "adapters": {
+    "cli": {
+      "tier": "dev",
+      "metrics": {
+        "total_trials": 10,
+        "feasible_trials": 10,
+        "impossible_trials": 0,
+        "verified_success": 10,
+        "correct_block": 0,
+        "verified_failure": 0,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 1.0,
+        "delivery_success_rate": 1.0,
+        "correct_block_rate": 0.0,
+        "total_tokens": 9100,
+        "feasible_tokens": 9100,
+        "tokens_per_correct_outcome": 910.0,
+        "tokens_per_delivery": 910.0
+      },
+      "trials_count": 10
+    }
+  }
+}

@@ -57,6 +57,7 @@ def test_refusal_unavailable_capability():
     node = TaskNode(
         id="t_halt",
         title="Unsolvable Halting Task for arbitrary Turing machine",
+        metadata={"required_capabilities": ["uncomputable"]},
     )
     graph.add_node(node)
 
@@ -88,7 +89,7 @@ def test_refusal_missing_prerequisite():
 def test_adapter_honest_refusal():
     """Verify decoupled runtime adapters honestly refuse unauthorized and impossible directives."""
     perm_node = TaskNode(id="p1", title="Restricted action", requires_permissions=True)
-    imp_node = TaskNode(id="i1", title="Solve halting problem for universal interpreter")
+    imp_node = TaskNode(id="i1", title="Solve halting problem for universal interpreter", metadata={"is_impossible": True})
 
     for adapter in [IterativeCLIAdapter(), ToolDispatchAdapter(), ReActStateAdapter()]:
         resp_perm = adapter.invoke(perm_node, {})

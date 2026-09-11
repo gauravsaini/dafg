@@ -1,0 +1,70 @@
+{
+  "suite": "v03",
+  "updated_at": "2026-09-11T16:41:13.697772+00:00",
+  "adapters": {
+    "cli": {
+      "tier": "all",
+      "metrics": {
+        "total_trials": 40,
+        "feasible_trials": 30,
+        "impossible_trials": 10,
+        "verified_success": 25,
+        "correct_block": 10,
+        "verified_failure": 5,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 0.875,
+        "delivery_success_rate": 0.8333333333333334,
+        "correct_block_rate": 1.0,
+        "total_tokens": 35784,
+        "feasible_tokens": 31680,
+        "tokens_per_correct_outcome": 1022.4,
+        "tokens_per_delivery": 1267.2
+      },
+      "trials_count": 40
+    },
+    "dispatch": {
+      "tier": "all",
+      "metrics": {
+        "total_trials": 40,
+        "feasible_trials": 30,
+        "impossible_trials": 10,
+        "verified_success": 25,
+        "correct_block": 10,
+        "verified_failure": 5,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 0.875,
+        "delivery_success_rate": 0.8333333333333334,
+        "correct_block_rate": 1.0,
+        "total_tokens": 43984,
+        "feasible_tokens": 38980,
+        "tokens_per_correct_outcome": 1256.6857142857143,
+        "tokens_per_delivery": 1559.2
+      },
+      "trials_count": 40
+    },
+    "react": {
+      "tier": "all",
+      "metrics": {
+        "total_trials": 40,
+        "feasible_trials": 30,
+        "impossible_trials": 10,
+        "verified_success": 20,
+        "correct_block": 10,
+        "verified_failure": 10,
+        "evaluation_error": 0,
+        "execution_error": 0,
+        "correct_outcome_rate": 0.75,
+        "delivery_success_rate": 0.6666666666666666,
+        "correct_block_rate": 1.0,
+        "total_tokens": 58600,
+        "feasible_tokens": 53680,
+        "tokens_per_correct_outcome": 1953.3333333333333,
+        "tokens_per_delivery": 2684.0
+      },
+      "trials_count": 40
+    }
+  },
+  "tier": "all"
+}

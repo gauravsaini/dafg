@@ -680,6 +680,12 @@ class AgentResponse:
     published_contracts: List[Union[InterfaceContract, Dict[str, Any]]] = field(default_factory=list)
     criterion_evidence: List[Union[CriterionEvidence, Dict[str, Any]]] = field(default_factory=list)
 
+    def __post_init__(self):
+        if isinstance(self.dispatch_identity, dict):
+            self.dispatch_identity = DispatchIdentity.from_dict(self.dispatch_identity)
+        if self.epoch is None and self.dispatch_identity is not None:
+            self.epoch = getattr(self.dispatch_identity, "epoch", None)
+
     def to_dict(self) -> Dict[str, Any]:
         d = {
             "output": self.output,
@@ -698,6 +704,27 @@ class AgentResponse:
         if self.criterion_evidence:
             d["criterion_evidence"] = [e.to_dict() if hasattr(e, "to_dict") else e for e in self.criterion_evidence]
         return d
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "AgentResponse":
+        disp_raw = d.get("dispatch_identity")
+        disp = DispatchIdentity.from_dict(disp_raw) if isinstance(disp_raw, dict) else disp_raw
+        epoch = d.get("epoch")
+        if epoch is None and disp:
+            epoch = getattr(disp, "epoch", None)
+        return cls(
+            output=d.get("output", ""),
+            status=d.get("status", "COMPLETED"),
+            files_modified=d.get("files_modified", []),
+            metadata=d.get("metadata", {}),
+            epoch=epoch,
+            dispatch_identity=disp,
+            needs=d.get("needs", []),
+            spawn_children=d.get("spawn_children", []),
+            revision_directive=d.get("revision_directive"),
+            published_contracts=d.get("published_contracts", []),
+            criterion_evidence=d.get("criterion_evidence", []),
+        )
 
 
 def paths_overlap(path1: str, path2: str) -> bool:
@@ -1529,23 +1556,15 @@ class DAFG:
         # 3. Pre-Dispatch Capability Gate (Unavailable Capability / Impossible Requirement)
         is_impossible = False
         impossible_reason = ""
-        title_lower = node.title.lower()
-        impossible_markers = [
-            "unsolvable",
-            "halting",
-            "provably impossible",
-            "o(1) comparison sort",
-            "/proc/sys/kernel/hostname",
-            "solve_paradox",
-            "impossible requirement",
-            "cannot be solved",
-        ]
-        for marker in impossible_markers:
-            if marker in title_lower:
-                is_impossible = True
-                impossible_reason = f"Task requirement matches known uncomputable or impossible boundary: '{marker}'"
-                break
-        if node.metadata.get("is_impossible"):
+        # Protocol constraint: check required capabilities against runtime boundaries (never node title keywords)
+        req_caps = node.metadata.get("required_capabilities", [])
+        if isinstance(req_caps, str):
+            req_caps = [req_caps]
+        unsupported = [c for c in req_caps if c in ("uncomputable", "hypercomputation", "oracle", "quantum_oracle")]
+        if unsupported:
+            is_impossible = True
+            impossible_reason = f"Required capability not supported by runtime: {', '.join(unsupported)}"
+        elif node.metadata.get("is_impossible"):
             is_impossible = True
             impossible_reason = str(node.metadata.get("impossible_reason", "Task marked as impossible capability"))
 
@@ -1610,10 +1629,19 @@ class DAFG:
         try:
             try:
                 if executor_fn:
-                    response = executor_fn(node, context)
+                    raw_response = executor_fn(node, context)
                 else:
                     # Default executor: self-declares completed
-                    response = AgentResponse(output="Default execution completed")
+                    raw_response = AgentResponse(output="Default execution completed")
+
+                if isinstance(raw_response, AgentResponse):
+                    response = raw_response
+                elif isinstance(raw_response, dict):
+                    response = AgentResponse.from_dict(raw_response)
+                elif raw_response is None:
+                    raise ValueError(f"Executor returned None for node '{node.id}'")
+                else:
+                    raise TypeError(f"Executor returned invalid response type '{type(raw_response).__name__}' for node '{node.id}'")
             except Exception as e:
                 node.revisions += 1
                 if self.classifier and self.switcher and node.persona:
@@ -1965,9 +1993,18 @@ class DAFG:
 
         try:
             if executor_fn:
-                response = executor_fn(node, context)
+                raw_response = executor_fn(node, context)
             else:
-                response = AgentResponse(output="Fastpath completed", status="COMPLETED")
+                raw_response = AgentResponse(output="Fastpath completed", status="COMPLETED")
+
+            if isinstance(raw_response, AgentResponse):
+                response = raw_response
+            elif isinstance(raw_response, dict):
+                response = AgentResponse.from_dict(raw_response)
+            elif raw_response is None:
+                raise ValueError(f"Executor returned None for node '{node.id}'")
+            else:
+                raise TypeError(f"Executor returned invalid response type '{type(raw_response).__name__}' for node '{node.id}'")
         except Exception as e:
             self.bypass_telemetry.misrouted_runs += 1
             self.commit_transition(node, NodeStatus.READY, action="BYPASS_ESCALATED", reason=f"Fastpath error: {e}, escalating to full protocol")
