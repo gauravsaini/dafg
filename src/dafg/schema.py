@@ -529,6 +529,67 @@ def parse_json_response(text: str) -> Any:
 # Response Validator & Agent Response Schema
 # =====================================================================
 
+class InputManifestSchema(Schema):
+    """Schema definition for pre-dispatch InputManifest."""
+    required_inputs = Field(list, default_factory=list, description="Required input artifacts and versions")
+    mandatory_context = Field(list, default_factory=list, description="Mandatory context documents")
+    optional_context = Field(list, default_factory=list, description="Optional context documents")
+    checks = Field(dict, default_factory=dict, description="Pre-dispatch validation check results")
+
+
+class InterfaceContractSchema(Schema):
+    """Schema definition for versioned InterfaceContract."""
+    contract_id = Field(str, required=True, description="Contract identifier")
+    version = Field(int, default=1, min_value=1, description="Contract semantic version")
+    owner = Field(str, default="", description="Node or role owning this contract")
+    input_schema = Field(dict, default_factory=dict, description="Input schema specification")
+    output_schema = Field(dict, default_factory=dict, description="Output schema specification")
+    invariants = Field(list, default_factory=list, description="Contract invariant assertions")
+    error_behavior = Field(dict, default_factory=dict, description="Error status mapping")
+    compatibility_mode = Field(str, default="backward_compatible", choices=["backward_compatible", "breaking"])
+    consumers = Field(list, default_factory=list, description="List of consuming task IDs")
+    metadata = Field(dict, default_factory=dict, description="Arbitrary contract metadata")
+
+
+class RevisionDirectiveSchema(Schema):
+    """Schema definition for diagnostic RevisionDirective."""
+    verdict = Field(str, default="REVISE", choices=["REVISE", "PROCEED", "ABORT"])
+    failure_class = Field(
+        str,
+        default="LOCAL_DEFECT",
+        choices=[
+            "LOCAL_DEFECT",
+            "MISSING_PREREQUISITE",
+            "STALE_DEPENDENCY",
+            "INTERFACE_MISMATCH",
+            "INSUFFICIENT_EVIDENCE",
+            "PERMISSION_DENIED",
+            "CAPABILITY_MISMATCH",
+        ],
+    )
+    affected_dependency = Field(Optional[str], default=None)
+    consumed_version = Field(Optional[int], default=None)
+    required_version = Field(Optional[int], default=None)
+    repair_scope = Field(str, default="LOCAL_ONLY", choices=["LOCAL_ONLY", "DEPENDENCY_AND_DESCENDANTS", "CONTRACT_REPAIR"])
+    evidence_refs = Field(list, default_factory=list)
+    feedback = Field(str, default="")
+
+
+class CriterionEvidenceSchema(Schema):
+    """Schema definition for structured, typed verification CriterionEvidence."""
+    criterion_id = Field(str, required=True, description="Criterion or gate identifier")
+    status = Field(str, default="MET", choices=["MET", "FAILED", "UNVERIFIED"])
+    evidence_type = Field(
+        str,
+        default="TEST_RESULT",
+        choices=["TEST_RESULT", "SCHEMA_VALIDATION", "INVARIANT_CHECK", "STRUCTURAL_CHECK", "MODEL_JUDGMENT"],
+    )
+    evidence_ref = Field(str, default="")
+    artifact_version = Field(int, default=1)
+    timestamp = Field(str, default="")
+    details = Field(dict, default_factory=dict)
+
+
 class AgentResponseSchema(Schema):
     """Schema definition for standard DAFG AgentResponse."""
     output = Field(str, default="", description="Primary response text or summary")
@@ -542,6 +603,9 @@ class AgentResponseSchema(Schema):
     spawn_children = Field(list, default_factory=list, description="Child task nodes in depth tree")
     files_modified = Field(List[str], default_factory=list, description="List of files touched")
     metadata = Field(dict, default_factory=dict, description="Arbitrary metadata dictionary")
+    revision_directive = Field(Optional[dict], default=None, description="Diagnostic revision directive")
+    published_contracts = Field(list, default_factory=list, description="Interface contracts published by agent")
+    criterion_evidence = Field(list, default_factory=list, description="Structured criterion evidence records")
 
 
 class ResponseValidator:
@@ -575,7 +639,7 @@ class ResponseValidator:
     @classmethod
     def validate_agent_response(cls, response: Union[str, Dict[str, Any], Any]) -> Any:
         """Validate response and return a validated AgentResponse object."""
-        from dafg.runtime import AgentResponse
+        from dafg.runtime import AgentResponse, CriterionEvidence, InterfaceContract, RevisionDirective
 
         if isinstance(response, AgentResponse):
             val_dict = AgentResponseSchema().validate(response.to_dict())
@@ -586,6 +650,9 @@ class ResponseValidator:
                 spawn_children=response.spawn_children,
                 files_modified=val_dict.get("files_modified", []),
                 metadata=val_dict.get("metadata", {}),
+                revision_directive=response.revision_directive,
+                published_contracts=response.published_contracts,
+                criterion_evidence=response.criterion_evidence,
             )
 
         if isinstance(response, str):
@@ -596,6 +663,19 @@ class ResponseValidator:
             raise ValidationError(f"Cannot validate agent response of type {type(response).__name__}")
 
         val_dict = AgentResponseSchema().validate(parsed)
+        rev_dir = val_dict.get("revision_directive")
+        if rev_dir and isinstance(rev_dir, dict):
+            rev_dir = RevisionDirective.from_dict(rev_dir)
+
+        pub_contracts = [
+            InterfaceContract.from_dict(c) if isinstance(c, dict) else c
+            for c in val_dict.get("published_contracts", [])
+        ]
+        crit_evidence = [
+            CriterionEvidence.from_dict(e) if isinstance(e, dict) else e
+            for e in val_dict.get("criterion_evidence", [])
+        ]
+
         return AgentResponse(
             output=val_dict.get("output", ""),
             status=val_dict.get("status", "COMPLETED"),
@@ -603,4 +683,7 @@ class ResponseValidator:
             spawn_children=val_dict.get("spawn_children", []),
             files_modified=val_dict.get("files_modified", []),
             metadata=val_dict.get("metadata", {}),
+            revision_directive=rev_dir,
+            published_contracts=pub_contracts,
+            criterion_evidence=crit_evidence,
         )

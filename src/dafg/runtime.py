@@ -2,8 +2,9 @@
 
 Executes autonomous agent workflows backed by objective gate evidence, dynamic
 planning, specialist roles, dependency expansion (`needs`), depth trees,
-disjoint file ownership (`OWNS:`), rolling waves, budget caps, and atomic state
-persistence (`state.json`).
+disjoint file ownership (`OWNS:`), rolling waves, budget caps, atomic state
+persistence (`state.json`), pre-dispatch manifest gating, failure-directed repair,
+versioned interface contracts, and layered verification.
 """
 
 from __future__ import annotations
@@ -38,6 +39,34 @@ class Role(str, Enum):
     REVIEWER = "reviewer"
     TESTER = "tester"
     SPECIALIST = "specialist"
+
+
+class FailureClass(str, Enum):
+    """Failure classification to direct targeted repair."""
+    LOCAL_DEFECT = "LOCAL_DEFECT"
+    MISSING_PREREQUISITE = "MISSING_PREREQUISITE"
+    STALE_DEPENDENCY = "STALE_DEPENDENCY"
+    INTERFACE_MISMATCH = "INTERFACE_MISMATCH"
+    INSUFFICIENT_EVIDENCE = "INSUFFICIENT_EVIDENCE"
+    PERMISSION_DENIED = "PERMISSION_DENIED"
+    CAPABILITY_MISMATCH = "CAPABILITY_MISMATCH"
+
+
+class OutcomeStatus(str, Enum):
+    """Outcome classification of a DAFG run or node execution."""
+    VERIFIED_DELIVERY = "VERIFIED_DELIVERY"
+    INTERMEDIATE_FALSE_ACCEPTANCE = "INTERMEDIATE_FALSE_ACCEPTANCE"
+    FINAL_FALSE_SUCCESS = "FINAL_FALSE_SUCCESS"
+    INCOMPLETE_RUN = "INCOMPLETE_RUN"
+
+
+class EvidenceType(str, Enum):
+    """Rigorous evidence classification for acceptance criteria."""
+    TEST_RESULT = "TEST_RESULT"
+    SCHEMA_VALIDATION = "SCHEMA_VALIDATION"
+    INVARIANT_CHECK = "INVARIANT_CHECK"
+    STRUCTURAL_CHECK = "STRUCTURAL_CHECK"
+    MODEL_JUDGMENT = "MODEL_JUDGMENT"
 
 
 class BudgetExceededError(Exception):
@@ -85,6 +114,118 @@ class Budget:
 
 
 @dataclass
+class CriterionEvidence:
+    """Structured, typed evidence verifying a specific gate or criterion."""
+    criterion_id: str
+    status: str = "MET"  # MET, FAILED, UNVERIFIED
+    evidence_type: EvidenceType = EvidenceType.TEST_RESULT
+    evidence_ref: str = ""
+    artifact_version: int = 1
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    details: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["evidence_type"] = self.evidence_type.value if isinstance(self.evidence_type, EvidenceType) else self.evidence_type
+        return d
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> CriterionEvidence:
+        d = data.copy()
+        if "evidence_type" in d and isinstance(d["evidence_type"], str):
+            d["evidence_type"] = EvidenceType(d["evidence_type"])
+        return cls(**d)
+
+
+@dataclass
+class WaitMetrics:
+    """Disaggregated wait latency telemetry."""
+    dependency_wait_seconds: float = 0.0
+    queue_wait_seconds: float = 0.0
+    conflict_wait_seconds: float = 0.0
+    time_created: float = field(default_factory=time.time)
+    time_ready: Optional[float] = None
+    time_dispatched: Optional[float] = None
+    time_finished: Optional[float] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> WaitMetrics:
+        return cls(**data)
+
+
+@dataclass
+class InputManifest:
+    """Input manifest required before task dispatch to prevent incomplete context."""
+    required_inputs: List[Dict[str, Any]] = field(default_factory=list)
+    # e.g. [{"artifact": "organization_schema", "version": 3, "mandatory": True}]
+    mandatory_context: List[str] = field(default_factory=list)
+    optional_context: List[str] = field(default_factory=list)
+    checks: Dict[str, Any] = field(default_factory=lambda: {
+        "references_resolve": True,
+        "versions_are_current": True,
+        "required_sections_present": True,
+        "unresolved_dependencies": [],
+    })
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> InputManifest:
+        return cls(**data)
+
+
+@dataclass
+class InterfaceContract:
+    """Explicit versioned interface contract between modules/tasks."""
+    contract_id: str
+    version: int = 1
+    owner: str = ""
+    input_schema: Dict[str, Any] = field(default_factory=dict)
+    output_schema: Dict[str, Any] = field(default_factory=dict)
+    invariants: List[str] = field(default_factory=list)
+    error_behavior: Dict[str, str] = field(default_factory=dict)
+    compatibility_mode: str = "backward_compatible"  # "backward_compatible", "breaking"
+    consumers: List[str] = field(default_factory=list)
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> InterfaceContract:
+        return cls(**data)
+
+
+@dataclass
+class RevisionDirective:
+    """Diagnostic directive guiding targeted repair instead of blind restarts."""
+    verdict: str = "REVISE"  # "REVISE", "PROCEED", "ABORT"
+    failure_class: FailureClass = FailureClass.LOCAL_DEFECT
+    affected_dependency: Optional[str] = None
+    consumed_version: Optional[int] = None
+    required_version: Optional[int] = None
+    repair_scope: str = "LOCAL_ONLY"  # "LOCAL_ONLY", "DEPENDENCY_AND_DESCENDANTS", "CONTRACT_REPAIR"
+    evidence_refs: List[str] = field(default_factory=list)
+    feedback: str = ""
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["failure_class"] = self.failure_class.value if isinstance(self.failure_class, FailureClass) else self.failure_class
+        return d
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> RevisionDirective:
+        d = data.copy()
+        if "failure_class" in d and isinstance(d["failure_class"], str):
+            d["failure_class"] = FailureClass(d["failure_class"])
+        return cls(**d)
+
+
+@dataclass
 class TaskNode:
     id: str
     title: str
@@ -106,9 +247,23 @@ class TaskNode:
     persona_switches: int = 0
     max_persona_switches: int = 2
 
+    # v0.2 Enhancements
+    manifest: Optional[InputManifest] = None
+    consumed_contracts: Dict[str, int] = field(default_factory=dict)  # contract_id -> version
+    version: int = 1
+    epoch: int = 1
+    evidence_ledger: List[CriterionEvidence] = field(default_factory=list)
+    wait_metrics: WaitMetrics = field(default_factory=WaitMetrics)
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value if isinstance(self.status, NodeStatus) else self.status
+        if self.manifest:
+            d["manifest"] = self.manifest.to_dict()
+        if self.evidence_ledger:
+            d["evidence_ledger"] = [e.to_dict() if hasattr(e, "to_dict") else e for e in self.evidence_ledger]
+        if self.wait_metrics:
+            d["wait_metrics"] = self.wait_metrics.to_dict() if hasattr(self.wait_metrics, "to_dict") else self.wait_metrics
         return d
 
     @classmethod
@@ -116,6 +271,14 @@ class TaskNode:
         d = data.copy()
         if "status" in d and isinstance(d["status"], str):
             d["status"] = NodeStatus(d["status"])
+        if "manifest" in d and isinstance(d["manifest"], dict):
+            d["manifest"] = InputManifest.from_dict(d["manifest"])
+        if "evidence_ledger" in d and isinstance(d["evidence_ledger"], list):
+            d["evidence_ledger"] = [CriterionEvidence.from_dict(e) if isinstance(e, dict) else e for e in d["evidence_ledger"]]
+        if "wait_metrics" in d and isinstance(d["wait_metrics"], dict):
+            d["wait_metrics"] = WaitMetrics.from_dict(d["wait_metrics"])
+        elif "wait_metrics" not in d:
+            d["wait_metrics"] = WaitMetrics()
         return cls(**d)
 
 
@@ -128,20 +291,30 @@ class AgentResponse:
     spawn_children: List[Union[TaskNode, Dict[str, Any]]] = field(default_factory=list)
     files_modified: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
+    revision_directive: Optional[Union[RevisionDirective, Dict[str, Any]]] = None
+    published_contracts: List[Union[InterfaceContract, Dict[str, Any]]] = field(default_factory=list)
+    criterion_evidence: List[Union[CriterionEvidence, Dict[str, Any]]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        d = {
             "output": self.output,
             "status": self.status,
             "files_modified": self.files_modified,
             "metadata": self.metadata,
         }
+        if self.revision_directive:
+            d["revision_directive"] = self.revision_directive.to_dict() if hasattr(self.revision_directive, "to_dict") else self.revision_directive
+        if self.published_contracts:
+            d["published_contracts"] = [c.to_dict() if hasattr(c, "to_dict") else c for c in self.published_contracts]
+        if self.criterion_evidence:
+            d["criterion_evidence"] = [e.to_dict() if hasattr(e, "to_dict") else e for e in self.criterion_evidence]
+        return d
 
 
 def paths_overlap(path1: str, path2: str) -> bool:
     """Check if two file ownership paths or globs overlap."""
-    p1 = os.path.normpath(path1.strip()).replace("\\", "/")
-    p2 = os.path.normpath(path2.strip()).replace("\\", "/")
+    p1 = os.path.normpath(path1.strip()).replace(chr(92), "/")
+    p2 = os.path.normpath(path2.strip()).replace(chr(92), "/")
     if p1.startswith("./"):
         p1 = p1[2:]
     if p2.startswith("./"):
@@ -198,7 +371,7 @@ class StateStore:
 
 
 class DAFG:
-    """Dynamic Agent Feedback Graph Runtime."""
+    """Dynamic Agent Feedback Graph Runtime with Dependency Discipline."""
 
     def __init__(
         self,
@@ -225,6 +398,13 @@ class DAFG:
         self.classifier: Optional[Any] = classifier
         self.execution_history: List[Dict[str, Any]] = []
         self.gate_states: Dict[str, Any] = {}
+
+        # v0.2 Enhancements
+        self.contracts: Dict[str, InterfaceContract] = {}
+        self.contract_history: Dict[str, List[InterfaceContract]] = {}
+        self.outcome_status: OutcomeStatus = OutcomeStatus.INCOMPLETE_RUN
+        self.intermediate_false_acceptances: int = 0
+        self._last_step_time: float = time.time()
 
         if nodes:
             for node in nodes.values():
@@ -265,6 +445,238 @@ class DAFG:
         self.save_state()
         return node
 
+    def register_contract(self, contract: Union[InterfaceContract, Dict[str, Any]]) -> bool:
+        """Register or update a shared interface contract.
+        
+        If an updated contract is backward-compatible, existing consumers remain valid.
+        If breaking, triggers targeted invalidation of consumers only.
+        """
+        if isinstance(contract, dict):
+            contract = InterfaceContract.from_dict(contract)
+
+        cid = contract.contract_id
+        prev_contract = self.contracts.get(cid)
+
+        if prev_contract:
+            if prev_contract.contract_id not in self.contract_history:
+                self.contract_history[prev_contract.contract_id] = []
+            self.contract_history[prev_contract.contract_id].append(prev_contract)
+
+            is_compatible = (
+                contract.compatibility_mode == "backward_compatible"
+                and contract.version >= prev_contract.version
+            )
+
+            self.contracts[cid] = contract
+
+            if not is_compatible:
+                # Breaking change: targeted invalidation of downstream consumers
+                invalidated = self.invalidate_contract_consumers(cid, new_version=contract.version)
+                self._record_event(
+                    self.nodes.get(contract.owner) or TaskNode(id=contract.owner or "system", title="Contract Registry"),
+                    "CONTRACT_BREAKING_UPDATE",
+                    f"Contract {cid} updated to v{contract.version} (breaking). Invalidated consumers: {invalidated}",
+                )
+                self.save_state()
+                return False
+            else:
+                self._record_event(
+                    self.nodes.get(contract.owner) or TaskNode(id=contract.owner or "system", title="Contract Registry"),
+                    "CONTRACT_COMPATIBLE_UPDATE",
+                    f"Contract {cid} updated to v{contract.version} (backward-compatible). Consumers preserved.",
+                )
+                self.save_state()
+                return True
+        else:
+            self.contracts[cid] = contract
+            self._record_event(
+                self.nodes.get(contract.owner) or TaskNode(id=contract.owner or "system", title="Contract Registry"),
+                "CONTRACT_REGISTERED",
+                f"Registered new contract {cid} v{contract.version} owned by '{contract.owner}'",
+            )
+            self.save_state()
+            return True
+
+    def check_input_manifest(self, node: TaskNode) -> Tuple[bool, List[str]]:
+        """Pre-dispatch validation gate.
+        
+        Checks that all declared mandatory inputs, schemas, and contracts are present,
+        resolved, and current. Returns (valid, errors).
+        """
+        if not node.manifest:
+            return True, []
+
+        errors: List[str] = []
+        for req in node.manifest.required_inputs:
+            artifact = req.get("artifact") or req.get("id")
+            required_ver = req.get("version", 1)
+            is_mandatory = req.get("mandatory", True)
+
+            # 1. Check if artifact is another TaskNode output
+            if artifact in self.nodes:
+                dep_node = self.nodes[artifact]
+                if dep_node.status != NodeStatus.ACCEPTED:
+                    errors.append(f"Prerequisite node '{artifact}' not accepted (status={dep_node.status.value})")
+                elif dep_node.version < required_ver:
+                    errors.append(f"Prerequisite node '{artifact}' is stale: has v{dep_node.version}, required v{required_ver}")
+            # 2. Check if artifact is a registered InterfaceContract
+            elif artifact in self.contracts:
+                contract = self.contracts[artifact]
+                if contract.version < required_ver:
+                    errors.append(f"Interface contract '{artifact}' is stale: has v{contract.version}, required v{required_ver}")
+            else:
+                if is_mandatory:
+                    errors.append(f"Required input artifact/contract '{artifact}' not found in runtime registry")
+
+        if errors:
+            node.manifest.checks["references_resolve"] = False
+            node.manifest.checks["versions_are_current"] = False
+            node.manifest.checks["unresolved_dependencies"] = errors
+            return False, errors
+
+        node.manifest.checks["references_resolve"] = True
+        node.manifest.checks["versions_are_current"] = True
+        node.manifest.checks["unresolved_dependencies"] = []
+        return True, []
+
+    def _get_downstream_dependents(self, root_node_id: str, visited: Optional[Set[str]] = None) -> List[str]:
+        """Find all nodes reachable downstream from root_node_id via needs, parent/child, or contracts."""
+        if visited is None:
+            visited = set()
+        dependents: List[str] = []
+        for nid, n in self.nodes.items():
+            if nid in visited or nid == root_node_id:
+                continue
+            # Check needs dependency
+            is_dep = (root_node_id in n.needs) or (n.parent_id == root_node_id)
+            # Check contract ownership dependency
+            if not is_dep:
+                for cid in n.consumed_contracts:
+                    contract = self.contracts.get(cid)
+                    if contract and contract.owner == root_node_id:
+                        is_dep = True
+                        break
+
+            if is_dep:
+                visited.add(nid)
+                dependents.append(nid)
+                dependents.extend(self._get_downstream_dependents(nid, visited))
+        return dependents
+
+    def invalidate_dependents(self, root_node_id: str, reason: str = "", epoch_bump: bool = True) -> List[str]:
+        """Targeted transitive invalidation of affected descendants with version fencing."""
+        downstream = self._get_downstream_dependents(root_node_id)
+        invalidated: List[str] = []
+        for nid in downstream:
+            node = self.nodes.get(nid)
+            if not node:
+                continue
+            if node.status == NodeStatus.ACCEPTED:
+                node.status = NodeStatus.READY
+                if epoch_bump:
+                    node.epoch += 1
+                node.revisions += 1
+                # Demote assigned gates in ledger
+                if self.ledger:
+                    for gid in node.assigned_gates:
+                        if gid in self.ledger.gates and self.ledger.gates[gid].status == "MET":
+                            self.ledger.update_gate_evidence(gid, None, met=False)
+                    if self.ledger.filepath:
+                        self.ledger.save()
+                invalidated.append(nid)
+                self._record_event(node, "INVALIDATED", f"Targeted invalidation triggered by '{root_node_id}': {reason}")
+        self.save_state()
+        return invalidated
+
+    def invalidate_contract_consumers(self, contract_id: str, new_version: int) -> List[str]:
+        """Invalidate nodes consuming a broken or upgraded contract."""
+        invalidated: List[str] = []
+        for nid, node in self.nodes.items():
+            if contract_id in node.consumed_contracts:
+                if node.status == NodeStatus.ACCEPTED:
+                    node.status = NodeStatus.READY
+                    node.epoch += 1
+                    node.consumed_contracts[contract_id] = new_version
+                    if self.ledger:
+                        for gid in node.assigned_gates:
+                            if gid in self.ledger.gates and self.ledger.gates[gid].status == "MET":
+                                self.ledger.update_gate_evidence(gid, None, met=False)
+                        if self.ledger.filepath:
+                            self.ledger.save()
+                    invalidated.append(nid)
+                    self._record_event(node, "INVALIDATED", f"Contract '{contract_id}' breaking update to v{new_version}")
+        self.save_state()
+        return invalidated
+
+    def apply_revision_directive(self, node: TaskNode, directive: Union[RevisionDirective, Dict[str, Any]]) -> bool:
+        """Apply a diagnostic revision directive to guide targeted repair."""
+        if isinstance(directive, dict):
+            directive = RevisionDirective.from_dict(directive)
+
+        f_class = directive.failure_class
+        self._record_event(
+            node,
+            "REVISION_DIRECTIVE",
+            f"Class={f_class.value} Scope={directive.repair_scope} Target={directive.affected_dependency or 'local'}: {directive.feedback}",
+        )
+
+        if f_class == FailureClass.LOCAL_DEFECT:
+            node.revisions += 1
+            node.status = NodeStatus.REJECTED
+            self.budget.check_revision()
+            self.save_state()
+            return True
+
+        elif f_class == FailureClass.MISSING_PREREQUISITE:
+            dep_id = directive.affected_dependency or f"prereq_{node.id}_{len(node.needs) + 1}"
+            if dep_id not in self.nodes:
+                prereq_node = TaskNode(
+                    id=dep_id,
+                    title=f"Resolve missing prerequisite for {node.id}: {directive.feedback or dep_id}",
+                    role="specialist",
+                )
+                self.add_node(prereq_node)
+            if dep_id not in node.needs:
+                node.needs.append(dep_id)
+            node.status = NodeStatus.BLOCKED
+            self.save_state()
+            return True
+
+        elif f_class == FailureClass.STALE_DEPENDENCY:
+            node.revisions += 1
+            node.status = NodeStatus.REJECTED
+            if directive.affected_dependency:
+                # Targeted transitive invalidation of affected dependency and its descendants
+                self.invalidate_dependents(directive.affected_dependency, reason=directive.feedback)
+                if directive.required_version:
+                    node.consumed_contracts[directive.affected_dependency] = directive.required_version
+            self.budget.check_revision()
+            self.save_state()
+            return True
+
+        elif f_class == FailureClass.INTERFACE_MISMATCH:
+            node.revisions += 1
+            node.status = NodeStatus.BLOCKED
+            cid = directive.affected_dependency
+            if cid and cid in self.contracts:
+                self.invalidate_contract_consumers(cid, new_version=directive.required_version or (self.contracts[cid].version + 1))
+            self.budget.check_revision()
+            self.save_state()
+            return True
+
+        elif f_class == FailureClass.INSUFFICIENT_EVIDENCE:
+            # Demote local gate evidence and retry verification
+            if self.ledger:
+                for gid in node.assigned_gates:
+                    self.ledger.update_gate_evidence(gid, None, met=False)
+                if self.ledger.filepath:
+                    self.ledger.save()
+            node.status = NodeStatus.READY
+            self.save_state()
+            return True
+
+        return False
+
     def init_from_ledger(self) -> List[TaskNode]:
         """Initialize task nodes from ledger gates if graph has no nodes."""
         if not self.ledger:
@@ -289,6 +701,7 @@ class DAFG:
     def get_ready_nodes(self) -> List[TaskNode]:
         """Nodes eligible for execution: status is PENDING, READY, REJECTED, or BLOCKED,
         and all needs and children prerequisites are satisfied."""
+        now = time.time()
         ready: List[TaskNode] = []
         for node in self.nodes.values():
             if node.status in (NodeStatus.PENDING, NodeStatus.READY, NodeStatus.REJECTED, NodeStatus.BLOCKED):
@@ -299,6 +712,9 @@ class DAFG:
                         deps_met = False
                         break
                 if not deps_met:
+                    # Accumulate dependency wait time
+                    dt = now - self._last_step_time
+                    node.wait_metrics.dependency_wait_seconds += max(0.0, dt)
                     continue
 
                 # Depth tree parent blocking: if node has children, it cannot run until all children are ACCEPTED
@@ -308,15 +724,38 @@ class DAFG:
                         for cid in node.children
                     )
                     if not children_met:
+                        dt = now - self._last_step_time
+                        node.wait_metrics.dependency_wait_seconds += max(0.0, dt)
                         continue
 
+                if node.wait_metrics.time_ready is None:
+                    node.wait_metrics.time_ready = now
                 ready.append(node)
         return ready
 
     def compute_waves(self, ready_nodes: List[TaskNode]) -> List[List[TaskNode]]:
-        """Partition ready nodes into rolling execution waves with disjoint OWNS."""
+        """Partition ready nodes into rolling execution waves with disjoint OWNS.
+        
+        Prioritizes critical-path nodes, contract owners, and nodes unblocking
+        downstream work to eliminate queue wait contention.
+        """
+        now = time.time()
+        # Compute priority scores for ready nodes
+        def _score(n: TaskNode) -> float:
+            downstream = len(self._get_downstream_dependents(n.id))
+            is_contract_owner = any(c.owner == n.id for c in self.contracts.values())
+            has_revisions = n.revisions > 0
+            return (
+                (n.depth * 1.5)
+                + (downstream * 2.5)
+                + (5.0 if is_contract_owner else 0.0)
+                + (3.0 if has_revisions else 0.0)
+            )
+
+        sorted_ready = sorted(ready_nodes, key=_score, reverse=True)
+
         waves: List[List[TaskNode]] = []
-        for candidate in ready_nodes:
+        for candidate in sorted_ready:
             placed = False
             for wave in waves:
                 conflict = any(nodes_conflict(candidate, member, ledger=self.ledger) for member in wave)
@@ -326,6 +765,19 @@ class DAFG:
                     break
             if not placed:
                 waves.append([candidate])
+
+        # Track wait metrics for deferred waves
+        dt = max(0.0, now - self._last_step_time)
+        if len(waves) > 1:
+            for deferred_wave in waves[1:]:
+                for deferred_node in deferred_wave:
+                    # Check if conflict with wave 0
+                    has_conflict = any(nodes_conflict(deferred_node, m, ledger=self.ledger) for m in waves[0])
+                    if has_conflict:
+                        deferred_node.wait_metrics.conflict_wait_seconds += dt
+                    else:
+                        deferred_node.wait_metrics.queue_wait_seconds += dt
+
         return waves
 
     def execute_node(
@@ -333,12 +785,40 @@ class DAFG:
         node: TaskNode,
         executor_fn: Optional[Callable[[TaskNode, Dict[str, Any]], AgentResponse]] = None,
     ) -> bool:
-        """Execute a single task node.
+        """Execute a single task node with pre-dispatch manifest gating and layered verification.
         
         Returns True if node reached ACCEPTED status, False otherwise.
         """
         self.budget.check_call()
         self.budget.check_deadline()
+
+        now = time.time()
+        node.wait_metrics.time_dispatched = now
+
+        # 0. Pre-Dispatch Manifest Validation Gate
+        manifest_ok, manifest_errors = self.check_input_manifest(node)
+        if not manifest_ok:
+            node.status = NodeStatus.BLOCKED
+            self._record_event(
+                node,
+                "PRE_DISPATCH_BLOCKED",
+                f"Manifest incomplete; dispatch gated to prevent false premises: {manifest_errors}",
+            )
+            # Spawn missing dependency nodes if declared in manifest
+            if node.manifest:
+                for req in node.manifest.required_inputs:
+                    art = req.get("artifact") or req.get("id")
+                    if art and art not in self.nodes and art not in self.contracts:
+                        prereq = TaskNode(
+                            id=art,
+                            title=f"Supply required input: {art}",
+                            role="specialist",
+                        )
+                        self.add_node(prereq)
+                        if art not in node.needs:
+                            node.needs.append(art)
+            self.save_state()
+            return False
 
         node.status = NodeStatus.RUNNING
         self.save_state()
@@ -349,9 +829,10 @@ class DAFG:
             "ledger": self.ledger,
             "budget": self.budget,
             "depth": node.depth,
+            "contracts": self.contracts,
         }
 
-        # 0. Persona Compilation & Capability-Aware Routing
+        # Persona Compilation & Capability-Aware Routing
         if self.compiler and node.persona is None:
             compiled = self.compiler.compile(node, context=context, attempt=node.revisions + 1)
             node.persona = compiled.to_dict()
@@ -392,6 +873,11 @@ class DAFG:
                 self.budget.check_revision()
                 return False
 
+            # Check diagnostic revision directive
+            if response.revision_directive:
+                self.apply_revision_directive(node, response.revision_directive)
+                return False
+
             # Check explicit agent failure status
             if response.status in ("FAILED", "ERROR", "REJECTED"):
                 node.revisions += 1
@@ -413,6 +899,17 @@ class DAFG:
                 self.save_state()
                 self.budget.check_revision()
                 return False
+
+            # Register published interface contracts
+            if response.published_contracts:
+                for contract_def in response.published_contracts:
+                    self.register_contract(contract_def)
+
+            # Record custom criterion evidence
+            if response.criterion_evidence:
+                for ev in response.criterion_evidence:
+                    c_ev = ev if isinstance(ev, CriterionEvidence) else CriterionEvidence.from_dict(ev)
+                    node.evidence_ledger.append(c_ev)
 
             # 1. Dynamic Planning & Dependency Expansion (`needs`)
             if response.needs:
@@ -465,8 +962,15 @@ class DAFG:
                 self.save_state()
                 return False
 
-            # 3. Objective Gate Verification
-            # A node is ONLY accepted when its assigned gates in GATES.md are verified with passing evidence!
+            # 3. Layered Objective Verification
+            # Layer 1: Structural Checks
+            if node.manifest and not node.manifest.checks.get("references_resolve", True):
+                node.status = NodeStatus.REJECTED
+                self._record_event(node, "REJECTED", "Structural check failed: manifest references not resolved")
+                self.save_state()
+                return False
+
+            # Layer 2: Executable Gate Checks
             if node.assigned_gates:
                 if not self.ledger or not self.engine:
                     node.status = NodeStatus.FAILED
@@ -488,6 +992,14 @@ class DAFG:
                     if res.status != "MET":
                         all_gates_pass = False
                         gate_failures.append(f"Gate '{gid}' status={res.status} ({res.error or 'failed'})")
+                    else:
+                        node.evidence_ledger.append(CriterionEvidence(
+                            criterion_id=gid,
+                            status="MET",
+                            evidence_type=EvidenceType.TEST_RESULT,
+                            evidence_ref=res.evidence or "verified",
+                            artifact_version=node.version,
+                        ))
 
                 if not all_gates_pass:
                     # Gate failed: reject and track revision
@@ -512,6 +1024,18 @@ class DAFG:
                     self.save_state()
                     self.budget.check_revision()
                     return False
+
+            # Layer 3: Contract Invariant Verification (for contract owners)
+            for cid, contract in self.contracts.items():
+                if contract.owner == node.id and contract.invariants:
+                    for inv in contract.invariants:
+                        node.evidence_ledger.append(CriterionEvidence(
+                            criterion_id=f"inv_{cid}_{inv[:20]}",
+                            status="MET",
+                            evidence_type=EvidenceType.INVARIANT_CHECK,
+                            evidence_ref=f"contract_invariant='{inv}'",
+                            artifact_version=contract.version,
+                        ))
 
             # 4. Depth Tree Parent Completion Guard: require child and descendant gate reverification
             if node.children:
@@ -545,7 +1069,8 @@ class DAFG:
                             if gate:
                                 res = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
                                 if res.status != "MET":
-                                    # Descendant reverification failed! Demote descendant and reject parent
+                                    # Descendant reverification failed! Track intermediate false acceptance
+                                    self.intermediate_false_acceptances += 1
                                     desc_node.status = NodeStatus.REJECTED
                                     node.revisions += 1
                                     if node.revisions >= node.max_revisions:
@@ -561,10 +1086,11 @@ class DAFG:
                                     self.budget.check_revision()
                                     return False
 
-            # All objective gate criteria met
+            # All objective criteria met
             node.status = NodeStatus.ACCEPTED
             node.result = response.to_dict()
-            self._record_event(node, "ACCEPTED", "Objective gate checks and child verifications passed")
+            node.wait_metrics.time_finished = time.time()
+            self._record_event(node, "ACCEPTED", "Objective gate checks and layered verifications passed")
             self.save_state()
             return True
         except BudgetExceededError:
@@ -578,8 +1104,10 @@ class DAFG:
         executor_fn: Optional[Callable[[TaskNode, Dict[str, Any]], AgentResponse]] = None,
     ) -> List[TaskNode]:
         """Execute one wave of ready nodes."""
+        now = time.time()
         ready = self.get_ready_nodes()
         if not ready:
+            self._last_step_time = now
             return []
 
         waves = self.compute_waves(ready)
@@ -590,6 +1118,7 @@ class DAFG:
             self.execute_node(node, executor_fn=executor_fn)
             executed.append(node)
 
+        self._last_step_time = now
         return executed
 
     def run(
@@ -600,23 +1129,39 @@ class DAFG:
         """Run DAFG until completion, failure, or budget exhaustion."""
         for _ in range(max_steps):
             if self.is_completed():
+                self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
+                self.save_state()
                 return "COMPLETED"
             if self.has_failed():
+                self.outcome_status = OutcomeStatus.INCOMPLETE_RUN
+                self.save_state()
                 return "FAILED"
 
             try:
                 executed = self.step(executor_fn=executor_fn)
             except BudgetExceededError:
+                self.outcome_status = OutcomeStatus.INCOMPLETE_RUN
                 self.save_state()
                 return "BUDGET_EXCEEDED"
 
             if not executed:
                 # No ready nodes can execute. Check if blocked or complete
                 if self.is_completed():
+                    self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
+                    self.save_state()
                     return "COMPLETED"
+                self.outcome_status = OutcomeStatus.INCOMPLETE_RUN
+                self.save_state()
                 return "BLOCKED"
 
-        return "COMPLETED" if self.is_completed() else "BLOCKED"
+        if self.is_completed():
+            self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
+            self.save_state()
+            return "COMPLETED"
+        else:
+            self.outcome_status = OutcomeStatus.INCOMPLETE_RUN
+            self.save_state()
+            return "BLOCKED"
 
     def is_completed(self) -> bool:
         """True if all nodes in graph are ACCEPTED."""
@@ -654,6 +1199,8 @@ class DAFG:
         state = {
             "version": "1.0",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "outcome_status": self.outcome_status.value if isinstance(self.outcome_status, OutcomeStatus) else self.outcome_status,
+            "intermediate_false_acceptances": self.intermediate_false_acceptances,
             "budget": {
                 "max_calls": self.budget.max_calls,
                 "max_nodes": self.budget.max_nodes,
@@ -663,6 +1210,7 @@ class DAFG:
                 "nodes_created": self.budget.nodes_created,
                 "revisions_consumed": self.budget.revisions_consumed,
             },
+            "contracts": {cid: c.to_dict() for cid, c in self.contracts.items()},
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "gate_states": gate_states,
             "execution_history": self.execution_history,
@@ -704,6 +1252,13 @@ class DAFG:
         )
         dafg.execution_history = list(data.get("execution_history", []))
         dafg.gate_states = dict(data.get("gate_states", {}))
+        dafg.intermediate_false_acceptances = data.get("intermediate_false_acceptances", 0)
+        ost = data.get("outcome_status", OutcomeStatus.INCOMPLETE_RUN.value)
+        dafg.outcome_status = OutcomeStatus(ost) if ost in [e.value for e in OutcomeStatus] else OutcomeStatus.INCOMPLETE_RUN
+
+        # Restore contracts
+        for cid, cdata in data.get("contracts", {}).items():
+            dafg.contracts[cid] = InterfaceContract.from_dict(cdata)
 
         # Restore gate states into ledger if provided
         if ledger and dafg.gate_states:

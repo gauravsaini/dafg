@@ -1,12 +1,12 @@
-# Low-Level Design (LLD): Integrated DAFG
+# Low-Level Design (LLD): DAFG Framework (v0.2)
 
-This document details the Low-Level Design (LLD), object models, subsystem interactions, security boundaries, and execution flows of **Integrated DAFG (Dynamic Autonomous Flow Graph)**.
+This document details the Low-Level Design (LLD), object models, subsystem interactions, security boundaries, and execution flows of **DAFG (Dynamic Autonomous Flow Graph)**.
 
 ---
 
 ## 1. System Overview & Core Invariants
 
-**Integrated DAFG** coordinates autonomous LLM worker collectives while enforcing deterministic completion discipline. Unlike systems that rely on model self-certification, Integrated DAFG grounds completion in:
+**DAFG** coordinates autonomous LLM worker collectives while enforcing deterministic completion discipline. Unlike systems that rely on model self-certification, DAFG grounds completion in:
 
 1. **Deterministic Acceptance Ledgers**: Outcomes are defined as executable shell commands (`CHECK:`) matched against decisive outputs (`EXPECT:`).
 2. **Cryptographic Approval Boundary**: Arbitrary commands authored by LLMs cannot execute without explicit cryptographic approval.
@@ -18,7 +18,7 @@ This document details the Low-Level Design (LLD), object models, subsystem inter
 
 ## 2. Architectural Lineage: Synthesis & Dimension Comparison
 
-Integrated DAFG is the synthesis of two complementary paradigms:
+DAFG is the synthesis of two complementary paradigms:
 - **Execution & Coordination Plane** (originated from the DAFG dynamic task graph runtime): Dynamic DAG planning, runtime worker dispatch, prerequisite discovery (`needs`), capability-aware routing, persona compilation, and atomic state checkpoints.
 - **Verification & Discipline Plane** : Acceptance gate ledgers (`GATES.md`), cryptographic check approvals, objective shell execution evidence, and agent stop hooks.
 
@@ -382,7 +382,7 @@ stateDiagram-v2
 
 ## 7. Security Approval Boundary & Verification Flow
 
-To prevent untrusted agent-generated code from executing arbitrary shell commands, Integrated DAFG employs a cryptographic approval boundary:
+To prevent untrusted agent-generated code from executing arbitrary shell commands, DAFG employs a cryptographic approval boundary:
 
 ```mermaid
 flowchart TD
@@ -484,34 +484,89 @@ When `task.persona_switches >= max_persona_switches` (default: 2), adaptation fr
 - The file is closed and flushed before an atomic OS-level replacement (`os.replace(tmp, filepath)`).
 - This guarantees that an abrupt process crash, power loss, or external kill signal never leaves a corrupt or half-written `state.json`.
 
+### 9.6 Pre-Dispatch Manifest Gating (`InputManifest`)
+- Before dispatching a task node to an executor, `DAFG.check_input_manifest(node)` validates all required input artifacts and interface contracts.
+- If any required artifact is missing or stale (version < required), the dispatch is gated:
+  - Worker execution is bypassed, preventing wasted tokens.
+  - Missing prerequisite tasks are synthesized and added to `node.needs`.
+  - Node is transitioned to `BLOCKED`.
+
+### 9.7 Failure-Directed Repair & Targeted Transitive Invalidation (`RevisionDirective`)
+- Replaces blind DAG restarts with diagnostic failure classification (`FailureClass`):
+  - `LOCAL_DEFECT`: Revises only the local node.
+  - `MISSING_PREREQUISITE`: Injects prerequisite node and links `needs`.
+  - `STALE_DEPENDENCY`: Executes targeted transitive invalidation on affected descendants, incrementing node epochs.
+  - `INTERFACE_MISMATCH`: Invalidates contract consumers and triggers contract repair.
+  - `INSUFFICIENT_EVIDENCE`: Demotes gate evidence for escalated verification.
+
+### 9.8 Versioned Shared Interface Contracts (`InterfaceContract`)
+- Modules publish versioned contracts (`contract_id`, `version`, `input_schema`, `output_schema`, `invariants`).
+- When a contract is updated:
+  - If `compatibility_mode == "backward_compatible"`: existing consumers remain `ACCEPTED`.
+  - If breaking: triggers targeted invalidation of consumers registered in `consumed_contracts`.
+
+### 9.9 Layered Verification & Typed Evidence (`CriterionEvidence`, `EvidenceType`)
+- Enforces multi-tier verification:
+  1. Structural Checks: Manifest references resolve and versions are current.
+  2. Executable Checks: Shell check commands with exit code 0 and decisive output match.
+  3. Schema Validation: Structured payload validation against typed `Schema`.
+  4. Escalated Invariant Checks: Contract invariants verified for contract owners.
+- Criterion evidence is strictly typed (`TEST_RESULT`, `SCHEMA_VALIDATION`, `INVARIANT_CHECK`, `MODEL_JUDGMENT`). Model judgments cannot masquerade as executable tests.
+
+### 9.10 Priority-Scored Wave Scheduling & Separated Wait Telemetry (`WaitMetrics`)
+- Ready nodes are scored:
+  `score = (depth * 1.5) + (downstream_count * 2.5) + (5.0 if is_contract_owner else 0.0) + (3.0 if has_revisions else 0.0)`
+- Critical path nodes and contract owners execute in Wave 0, clearing bottlenecks for downstream workers.
+- Wait telemetry isolates `dependency_wait_seconds`, `queue_wait_seconds`, and `conflict_wait_seconds`.
+
 ---
 
 ## 10. Directory Structure & File Map
 
 ```text
-framework/
+dafg/
+├── AGENTS.md                    # Agent instructions (Antigravity, Codex)
+├── CLAUDE.md                    # Agent instructions (Claude Code)
+├── GATES.md                     # Active acceptance gate ledger
+├── GATES_SCHEMA.md              # Schema validation gate ledger
+├── pyproject.toml               # Packaging & scripts (dafg, gates, stop-hook)
+├── README.md                    # Installation & usage guide
+├── dfag.py                      # Root compatibility shim
+├── state_schema.json            # Sample persisted graph state
+│
+├── .claude/
+│   └── settings.json            # Claude Code stop hook registration
+│
+├── .codex/
+│   └── hooks.json               # OpenAI Codex stop hook registration
+│
+├── .cursor/rules/
+│   └── dafg.mdc                 # Cursor always-on project rules
+│
 ├── docs/
-│   └── LLD.md                 # This Low-Level Design document
-├── GATES.md                    # Active acceptance gate ledger
-├── GATES_SCHEMA.md             # Schema validation gate ledger
-├── pyproject.toml              # Packaging & scripts (dafg, gates, stop-hook)
-├── README.md                   # Installation & usage guide
-├── dfag.py                     # Root compatibility shim
-├── state_schema.json           # Sample persisted graph state
+│   └── LLD.md                   # This Low-Level Design document
 │
 ├── src/dafg/
-│   ├── __init__.py             # Public module exports
-│   ├── cli.py                  # CLI argument parser & subcommands
-│   ├── gates.py                # GateLedger, GateEngine, ApprovalStore, GateLinter
-│   ├── hook.py                 # CompletionGuard & stop hook evaluation logic
-│   ├── persona.py              # PersonaCompiler, AgentRouter, BackendRegistry, PolicyEngine
-│   ├── runtime.py              # DAFG graph engine, TaskNode, Budget, wave scheduler
-│   └── schema.py               # Schema, Field validators, robust JSON recovery
+│   ├── __init__.py              # Public module exports
+│   ├── cli.py                   # CLI argument parser & subcommands
+│   ├── gates.py                 # GateLedger, GateEngine, ApprovalStore, GateLinter
+│   ├── hook.py                  # CompletionGuard & stop hook evaluation logic
+│   ├── persona.py               # PersonaCompiler, AgentRouter, BackendRegistry, PolicyEngine
+│   ├── runtime.py               # DAFG graph engine, TaskNode, Budget, wave scheduler
+│   └── schema.py                # Schema, Field validators, robust JSON recovery
 │
 └── tests/
-    ├── test_gates.py           # Gate ledger parsing, execution & security tests
-    ├── test_hook.py            # Stop hook decision tree tests
-    ├── test_persona.py         # Persona compilation, routing, and adaptation tests
-    ├── test_runtime.py         # Dynamic graph, wave scheduling & budget tests
-    └── test_schema.py          # Schema validation & JSON repair tests
+    ├── test_dafg_budgets.py             # Budget caps and deadline tests
+    ├── test_dafg_persistence.py         # State persistence and resume tests
+    ├── test_dafg_runtime.py             # Dynamic graph scheduling and execution tests
+    ├── test_dependency_correctness.py   # Pre-dispatch manifest gating & targeted repair tests
+    ├── test_depth_tree_waves.py         # Depth tree and wave scheduling tests
+    ├── test_gates_execution.py          # Gate execution and reverification tests
+    ├── test_gates_linter.py             # Ledger linter tests
+    ├── test_gates_parser.py             # Markdown ledger parser tests
+    ├── test_gates_security.py           # Approval store and security boundary tests
+    ├── test_layered_verification.py     # Layered verification & typed evidence tests
+    ├── test_persona.py                  # Persona compilation, routing, and adaptation tests
+    ├── test_schema.py                   # Schema validation & JSON repair tests
+    └── test_stop_hook.py                # Stop hook completion guard tests
 ```

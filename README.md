@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Package Manager: uv](https://img.shields.io/badge/package%20manager-uv-blueviolet)](https://github.com/astral-sh/uv)
-[![Tests](https://img.shields.io/badge/tests-117%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-128%20passed-brightgreen.svg)]()
 [![Zero Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime%20deps-success.svg)]()
 
 **DAFG** is a Python-native agent coordination framework that enforces **grounded completion discipline**. It combines a dynamic task graph runtime with runnable acceptance gate ledgers (`GATES.md`), cryptographic approval security, evidence verification, and agent stop hook enforcement.
@@ -42,14 +42,17 @@ DAFG enforces **grounded completion discipline**:
 1. **Acceptance Ledgers First** — Work outcomes are declared in advance as runnable shell checks (`CHECK:`) with expected patterns (`EXPECT:`).
 2. **Security Boundary** — Check commands cannot execute unless cryptographically approved (`.approved_gates.json`).
 3. **Objective Verification** — A task node is **only** marked `ACCEPTED` when its assigned gates execute with exit code 0 and decisive output match.
-4. **Stop Hook Enforcement** — Agents are blocked from finishing while any gates are pending, unmet, or unapproved.
-5. **Zero Runtime Dependencies** — Built stdlib-first (Python 3.10+) for extreme portability and speed.
+4. **Pre-Dispatch Manifest Gate** — Workers are blocked from executing with missing/stale context (`InputManifest`); prerequisites are generated automatically.
+5. **Failure-Directed Repair** — Replaces blind restarts with targeted transitive invalidation and epoch/version fencing (`RevisionDirective`).
+6. **Versioned Interface Contracts** — Explicit schemas and invariant assertions with backward-compatibility checks (`InterfaceContract`).
+7. **Stop Hook Enforcement** — Agents are blocked from finishing while any gates are pending, unmet, or unapproved.
+8. **Zero Runtime Dependencies** — Built stdlib-first (Python 3.10+) for extreme portability and speed.
 
 ---
 
 ## Capability Overview
 
-DAFG fuses two architectural planes into a single runtime:
+DAFG fuses execution and verification into a single discipline runtime:
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -59,10 +62,12 @@ DAFG fuses two architectural planes into a single runtime:
 │   ─────────────────────────            ──────────────────────────       │
 │   • Dynamic DAG Planning               • Acceptance Gate Ledger        │
 │   • Prerequisite Expansion (needs)      • Cryptographic Approvals      │
-│   • Wave Scheduler (Disjoint OWNS)      • Shell Check Evidence         │
-│   • Persona Compiler & Router           • Ledger Linter & Reverify     │
-│   • Budget Engine & State Persistence   • Stop Hook Completion Guard   │
-│   • Bounded Persona Adaptation          • Honest Abandonment (ABANDON) │
+│   • Pre-Dispatch Manifest Gating        • Shell Check Evidence         │
+│   • Failure-Directed Repair            • Layered Evidence Engine       │
+│   • Versioned Interface Contracts       • Ledger Linter & Reverify     │
+│   • Priority-Scored Wave Scheduler     • Stop Hook Completion Guard   │
+│   • Disjoint File Ownership (OWNS)     • Honest Abandonment (ABANDON) │
+│   • Budget Engine & Persistence        • Separated Wait Metrics        │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -72,6 +77,10 @@ DAFG fuses two architectural planes into a single runtime:
 |---|---|
 | Autonomous agent loop | `DAFG.run()` with pluggable executor |
 | Dynamic DAG & prerequisite spawning | `needs` + rolling waves |
+| Pre-dispatch manifest gating | `InputManifest` blocks work on incomplete context |
+| Failure-directed targeted repair | `RevisionDirective` with targeted transitive invalidation |
+| Versioned interface contracts | `InterfaceContract` with compatibility checks |
+| Layered, evidence-bound verification | Structural $\to$ Executable $\to$ Semantic $\to$ Escalated |
 | Capability-aware model routing | `AgentRouter` + `PolicyEngine` |
 | Structured persona compilation | `PersonaProfile` + heuristic compiler |
 | Node acceptance via objective evidence | Shell checks → `exit_code=0` + `EXPECT` match |
@@ -79,17 +88,22 @@ DAFG fuses two architectural planes into a single runtime:
 | Interruption & resume | Atomic `StateStore` + budget checkpoints |
 | Agent stop discipline | `CompletionGuard` → `{"decision": "block"}` |
 | Disjoint file ownership | `OWNS:` declarations prevent parallel conflicts |
-| Bounded failure adaptation | `FailureClassifier` + `PersonaSwitcher` |
+| Priority-scored wave scheduling | Critical-path and contract-owner wave ordering |
+| Separated wait latency telemetry | `dependency_wait`, `queue_wait`, `conflict_wait` |
 
 ---
 
 ## Key Features
 
 - **Runnable Gate Ledger Engine (`src/dafg/gates.py`)** — Parses and serializes markdown ledgers (`GATES.md`), preserving comments and layout.
+- **Pre-Dispatch Manifest Gate (`InputManifest`)** — Prevents workers from operating on incomplete or obsolete premises; missing dependencies are generated before execution.
+- **Failure-Directed Targeted Repair (`RevisionDirective`)** — Diagnoses failure classes (`LOCAL_DEFECT`, `MISSING_PREREQUISITE`, `STALE_DEPENDENCY`, `INTERFACE_MISMATCH`) and invalidates only affected descendants with version fencing.
+- **Versioned Interface Contracts (`InterfaceContract`)** — Publishes shared schemas and invariants; non-breaking updates prevent unnecessary downstream recomputations.
+- **Layered Verification & Typed Evidence (`CriterionEvidence`, `EvidenceType`)** — Distinguishes executable tests (`TEST_RESULT`), schema validations (`SCHEMA_VALIDATION`), invariant checks (`INVARIANT_CHECK`), and explicitly labeled model judgments (`MODEL_JUDGMENT`).
+- **Priority-Scored Wave Scheduler & Wait Metrics (`WaitMetrics`)** — Prioritizes critical-path tasks and contract owners; isolates dependency wait, queue wait, and conflict wait times.
 - **Cryptographic Approval Store (`ApprovalStore`)** — Hashes command, expectation, working directory, and environment to prevent prompt injection and unauthorized script execution.
 - **Ledger Linter (`GateLinter`)** — Catches empty titles, duplicate IDs, tautological or unfalsifiable checks, and missing tokens before execution.
 - **Reverification (`--reverify`)** — Re-runs previously passed gates to detect regressions across child/parent task boundaries.
-- **Dynamic Task Graph (`DAFG`)** — Dynamic planning, specialist role assignments, prerequisite expansion (`AgentResponse.needs`), and depth tree wave orchestration.
 - **Disjoint File Ownership (`OWNS:`)** — Detects conflicting tasks and schedules non-conflicting tasks in parallel rolling waves.
 - **Atomic State Persistence (`state.json`)** — Resumes interrupted or paused runs cleanly, preserving consumed budgets (`calls`, `nodes`, `revisions`, `deadline`).
 - **Agent Stop Hook Guard (`src/dafg/hook.py`)** — Intercepts agent exit attempts and returns `{ "decision": "block" }` until every gate is verified with recorded evidence or validly abandoned (`ABANDON: <id> <reason>`).
@@ -443,7 +457,7 @@ Run the comprehensive offline test suite with `pytest`:
 uv run pytest -v
 ```
 
-- **117/117 tests passing in ~1s**
+- **128/128 tests passing in ~1s**
 - 100% offline (no external APIs or network calls required)
 - Covers:
   - Markdown gate parsing, formatting preservation, and error recovery
@@ -451,6 +465,10 @@ uv run pytest -v
   - Dynamic graph scheduling, cycle prevention, and prerequisite injection (`needs`)
   - Stop hook decision trees, progress guards, and abandonment rules
   - Typed schema validation, regex constraints, and JSON repair routines
+  - Pre-dispatch manifest gating and automatic dependency synthesis
+  - Failure-directed repair and targeted transitive invalidation with version fencing
+  - Versioned interface contracts and backward compatibility checking
+  - Layered verification (structural, executable, invariant, and semantic)
 
 ---
 
@@ -485,17 +503,19 @@ dafg/
 │   └── schema.py                # Typed Schema, Field validators, robust JSON repair
 │
 └── tests/
-    ├── test_dafg_budgets.py     # Budget caps and deadline tests
-    ├── test_dafg_persistence.py # State persistence and resume tests
-    ├── test_dafg_runtime.py     # Dynamic graph scheduling and execution tests
-    ├── test_depth_tree_waves.py # Depth tree and wave scheduling tests
-    ├── test_gates_execution.py  # Gate execution and reverification tests
-    ├── test_gates_linter.py     # Ledger linter tests
-    ├── test_gates_parser.py     # Markdown ledger parser tests
-    ├── test_gates_security.py   # Approval store and security boundary tests
-    ├── test_persona.py          # Persona compilation and routing tests
-    ├── test_schema.py           # Typed schemas and JSON repair tests
-    └── test_stop_hook.py        # Stop hook completion guard tests
+    ├── test_dafg_budgets.py             # Budget caps and deadline tests
+    ├── test_dafg_persistence.py         # State persistence and resume tests
+    ├── test_dafg_runtime.py             # Dynamic graph scheduling and execution tests
+    ├── test_dependency_correctness.py   # Pre-dispatch manifest gating & targeted repair tests
+    ├── test_depth_tree_waves.py         # Depth tree and wave scheduling tests
+    ├── test_gates_execution.py          # Gate execution and reverification tests
+    ├── test_gates_linter.py             # Ledger linter tests
+    ├── test_gates_parser.py             # Markdown ledger parser tests
+    ├── test_gates_security.py           # Approval store and security boundary tests
+    ├── test_layered_verification.py     # Layered verification & typed evidence tests
+    ├── test_persona.py                  # Persona compilation and routing tests
+    ├── test_schema.py                   # Typed schemas and JSON repair tests
+    └── test_stop_hook.py                # Stop hook completion guard tests
 ```
 
 ---

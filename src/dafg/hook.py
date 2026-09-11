@@ -30,6 +30,7 @@ class StopDecision:
     unverified_gates: List[str] = field(default_factory=list)
     abandoned_gates: List[str] = field(default_factory=list)
     progress_guard_released: bool = False
+    outcome_status: str = "INCOMPLETE_RUN"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -146,6 +147,7 @@ class CompletionGuard:
                 decision="allow",
                 reason="All acceptance gates are met with evidence or validly abandoned.",
                 abandoned_gates=abandoned_gates,
+                outcome_status="VERIFIED_DELIVERY",
             )
 
         # Build detailed blocking reason
@@ -177,6 +179,7 @@ class CompletionGuard:
                 unverified_gates=unverified_gates,
                 abandoned_gates=abandoned_gates,
                 progress_guard_released=True,
+                outcome_status="INCOMPLETE_RUN",
             )
 
         return StopDecision(
@@ -187,6 +190,7 @@ class CompletionGuard:
             unapproved_gates=unapproved_gates,
             unverified_gates=unverified_gates,
             abandoned_gates=abandoned_gates,
+            outcome_status="INCOMPLETE_RUN",
         )
 
     def _update_progress_state(self, current_sig: str) -> int:
