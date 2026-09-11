@@ -62,6 +62,77 @@ class BaseRuntimeAdapter(ABC):
             )
         return None
 
+    @staticmethod
+    def coerce_response(
+        response: AgentResponse,
+        source_adapter: str,
+        target_adapter: str,
+    ) -> AgentResponse:
+        """Normalize an AgentResponse produced by one adapter paradigm for consumption
+        by another, performing cross-paradigm schema coercion.
+
+        CLI output is raw text that needs structured extraction.
+        ToolDispatch output carries structured tool_calls metadata.
+        ReAct output carries a state trace.
+
+        Returns a new AgentResponse with metadata augmented for the target paradigm.
+        """
+        coerced_meta = dict(response.metadata)
+        coerced_meta["_coerced_from"] = source_adapter
+        coerced_meta["_coerced_to"] = target_adapter
+
+        if source_adapter == "iterative-cli" and target_adapter == "tool-dispatch":
+            # CLI→ToolDispatch: parse raw text output into structured tool_call form
+            coerced_meta["tool_calls_count"] = coerced_meta.get("tool_calls_count", 0)
+            coerced_meta["coerced_output_schema"] = "structured"
+            if "commands_run" in coerced_meta:
+                coerced_meta["tool_calls_count"] = coerced_meta["commands_run"]
+
+        elif source_adapter == "tool-dispatch" and target_adapter == "react-state-machine":
+            # ToolDispatch→ReAct: wrap structured calls into thought-action-observation trace
+            tc = coerced_meta.get("tool_calls_count", 0)
+            coerced_meta["trace"] = [
+                {"turn": "1", "thought": "Ingesting tool dispatch output",
+                 "action": "consume_upstream", "observation": f"Received {tc} tool calls"}
+            ]
+            coerced_meta["coerced_output_schema"] = "react_trace"
+
+        elif source_adapter == "iterative-cli" and target_adapter == "react-state-machine":
+            # CLI→ReAct: full paradigm jump
+            coerced_meta["trace"] = [
+                {"turn": "1", "thought": "Parsing CLI text output",
+                 "action": "parse_stdout", "observation": response.output[:200]}
+            ]
+            coerced_meta["coerced_output_schema"] = "react_trace"
+
+        elif source_adapter == "react-state-machine" and target_adapter == "tool-dispatch":
+            # ReAct→ToolDispatch: extract action calls from trace
+            trace = coerced_meta.get("trace", [])
+            coerced_meta["tool_calls_count"] = len(trace)
+            coerced_meta["coerced_output_schema"] = "structured"
+
+        elif source_adapter == "react-state-machine" and target_adapter == "iterative-cli":
+            # ReAct→CLI: flatten trace to text
+            coerced_meta["coerced_output_schema"] = "raw_text"
+
+        elif source_adapter == "tool-dispatch" and target_adapter == "iterative-cli":
+            # ToolDispatch→CLI: flatten structured calls to text
+            coerced_meta["coerced_output_schema"] = "raw_text"
+
+        return AgentResponse(
+            output=response.output,
+            status=response.status,
+            epoch=response.epoch,
+            dispatch_identity=response.dispatch_identity,
+            needs=list(response.needs),
+            spawn_children=list(response.spawn_children),
+            files_modified=list(response.files_modified),
+            metadata=coerced_meta,
+            revision_directive=response.revision_directive,
+            published_contracts=list(response.published_contracts),
+            criterion_evidence=list(response.criterion_evidence),
+        )
+
 
 class IterativeCLIAdapter(BaseRuntimeAdapter):
     """Simulates an iterative command-line agent (e.g. Agy, Bash-driven agent).
@@ -256,16 +327,27 @@ class ReActStateAdapter(BaseRuntimeAdapter):
     
     Thought-Action-Observation loop; subject to reasoning budget limits,
     step loops, and observation truncation.
+
+    KillSwitch parameters:
+      kill_n: max consecutive no-progress turns before aborting (default: 0 = disabled)
+      spec_gap_theta: speculation gap threshold (0.0-1.0). When the ratio of
+          speculative (non-progressing) turns to total turns exceeds this,
+          the loop aborts. Default 0.0 = disabled.
     """
 
     def __init__(
         self,
         name: str = "react-state-machine",
         max_turns: int = 5,
+        kill_n: int = 0,
+        spec_gap_theta: float = 0.0,
     ):
         super().__init__(name)
         self.max_turns = max_turns
+        self.kill_n = kill_n
+        self.spec_gap_theta = spec_gap_theta
         self.state_trace: List[Dict[str, str]] = []
+        self.killswitch_activations: int = 0
 
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
@@ -327,10 +409,23 @@ class ReActStateAdapter(BaseRuntimeAdapter):
                 dispatch_identity=disp,
             )
 
+        # KillSwitch state tracking
+        consecutive_no_progress = 0
+        speculative_turns = 0
+
         for turn in range(num_turns):
             turns_used += 1
             self.total_tokens_consumed += turn_tokens + (turn * 50)
             obs = "Transient error, retrying" if (is_flaky and turn == 0) else "Step passed"
+
+            # Determine if this turn made progress
+            made_progress = (obs == "Step passed")
+            if not made_progress:
+                consecutive_no_progress += 1
+                speculative_turns += 1
+            else:
+                consecutive_no_progress = 0
+
             entry = {
                 "turn": str(turn + 1),
                 "thought": f"Assessing {node.title} requirements (turn {turn + 1})",
@@ -341,6 +436,45 @@ class ReActStateAdapter(BaseRuntimeAdapter):
             if len(self.state_trace) >= 2:
                 self.state_trace.pop(0)
             self.state_trace.append(entry)
+
+            # KillSwitch: kill_n consecutive no-progress check
+            if self.kill_n > 0 and consecutive_no_progress >= self.kill_n:
+                self.killswitch_activations += 1
+                return AgentResponse(
+                    output=f"KillSwitch(kill_n={self.kill_n}): {consecutive_no_progress} consecutive no-progress turns on {node.id}",
+                    status="FAILED",
+                    files_modified=[],
+                    metadata={
+                        "adapter": self.name,
+                        "error": "KILLSWITCH_KILL_N",
+                        "kill_n": self.kill_n,
+                        "consecutive_no_progress": consecutive_no_progress,
+                        "turns_used": turns_used,
+                    },
+                    epoch=epoch,
+                    dispatch_identity=disp,
+                )
+
+            # KillSwitch: spec_gap_theta speculation ratio check
+            if self.spec_gap_theta > 0.0 and turns_used > 0:
+                spec_ratio = speculative_turns / turns_used
+                if spec_ratio > self.spec_gap_theta:
+                    self.killswitch_activations += 1
+                    return AgentResponse(
+                        output=f"KillSwitch(spec_gap_θ={self.spec_gap_theta}): speculation ratio {spec_ratio:.2f} exceeded threshold on {node.id}",
+                        status="FAILED",
+                        files_modified=[],
+                        metadata={
+                            "adapter": self.name,
+                            "error": "KILLSWITCH_SPEC_GAP",
+                            "spec_gap_theta": self.spec_gap_theta,
+                            "spec_ratio": spec_ratio,
+                            "speculative_turns": speculative_turns,
+                            "turns_used": turns_used,
+                        },
+                        epoch=epoch,
+                        dispatch_identity=disp,
+                    )
 
         if is_deep_horizon:
             # ReAct exceeded its turn budget on deep horizon planning
