@@ -21,7 +21,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit"], help="Sub-commands")
         parser.print_help()
         return 0
 
@@ -107,17 +107,43 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("=" * 60)
         return 0
 
+    elif cmd == "audit":
+        parser = argparse.ArgumentParser(prog="dafg audit", description="Run DAFG Protocol Formal Conformance Audit")
+        parser.add_argument("--protocol", action="store_true", default=True, help="Run formal protocol state machine audit")
+        parser.add_argument("--json", action="store_true", help="Output audit report as JSON")
+        args = parser.parse_args(sub_args)
+
+        import json
+        from dafg.eval import ProtocolAuditRunner
+
+        runner = ProtocolAuditRunner()
+        report = runner.run_all()
+        if args.json:
+            print(json.dumps(report, indent=2))
+        else:
+            print("=" * 60)
+            print("DAFG FORMAL PROTOCOL CONFORMANCE AUDIT")
+            print("=" * 60)
+            for check_name, passed in report["checks"].items():
+                mark = "[PASS]" if passed else "[FAIL]"
+                print(f"{mark} {check_name}")
+            print("=" * 60)
+            status_str = "PASSED" if report["passed"] else "FAILED"
+            print(f"Overall Result: {status_str} ({report['passed_checks']}/{report['total_checks']} checks)")
+            print("=" * 60)
+        return 0 if report["passed"] else 1
+
     elif cmd in ("-h", "--help"):
         parser = argparse.ArgumentParser(
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit"], help="Sub-commands")
         parser.print_help()
         return 0
 
     else:
-        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval'.", file=sys.stderr)
+        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit'.", file=sys.stderr)
         return 1
 
 

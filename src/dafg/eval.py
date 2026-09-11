@@ -22,6 +22,20 @@ from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 from dafg.adapters import BaseRuntimeAdapter, IterativeCLIAdapter
 from dafg.gates import ApprovalStore, GateEngine, GateLedger
 from dafg.hook import CompletionGuard
+from dafg.protocol import (
+    Action,
+    AuditRecord,
+    DispatchIdentity,
+    DomainEvent,
+    ExecutionStatus,
+    IllegalTransitionError,
+    ProtocolCommand,
+    ProtocolEngine,
+    ProtocolReducer,
+    ProtocolState,
+    RunSealedError,
+    StaleDispatchError,
+)
 from dafg.runtime import DAFG, AgentResponse, Budget, NodeStatus, OutcomeStatus, TaskNode
 
 
@@ -389,3 +403,290 @@ class EvaluationHarness:
             feasible_tokens=sum(t.tokens_consumed for t in trials if t.is_feasible),
         )
         return metrics
+
+
+class ProtocolAuditRunner:
+    """Adversarial protocol conformance auditor validating formal state machine invariants."""
+
+    def __init__(self):
+        self.results: Dict[str, bool] = {}
+        self.details: List[str] = []
+
+    def check_action_specific_transitions(self) -> bool:
+        """Verify that state advances only along valid action-specific transition rules."""
+        t = ProtocolEngine.TRANSITION_MAP
+        if t.get((ProtocolState.IDLE, Action.LOAD_CONTEXT)) != ProtocolState.CONTEXT_LOADED:
+            return False
+        if t.get((ProtocolState.CONTEXT_LOADED, Action.DISPATCH_PROVE)) != ProtocolState.PROVING:
+            return False
+        if t.get((ProtocolState.PROVING, Action.CHALLENGE)) != ProtocolState.CHALLENGING:
+            return False
+        if t.get((ProtocolState.CHALLENGING, Action.SUBMIT_EVIDENCE)) != ProtocolState.VERIFYING:
+            return False
+        if t.get((ProtocolState.VERIFYING, Action.ACCEPT_VERDICT)) != ProtocolState.ACCEPTED:
+            return False
+        if t.get((ProtocolState.ACCEPTED, Action.INVALIDATE)) != ProtocolState.STALE:
+            return False
+
+        # Live execution sequence through graph.submit_command
+        graph = DAFG()
+        node = TaskNode("n1", "Test Node")
+        graph.add_node(node)
+
+        graph.submit_command(ProtocolCommand("c1", Action.LOAD_CONTEXT, "n1", graph.run_id))
+        if node.protocol_state != ProtocolState.CONTEXT_LOADED:
+            return False
+
+        graph.submit_command(ProtocolCommand("c2", Action.DISPATCH_PROVE, "n1", graph.run_id))
+        if node.protocol_state != ProtocolState.PROVING:
+            return False
+
+        graph.submit_command(ProtocolCommand("c3", Action.CHALLENGE, "n1", graph.run_id))
+        if node.protocol_state != ProtocolState.CHALLENGING:
+            return False
+
+        graph.submit_command(ProtocolCommand("c4", Action.SUBMIT_EVIDENCE, "n1", graph.run_id))
+        if node.protocol_state != ProtocolState.VERIFYING:
+            return False
+
+        disp = DispatchIdentity(
+            run_id=graph.run_id,
+            node_id="n1",
+            epoch=node.epoch,
+            attempt_id=1,
+            context_snapshot_id="snap_1",
+            contract_version=1,
+        )
+        node.active_dispatch = disp
+        graph.submit_command(ProtocolCommand("c5", Action.ACCEPT_VERDICT, "n1", graph.run_id, dispatch_identity=disp))
+        if node.protocol_state != ProtocolState.ACCEPTED:
+            return False
+
+        return True
+
+    def check_rejection_of_prohibited_transitions(self) -> bool:
+        """Verify that skipping intermediate states or illegal state jumps is rejected."""
+        t = ProtocolEngine.TRANSITION_MAP
+        if (ProtocolState.IDLE, Action.ACCEPT_VERDICT) in t:
+            return False
+        if (ProtocolState.PROVING, Action.ACCEPT_VERDICT) in t:
+            return False
+        if (ProtocolState.REJECTED, Action.ACCEPT_VERDICT) in t:
+            return False
+
+        graph = DAFG()
+        node = TaskNode("n1", "Test")
+        graph.add_node(node)
+        cmd = ProtocolCommand(
+            idempotency_key="bad_cmd_audit_1",
+            action=Action.ACCEPT_VERDICT,
+            node_id="n1",
+            run_id=graph.run_id,
+        )
+        try:
+            graph.submit_command(cmd)
+            return False
+        except IllegalTransitionError:
+            pass
+
+        if not any(rec["idempotency_key"] == "bad_cmd_audit_1" for rec in graph.audit_log):
+            return False
+
+        return True
+
+    def check_dispatch_identity_fencing(self) -> bool:
+        """Verify that stale epochs or mismatched context snapshots are rejected."""
+        graph = DAFG()
+        node = TaskNode("n1", "Test")
+        node.epoch = 2
+        node.protocol_state = ProtocolState.VERIFYING
+        node.context_snapshot_id = "hash_v2"
+        graph.add_node(node)
+
+        active_disp = DispatchIdentity(
+            run_id=graph.run_id,
+            node_id="n1",
+            epoch=2,
+            attempt_id=1,
+            context_snapshot_id="hash_v2",
+            contract_version=1,
+        )
+        node.active_dispatch = active_disp
+
+        stale_disp = DispatchIdentity(
+            run_id=graph.run_id,
+            node_id="n1",
+            epoch=1,
+            attempt_id=1,
+            context_snapshot_id="hash_v1",
+            contract_version=1,
+        )
+        cmd = ProtocolCommand(
+            idempotency_key="stale_cmd_audit_1",
+            action=Action.ACCEPT_VERDICT,
+            node_id="n1",
+            run_id=graph.run_id,
+            dispatch_identity=stale_disp,
+        )
+        try:
+            graph.submit_command(cmd)
+            return False
+        except (StaleDispatchError, IllegalTransitionError):
+            pass
+
+        wrong_run_disp = DispatchIdentity(
+            run_id="other_run_999",
+            node_id="n1",
+            epoch=2,
+            attempt_id=1,
+            context_snapshot_id="hash_v2",
+            contract_version=1,
+        )
+        cmd2 = ProtocolCommand(
+            idempotency_key="wrong_run_cmd_audit",
+            action=Action.ACCEPT_VERDICT,
+            node_id="n1",
+            run_id=graph.run_id,
+            dispatch_identity=wrong_run_disp,
+        )
+        try:
+            graph.submit_command(cmd2)
+            return False
+        except (StaleDispatchError, IllegalTransitionError):
+            pass
+
+        return True
+
+    def check_idempotency_deduplication(self) -> bool:
+        """Verify that duplicate commands with identical idempotency key are safely deduplicated."""
+        graph = DAFG()
+        node = TaskNode("n1", "Test")
+        graph.add_node(node)
+        cmd = ProtocolCommand(
+            idempotency_key="idemp_key_audit_alpha",
+            action=Action.LOAD_CONTEXT,
+            node_id="n1",
+            run_id=graph.run_id,
+        )
+        events1, _ = graph.submit_command(cmd)
+        events_count_1 = len(graph.domain_events)
+
+        events2, _ = graph.submit_command(cmd)
+        events_count_2 = len(graph.domain_events)
+
+        if events_count_2 != events_count_1:
+            return False
+        if events1 and events2 and events1[0].event_id != events2[0].event_id:
+            return False
+        return True
+
+    def check_reducer_replay_parity(self) -> bool:
+        """Verify that replaying domain events produces exact canonical protocol state."""
+        graph = DAFG()
+        n1 = TaskNode("n1", "Node 1")
+        graph.add_node(n1)
+
+        graph.submit_command(ProtocolCommand("c1", Action.LOAD_CONTEXT, "n1", graph.run_id))
+        graph.submit_command(ProtocolCommand("c2", Action.DISPATCH_PROVE, "n1", graph.run_id))
+        graph.submit_command(ProtocolCommand("c3", Action.CHALLENGE, "n1", graph.run_id))
+        graph.submit_command(ProtocolCommand("c4", Action.SUBMIT_EVIDENCE, "n1", graph.run_id))
+        disp = DispatchIdentity(
+            run_id=graph.run_id,
+            node_id="n1",
+            epoch=n1.epoch,
+            attempt_id=1,
+            context_snapshot_id="snap_replay",
+            contract_version=1,
+        )
+        n1.active_dispatch = disp
+        graph.submit_command(ProtocolCommand("c5", Action.ACCEPT_VERDICT, "n1", graph.run_id, dispatch_identity=disp))
+        graph.submit_command(ProtocolCommand("c6", Action.INVALIDATE, "n1", graph.run_id, payload={"reason": "schema update"}))
+
+        events = list(graph.domain_events)
+        replayed = DAFG.replay(events)
+
+        orig_node = graph.nodes["n1"]
+        rep_node = replayed.nodes["n1"]
+        if orig_node.protocol_state != rep_node.protocol_state:
+            return False
+        if orig_node.execution_status != rep_node.execution_status:
+            return False
+        if orig_node.epoch != rep_node.epoch:
+            return False
+        if orig_node.revisions != rep_node.revisions:
+            return False
+
+        return True
+
+    def check_mandatory_invalidation_under_exhausted_budget(self) -> bool:
+        """Verify that mandatory invalidation is unconstrained by budget limits."""
+        graph = DAFG()
+        graph.budget.max_adaptations = 0
+        graph.budget.adaptations_consumed = 0
+        graph.budget.max_revisions = 0
+        graph.budget.revisions_consumed = 0
+
+        n1 = TaskNode("n1", "Node 1", status=NodeStatus.ACCEPTED)
+        n2 = TaskNode("n2", "Node 2", needs=["n1"], status=NodeStatus.ACCEPTED)
+        graph.add_node(n1)
+        graph.add_node(n2)
+
+        invalidated = graph.invalidate_dependents("n1", reason="Prerequisite updated")
+        if "n2" not in invalidated:
+            return False
+        if graph.nodes["n2"].status != NodeStatus.READY:
+            return False
+        if graph.nodes["n2"].protocol_state != ProtocolState.STALE:
+            return False
+        return True
+
+    def check_graph_sealing_invariance(self) -> bool:
+        """Verify that sealing a run locks the graph against future state modifications."""
+        graph = DAFG()
+        n1 = TaskNode("n1", "Node 1", status=NodeStatus.ACCEPTED)
+        graph.add_node(n1)
+
+        graph.seal_run()
+        if not graph.is_sealed or not graph.sealed_at:
+            return False
+
+        cmd = ProtocolCommand("cmd_post_seal_audit", Action.LOAD_CONTEXT, "n1", graph.run_id)
+        try:
+            graph.submit_command(cmd)
+            return False
+        except RunSealedError:
+            pass
+
+        try:
+            graph.commit_transition(n1, NodeStatus.READY, action="REOPEN")
+            return False
+        except RunSealedError:
+            pass
+
+        try:
+            graph.add_node(TaskNode("n2", "New Node"))
+            return False
+        except RunSealedError:
+            pass
+
+        return True
+
+    def run_all(self) -> Dict[str, Any]:
+        """Run all formal protocol conformance checks and return a structured report."""
+        checks = {
+            "action_specific_transitions": self.check_action_specific_transitions(),
+            "rejection_of_prohibited_transitions": self.check_rejection_of_prohibited_transitions(),
+            "dispatch_identity_fencing": self.check_dispatch_identity_fencing(),
+            "idempotency_deduplication": self.check_idempotency_deduplication(),
+            "reducer_replay_parity": self.check_reducer_replay_parity(),
+            "mandatory_invalidation_under_exhausted_budget": self.check_mandatory_invalidation_under_exhausted_budget(),
+            "graph_sealing_invariance": self.check_graph_sealing_invariance(),
+        }
+        all_passed = all(checks.values())
+        return {
+            "passed": all_passed,
+            "checks": checks,
+            "total_checks": len(checks),
+            "passed_checks": sum(1 for p in checks.values() if p),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }

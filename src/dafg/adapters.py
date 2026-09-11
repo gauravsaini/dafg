@@ -29,13 +29,17 @@ class BaseRuntimeAdapter(ABC):
         """Execute a task node within this agent architecture."""
         pass
 
-    def check_refusal(self, node: TaskNode) -> Optional[AgentResponse]:
+    def check_refusal(self, node: TaskNode, context: Optional[Dict[str, Any]] = None) -> Optional[AgentResponse]:
         """Assess task feasibility and permissions; honestly refuse if unfulfillable."""
+        disp = context.get("dispatch_identity") if context else getattr(node, "active_dispatch", None)
+        epoch = getattr(disp, "epoch", node.epoch) if disp else node.epoch
         if node.requires_permissions and not node.metadata.get("authorized"):
             return AgentResponse(
                 output=f"Honest refusal: Task '{node.title}' requires elevated permissions or authorization.",
                 status="BLOCKED",
                 metadata={"refusal_class": "MISSING_AUTHORIZATION", "adapter": self.name},
+                epoch=epoch,
+                dispatch_identity=disp,
             )
         title_lower = node.title.lower()
         impossible_markers = [
@@ -54,6 +58,8 @@ class BaseRuntimeAdapter(ABC):
                     output=f"Honest refusal: Task '{node.title}' is mathematically or architecturally impossible to fulfill.",
                     status="BLOCKED",
                     metadata={"refusal_class": "UNAVAILABLE_CAPABILITY", "adapter": self.name},
+                    epoch=epoch,
+                    dispatch_identity=disp,
                 )
         return None
 
@@ -75,9 +81,12 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
         prompt_tokens = len(node.title) * 4 + 180
         self.total_tokens_consumed += prompt_tokens
 
-        refusal = self.check_refusal(node)
+        refusal = self.check_refusal(node, context)
         if refusal:
             return refusal
+
+        disp = context.get("dispatch_identity") or getattr(node, "active_dispatch", None)
+        epoch = getattr(disp, "epoch", node.epoch) if disp else node.epoch
 
         files_modified = list(node.owns)
         output_text = f"CLI session completed for {node.id}: {node.title}"
@@ -89,6 +98,8 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
                 status=result.get("status", "COMPLETED"),
                 files_modified=result.get("files_modified", files_modified),
                 metadata=result.get("metadata", {"adapter": self.name}),
+                epoch=epoch,
+                dispatch_identity=disp,
             )
 
         return AgentResponse(
@@ -96,6 +107,8 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
             status="COMPLETED",
             files_modified=files_modified,
             metadata={"adapter": self.name, "commands_run": len(self.command_history)},
+            epoch=epoch,
+            dispatch_identity=disp,
         )
 
 
@@ -118,10 +131,13 @@ class ToolDispatchAdapter(BaseRuntimeAdapter):
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
 
-        refusal = self.check_refusal(node)
+        refusal = self.check_refusal(node, context)
         if refusal:
             self.total_tokens_consumed += 120
             return refusal
+
+        disp = context.get("dispatch_identity") or getattr(node, "active_dispatch", None)
+        epoch = getattr(disp, "epoch", node.epoch) if disp else node.epoch
 
         # Role-scoped tool definitions to prevent whole-catalog schema re-transmission
         scoped_tools = self.available_tools
@@ -144,6 +160,8 @@ class ToolDispatchAdapter(BaseRuntimeAdapter):
             status="COMPLETED",
             files_modified=list(node.owns),
             metadata={"adapter": self.name, "tool_calls_count": len(self.dispatched_tool_calls)},
+            epoch=epoch,
+            dispatch_identity=disp,
         )
 
 
@@ -162,10 +180,13 @@ class ReActStateAdapter(BaseRuntimeAdapter):
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
 
-        refusal = self.check_refusal(node)
+        refusal = self.check_refusal(node, context)
         if refusal:
             self.total_tokens_consumed += 140
             return refusal
+
+        disp = context.get("dispatch_identity") or getattr(node, "active_dispatch", None)
+        epoch = getattr(disp, "epoch", node.epoch) if disp else node.epoch
 
         # ReAct state loop with scratchpad compaction
         turn_tokens = 160
@@ -190,4 +211,6 @@ class ReActStateAdapter(BaseRuntimeAdapter):
             status="COMPLETED",
             files_modified=list(node.owns),
             metadata={"adapter": self.name, "turns_used": turns_used, "trace": self.state_trace},
+            epoch=epoch,
+            dispatch_identity=disp,
         )

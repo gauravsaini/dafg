@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 import fnmatch
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -20,6 +21,21 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from dafg.gates import Gate, GateEngine, GateLedger, GateResult
+from dafg.protocol import (
+    Action,
+    AuditRecord,
+    DispatchIdentity,
+    DomainEvent,
+    ExecutionStatus,
+    IllegalTransitionError,
+    ProtocolCommand,
+    ProtocolEngine,
+    ProtocolReducer,
+    ProtocolState,
+    RunSealedError,
+    StaleDispatchError,
+    state_projection,
+)
 
 
 class NodeStatus(str, Enum):
@@ -85,15 +101,85 @@ class BudgetExceededError(Exception):
 
 
 @dataclass
+class ProtocolEvent:
+    """Structured, replayable state machine transition event."""
+    event_id: int
+    timestamp: str
+    node_id: str
+    role: str
+    from_status: Optional[str]
+    to_status: str
+    action: str
+    epoch: int
+    revisions: int
+    details: str = ""
+    reason: str = ""
+    payload: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "event_id": self.event_id,
+            "timestamp": self.timestamp,
+            "node_id": self.node_id,
+            "role": self.role,
+            "from_status": self.from_status,
+            "to_status": self.to_status,
+            "action": self.action,
+            "epoch": self.epoch,
+            "revisions": self.revisions,
+            "details": self.details or self.reason,
+            "reason": self.reason or self.details,
+            "payload": self.payload,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> ProtocolEvent:
+        return cls(
+            event_id=data.get("event_id", 0),
+            timestamp=data.get("timestamp", datetime.now(timezone.utc).isoformat()),
+            node_id=data.get("node_id", ""),
+            role=data.get("role", "coder"),
+            from_status=data.get("from_status"),
+            to_status=data.get("to_status", data.get("action", "UNKNOWN")),
+            action=data.get("action", ""),
+            epoch=data.get("epoch", 1),
+            revisions=data.get("revisions", 0),
+            details=data.get("details", ""),
+            reason=data.get("reason", data.get("details", "")),
+            payload=data.get("payload", {}),
+        )
+
+
+ALLOWED_TRANSITIONS: Dict[NodeStatus, Set[NodeStatus]] = {
+    NodeStatus.PENDING: {NodeStatus.READY, NodeStatus.RUNNING, NodeStatus.BLOCKED},
+    NodeStatus.READY: {NodeStatus.RUNNING, NodeStatus.BLOCKED},
+    NodeStatus.RUNNING: {
+        NodeStatus.ACCEPTED,
+        NodeStatus.REJECTED,
+        NodeStatus.BLOCKED,
+        NodeStatus.FAILED,
+        NodeStatus.PENDING,
+        NodeStatus.READY,
+    },
+    NodeStatus.BLOCKED: {NodeStatus.READY, NodeStatus.RUNNING, NodeStatus.PENDING, NodeStatus.FAILED},
+    NodeStatus.REJECTED: {NodeStatus.READY, NodeStatus.RUNNING, NodeStatus.FAILED},
+    NodeStatus.ACCEPTED: {NodeStatus.READY, NodeStatus.REJECTED, NodeStatus.BLOCKED},  # Invalidation only
+    NodeStatus.FAILED: set(),  # Terminal state: cannot transition out of FAILED
+}
+
+
+@dataclass
 class Budget:
     max_calls: int = 50
     max_nodes: int = 20
     max_revisions: int = 3
+    max_adaptations: int = 15
     deadline: Optional[float] = None  # Unix timestamp
 
     calls_consumed: int = 0
     nodes_created: int = 0
     revisions_consumed: int = 0
+    adaptations_consumed: int = 0
 
     def check_call(self) -> None:
         if self.calls_consumed >= self.max_calls:
@@ -121,6 +207,13 @@ class Budget:
                 f"Revision budget exceeded: {self.revisions_consumed}/{self.max_revisions}"
             )
         self.revisions_consumed += 1
+
+    def check_adaptation(self) -> None:
+        if self.adaptations_consumed >= self.max_adaptations:
+            raise BudgetExceededError(
+                f"Adaptation budget exceeded: {self.adaptations_consumed}/{self.max_adaptations}"
+            )
+        self.adaptations_consumed += 1
 
 
 @dataclass
@@ -521,9 +614,23 @@ class TaskNode:
     refusal_class: Optional[RefusalClass] = None
     refusal_reason: Optional[str] = None
 
+    # Protocol-conformance state architecture
+    protocol_state: ProtocolState = ProtocolState.IDLE
+    execution_status: ExecutionStatus = ExecutionStatus.READY
+    active_dispatch: Optional[DispatchIdentity] = None
+
+    def __post_init__(self):
+        if self.status == NodeStatus.ACCEPTED and self.protocol_state == ProtocolState.IDLE:
+            self.protocol_state = ProtocolState.ACCEPTED
+            self.execution_status = ExecutionStatus.SETTLED
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value if isinstance(self.status, NodeStatus) else self.status
+        d["protocol_state"] = self.protocol_state.value if isinstance(self.protocol_state, ProtocolState) else str(self.protocol_state)
+        d["execution_status"] = self.execution_status.value if isinstance(self.execution_status, ExecutionStatus) else str(self.execution_status)
+        if self.active_dispatch:
+            d["active_dispatch"] = self.active_dispatch.to_dict()
         if self.refusal_class:
             d["refusal_class"] = self.refusal_class.value if isinstance(self.refusal_class, RefusalClass) else self.refusal_class
         if self.manifest:
@@ -539,6 +646,12 @@ class TaskNode:
         d = data.copy()
         if "status" in d and isinstance(d["status"], str):
             d["status"] = NodeStatus(d["status"])
+        if "protocol_state" in d and isinstance(d["protocol_state"], str):
+            d["protocol_state"] = ProtocolState(d["protocol_state"])
+        if "execution_status" in d and isinstance(d["execution_status"], str):
+            d["execution_status"] = ExecutionStatus(d["execution_status"])
+        if "active_dispatch" in d and isinstance(d["active_dispatch"], dict):
+            d["active_dispatch"] = DispatchIdentity.from_dict(d["active_dispatch"])
         if "refusal_class" in d and isinstance(d["refusal_class"], str):
             d["refusal_class"] = RefusalClass(d["refusal_class"])
         if "manifest" in d and isinstance(d["manifest"], dict):
@@ -557,6 +670,8 @@ class AgentResponse:
     """Output returned by specialist agents / LLMs."""
     output: str = ""
     status: str = "COMPLETED"
+    epoch: Optional[int] = None
+    dispatch_identity: Optional[DispatchIdentity] = None
     needs: List[Union[str, TaskNode, Dict[str, Any]]] = field(default_factory=list)
     spawn_children: List[Union[TaskNode, Dict[str, Any]]] = field(default_factory=list)
     files_modified: List[str] = field(default_factory=list)
@@ -572,6 +687,10 @@ class AgentResponse:
             "files_modified": self.files_modified,
             "metadata": self.metadata,
         }
+        if self.epoch is not None:
+            d["epoch"] = self.epoch
+        if self.dispatch_identity is not None:
+            d["dispatch_identity"] = self.dispatch_identity.to_dict() if hasattr(self.dispatch_identity, "to_dict") else self.dispatch_identity
         if self.revision_directive:
             d["revision_directive"] = self.revision_directive.to_dict() if hasattr(self.revision_directive, "to_dict") else self.revision_directive
         if self.published_contracts:
@@ -684,11 +803,77 @@ class DAFG:
         self.bypass_telemetry: BypassTelemetry = bypass_telemetry or BypassTelemetry()
         self.enable_bypass: bool = enable_bypass
 
+        # Protocol Engine Subsystem
+        self.run_id: str = f"run_{int(time.time()*1000)}_{os.getpid()}"
+        self.run_epoch: int = 1
+        self.is_sealed: bool = False
+        self.sealed_at: Optional[str] = None
+        self.processed_idempotency_keys: Set[str] = set()
+        self.domain_events: List[Dict[str, Any]] = []
+        self.audit_log: List[Dict[str, Any]] = []
+        self.seq_counter: int = 0
+
         if nodes:
             for node in nodes.values():
                 self.add_node(node, track_budget=False)
 
+    def next_seq(self) -> int:
+        self.seq_counter += 1
+        return self.seq_counter
+
+    def submit_command(self, cmd: ProtocolCommand) -> Tuple[List[DomainEvent], Optional[AuditRecord]]:
+        """Submit a formal protocol command through ProtocolEngine and ProtocolReducer."""
+        if self.is_sealed and cmd.action != Action.SEAL_RUN:
+            record = AuditRecord(
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                idempotency_key=cmd.idempotency_key,
+                action=cmd.action.value,
+                node_id=cmd.node_id,
+                reason=f"Run is sealed; all state transitions are strictly prohibited.",
+            )
+            self.audit_log.append(record.to_dict())
+            self.save_state()
+            raise RunSealedError(record.reason)
+
+        if cmd.idempotency_key in self.processed_idempotency_keys:
+            return [], None
+
+        events, audit = ProtocolEngine.decide(self, cmd, self.next_seq)
+        if audit:
+            self.audit_log.append(audit.to_dict())
+            self.save_state()
+            if "sealed" in audit.reason.lower():
+                raise RunSealedError(audit.reason)
+            raise IllegalTransitionError(audit.reason)
+
+        for ev in events:
+            ProtocolReducer.apply(self, ev)
+            self.domain_events.append(ev.to_dict())
+            self.processed_idempotency_keys.add(ev.idempotency_key)
+
+        self.save_state()
+        return events, None
+
+    def seal_run(self) -> bool:
+        """Atomically seal the graph run against completion integrity."""
+        if self.is_sealed:
+            return True
+        cmd = ProtocolCommand(
+            idempotency_key=f"seal_{self.run_id}_{self.next_seq()}",
+            action=Action.SEAL_RUN,
+            node_id="",
+            run_id=self.run_id,
+            reason="Graph completion integrity verified and sealed",
+        )
+        try:
+            events, audit = self.submit_command(cmd)
+            return self.is_sealed
+        except IllegalTransitionError:
+            return False
+
     def add_node(self, node: TaskNode, track_budget: bool = True) -> TaskNode:
+        if self.is_sealed:
+            raise RunSealedError(f"Cannot add node '{node.id}' to sealed run '{self.run_id}'")
         if node.parent_id == node.id:
             node.parent_id = None
 
@@ -722,6 +907,176 @@ class DAFG:
 
         self.save_state()
         return node
+
+    def validate_transition(
+        self,
+        node: TaskNode,
+        target_status: NodeStatus,
+        epoch_bump: bool = False,
+        response: Optional[AgentResponse] = None,
+        **kwargs,
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate whether a proposed state transition satisfies protocol guards."""
+        current_status = node.status if isinstance(node.status, NodeStatus) else NodeStatus(node.status)
+
+        # 1. State machine transition graph check
+        if current_status != target_status:
+            allowed = ALLOWED_TRANSITIONS.get(current_status, set())
+            if target_status not in allowed:
+                return False, f"Prohibited transition: {current_status.value} -> {target_status.value}"
+
+        # 2. Guard for RUNNING: all declared prerequisites must be in ACCEPTED
+        if target_status == NodeStatus.RUNNING:
+            for dep_id in node.needs:
+                dep = self.nodes.get(dep_id)
+                if not dep or dep.status != NodeStatus.ACCEPTED:
+                    return False, f"Prerequisite '{dep_id}' is not ACCEPTED (status={dep.status.value if dep else 'None'})"
+
+        # 3. Guard for ACCEPTED: evidence, manifests, and epoch fencing
+        if target_status == NodeStatus.ACCEPTED:
+            # Epoch fencing: reject stale response
+            if response and response.epoch is not None and response.epoch < node.epoch:
+                return False, f"Stale epoch verdict: response epoch {response.epoch} < current node epoch {node.epoch}"
+
+            # Evidence ledger epoch integrity
+            for ev in node.evidence_ledger:
+                if ev.artifact_version < node.epoch:
+                    return False, f"Stale criterion evidence '{ev.criterion_id}': version {ev.artifact_version} < node epoch {node.epoch}"
+
+            # Gate ledger evidence check (if assigned gates exist)
+            if node.assigned_gates and self.ledger:
+                for gid in node.assigned_gates:
+                    gate = self.ledger.get_gate(gid)
+                    if not gate or gate.status != "MET":
+                        return False, f"Assigned gate '{gid}' is not MET in ledger"
+                    if not gate.evidence or "exit_code=0" not in gate.evidence:
+                        return False, f"Assigned gate '{gid}' lacks valid execution evidence"
+
+            # Manifest integrity check
+            if node.manifest:
+                ok, errs = self.check_input_manifest(node)
+                if not ok:
+                    return False, f"Manifest validation failed: {errs}"
+
+        # 4. Guard for invalidation from ACCEPTED to READY, REJECTED, or BLOCKED
+        if current_status == NodeStatus.ACCEPTED and target_status in (NodeStatus.READY, NodeStatus.REJECTED, NodeStatus.BLOCKED):
+            if not epoch_bump:
+                return False, "Transitioning from ACCEPTED requires explicit epoch bump (invalidation)"
+
+        return True, None
+
+    def commit_transition(
+        self,
+        node: TaskNode,
+        target_status: Union[NodeStatus, str],
+        action: str,
+        reason: str = "",
+        payload: Optional[Dict[str, Any]] = None,
+        epoch_bump: bool = False,
+        response: Optional[AgentResponse] = None,
+        **kwargs,
+    ) -> ProtocolEvent:
+        """Enforces protocol authority by validating guards and atomically committing transitions."""
+        if self.is_sealed:
+            raise RunSealedError(f"Cannot commit transition on sealed run '{self.run_id}'")
+        if isinstance(target_status, str):
+            target_status = NodeStatus(target_status)
+        from_status = node.status if isinstance(node.status, NodeStatus) else NodeStatus(node.status)
+
+        valid, err = self.validate_transition(
+            node,
+            target_status,
+            epoch_bump=epoch_bump,
+            response=response,
+            **kwargs,
+        )
+        if not valid:
+            self._record_event(
+                node,
+                "ILLEGAL_TRANSITION_ATTEMPT",
+                f"Prohibited transition {from_status.value} -> {target_status.value}: {err}",
+            )
+            raise IllegalTransitionError(f"Protocol violation for node '{node.id}': {err}")
+
+        if epoch_bump:
+            node.epoch += 1
+
+        node.status = target_status
+        if target_status == NodeStatus.READY:
+            if from_status == NodeStatus.ACCEPTED or action in ("INVALIDATED", "INVALIDATE"):
+                node.protocol_state = ProtocolState.STALE
+            else:
+                node.protocol_state = ProtocolState.IDLE
+            node.execution_status = ExecutionStatus.READY
+        elif target_status == NodeStatus.ACCEPTED:
+            node.protocol_state = ProtocolState.ACCEPTED
+            node.execution_status = ExecutionStatus.SETTLED
+        elif target_status == NodeStatus.REJECTED:
+            node.protocol_state = ProtocolState.REJECTED
+            node.execution_status = ExecutionStatus.SETTLED
+        elif target_status == NodeStatus.BLOCKED:
+            node.execution_status = ExecutionStatus.BLOCKED
+        elif target_status == NodeStatus.RUNNING:
+            node.execution_status = ExecutionStatus.RUNNING
+        event_id = len(self.execution_history) + 1
+        event = ProtocolEvent(
+            event_id=event_id,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            node_id=node.id,
+            role=node.role,
+            from_status=from_status.value,
+            to_status=target_status.value,
+            action=action,
+            epoch=node.epoch,
+            revisions=node.revisions,
+            details=reason,
+            reason=reason,
+            payload=payload or {},
+        )
+        self.execution_history.append(event.to_dict())
+        self.save_state()
+        return event
+
+    def verify_completion_integrity(self) -> Tuple[bool, List[str]]:
+        """Verifies that graph completion is backed by current, contract-bound evidence."""
+        if not self.nodes:
+            return False, ["Graph has no nodes"]
+
+        errors: List[str] = []
+        for nid, node in self.nodes.items():
+            if node.status != NodeStatus.ACCEPTED:
+                errors.append(f"Node '{nid}' is not ACCEPTED (status={node.status.value})")
+
+            # 1. Gate evidence integrity
+            if node.assigned_gates and self.ledger:
+                for gid in node.assigned_gates:
+                    gate = self.ledger.get_gate(gid)
+                    if not gate:
+                        errors.append(f"Node '{nid}' references missing gate '{gid}'")
+                    elif gate.status != "MET":
+                        errors.append(f"Node '{nid}' assigned gate '{gid}' is {gate.status}, not MET")
+                    elif not gate.evidence or "exit_code=0" not in gate.evidence:
+                        errors.append(f"Node '{nid}' assigned gate '{gid}' lacks verified execution evidence")
+
+            # 2. Manifest integrity
+            if node.manifest:
+                ok, manifest_errs = self.check_input_manifest(node)
+                if not ok:
+                    errors.extend([f"Node '{nid}' manifest error: {e}" for e in manifest_errs])
+
+            # 3. Contract integrity
+            for cid, req_ver in node.consumed_contracts.items():
+                if cid not in self.contracts:
+                    errors.append(f"Node '{nid}' consumes missing contract '{cid}'")
+                elif self.contracts[cid].version < req_ver:
+                    errors.append(f"Node '{nid}' consumes stale contract '{cid}' (has v{self.contracts[cid].version}, requires v{req_ver})")
+
+            # 4. Evidence ledger epoch integrity
+            for ev in node.evidence_ledger:
+                if ev.artifact_version < node.epoch:
+                    errors.append(f"Node '{nid}' contains stale evidence '{ev.criterion_id}' (version {ev.artifact_version} < node epoch {node.epoch})")
+
+        return len(errors) == 0, errors
 
     def register_contract(self, contract: Union[InterfaceContract, Dict[str, Any]]) -> bool:
         """Register or update a shared interface contract.
@@ -841,18 +1196,24 @@ class DAFG:
                 dependents.extend(self._get_downstream_dependents(nid, visited))
         return dependents
 
-    def invalidate_dependents(self, root_node_id: str, reason: str = "", epoch_bump: bool = True) -> List[str]:
+    def invalidate_dependents(
+        self,
+        root_node_id: str,
+        reason: str = "",
+        epoch_bump: bool = True,
+        exclude: Optional[Set[str]] = None,
+    ) -> List[str]:
         """Targeted transitive invalidation of affected descendants with version fencing."""
         downstream = self._get_downstream_dependents(root_node_id)
         invalidated: List[str] = []
         for nid in downstream:
+            if exclude and nid in exclude:
+                continue
             node = self.nodes.get(nid)
             if not node:
                 continue
             if node.status == NodeStatus.ACCEPTED:
-                node.status = NodeStatus.READY
-                if epoch_bump:
-                    node.epoch += 1
+                # Mandatory invalidation bookkeeping is unconstrained by budget
                 node.revisions += 1
                 # Demote assigned gates in ledger
                 if self.ledger:
@@ -862,7 +1223,13 @@ class DAFG:
                     if self.ledger.filepath:
                         self.ledger.save()
                 invalidated.append(nid)
-                self._record_event(node, "INVALIDATED", f"Targeted invalidation triggered by '{root_node_id}': {reason}")
+                self.commit_transition(
+                    node,
+                    NodeStatus.READY,
+                    action="INVALIDATED",
+                    reason=f"Targeted invalidation triggered by '{root_node_id}': {reason}",
+                    epoch_bump=epoch_bump,
+                )
         self.save_state()
         return invalidated
 
@@ -872,8 +1239,7 @@ class DAFG:
         for nid, node in self.nodes.items():
             if contract_id in node.consumed_contracts:
                 if node.status == NodeStatus.ACCEPTED:
-                    node.status = NodeStatus.READY
-                    node.epoch += 1
+                    # Mandatory invalidation bookkeeping is unconstrained by budget
                     node.consumed_contracts[contract_id] = new_version
                     if self.ledger:
                         for gid in node.assigned_gates:
@@ -882,7 +1248,13 @@ class DAFG:
                         if self.ledger.filepath:
                             self.ledger.save()
                     invalidated.append(nid)
-                    self._record_event(node, "INVALIDATED", f"Contract '{contract_id}' breaking update to v{new_version}")
+                    self.commit_transition(
+                        node,
+                        NodeStatus.READY,
+                        action="INVALIDATED",
+                        reason=f"Contract '{contract_id}' breaking update to v{new_version}",
+                        epoch_bump=True,
+                    )
         self.save_state()
         return invalidated
 
@@ -900,12 +1272,18 @@ class DAFG:
 
         if f_class == FailureClass.LOCAL_DEFECT:
             node.revisions += 1
-            node.status = NodeStatus.REJECTED
             self.budget.check_revision()
-            self.save_state()
+            self.commit_transition(
+                node,
+                NodeStatus.REJECTED,
+                action="REJECTED",
+                reason=f"Local defect: {directive.feedback}",
+                epoch_bump=(node.status == NodeStatus.ACCEPTED),
+            )
             return True
 
         elif f_class == FailureClass.MISSING_PREREQUISITE:
+            self.budget.check_adaptation()
             dep_id = directive.affected_dependency or f"prereq_{node.id}_{len(node.needs) + 1}"
             if dep_id not in self.nodes:
                 prereq_node = TaskNode(
@@ -916,41 +1294,56 @@ class DAFG:
                 self.add_node(prereq_node)
             if dep_id not in node.needs:
                 node.needs.append(dep_id)
-            node.status = NodeStatus.BLOCKED
-            self.save_state()
+            self.commit_transition(
+                node,
+                NodeStatus.BLOCKED,
+                action="BLOCKED",
+                reason=f"Missing prerequisite: {dep_id}",
+                epoch_bump=(node.status == NodeStatus.ACCEPTED),
+            )
             return True
 
         elif f_class == FailureClass.STALE_DEPENDENCY:
             node.revisions += 1
-            node.status = NodeStatus.REJECTED
+            self.budget.check_revision()
             if directive.affected_dependency:
-                # Targeted transitive invalidation of affected dependency and its descendants
-                self.invalidate_dependents(directive.affected_dependency, reason=directive.feedback)
+                # Targeted transitive invalidation of affected dependency and its descendants, excluding this node
+                self.invalidate_dependents(directive.affected_dependency, reason=directive.feedback, exclude={node.id})
                 if directive.required_version:
                     node.consumed_contracts[directive.affected_dependency] = directive.required_version
-            self.budget.check_revision()
-            self.save_state()
+            self.commit_transition(
+                node,
+                NodeStatus.REJECTED,
+                action="REJECTED",
+                reason=f"Stale dependency: {directive.feedback}",
+                epoch_bump=(node.status == NodeStatus.ACCEPTED),
+            )
             return True
 
         elif f_class == FailureClass.INTERFACE_MISMATCH:
             node.revisions += 1
-            node.status = NodeStatus.BLOCKED
+            self.budget.check_revision()
             cid = directive.affected_dependency
             if cid and cid in self.contracts:
                 self.invalidate_contract_consumers(cid, new_version=directive.required_version or (self.contracts[cid].version + 1))
-            self.budget.check_revision()
-            self.save_state()
+            self.commit_transition(
+                node,
+                NodeStatus.BLOCKED,
+                action="BLOCKED",
+                reason=f"Interface mismatch: {cid}",
+                epoch_bump=(node.status == NodeStatus.ACCEPTED),
+            )
             return True
 
         elif f_class == FailureClass.INSUFFICIENT_EVIDENCE:
+            self.budget.check_adaptation()
             # Demote local gate evidence and retry verification
             if self.ledger:
                 for gid in node.assigned_gates:
                     self.ledger.update_gate_evidence(gid, None, met=False)
                 if self.ledger.filepath:
                     self.ledger.save()
-            node.status = NodeStatus.READY
-            self.save_state()
+            self.commit_transition(node, NodeStatus.READY, action="READY", reason="Insufficient evidence: demoted for reverification")
             return True
 
         return False
@@ -1085,15 +1478,8 @@ class DAFG:
         # 0. Pre-Dispatch Manifest Validation Gate (Missing Prerequisite)
         manifest_ok, manifest_errors = self.check_input_manifest(node)
         if not manifest_ok:
-            node.status = NodeStatus.BLOCKED
             node.refusal_class = RefusalClass.MISSING_PREREQUISITE
             node.refusal_reason = f"Manifest incomplete; dispatch gated to prevent false premises: {manifest_errors}"
-            self._record_event(
-                node,
-                "PRE_DISPATCH_BLOCKED",
-                node.refusal_reason,
-            )
-            # Spawn missing dependency nodes if declared in manifest
             if node.manifest:
                 for req in node.manifest.required_inputs:
                     art = req.get("artifact") or req.get("id")
@@ -1106,18 +1492,17 @@ class DAFG:
                         self.add_node(prereq)
                         if art not in node.needs:
                             node.needs.append(art)
-            self.save_state()
+                        self.budget.check_adaptation()
+            self.commit_transition(node, NodeStatus.BLOCKED, action="PRE_DISPATCH_BLOCKED", reason=node.refusal_reason)
             return False
 
         # 1. Pre-Dispatch Authorization Gate (Missing Authorization)
         if node.requires_permissions:
             is_authorized = node.metadata.get("authorized", False)
             if not is_authorized:
-                node.status = NodeStatus.BLOCKED
                 node.refusal_class = RefusalClass.MISSING_AUTHORIZATION
                 node.refusal_reason = "Operation requires elevated permissions or authorization; paused for approval"
-                self._record_event(node, "PRE_DISPATCH_BLOCKED_UNAUTHORIZED", node.refusal_reason)
-                self.save_state()
+                self.commit_transition(node, NodeStatus.BLOCKED, action="PRE_DISPATCH_BLOCKED_UNAUTHORIZED", reason=node.refusal_reason)
                 return False
 
         # 2. Pre-Dispatch Contradiction Gate (Contradictory Requirements)
@@ -1136,11 +1521,9 @@ class DAFG:
             has_contradiction = True
             contradiction_reason = str(node.metadata.get("contradiction_reason", "Contradictory requirements"))
         if has_contradiction:
-            node.status = NodeStatus.BLOCKED
             node.refusal_class = RefusalClass.CONTRADICTORY_REQUIREMENTS
             node.refusal_reason = f"Contradictory requirements: {contradiction_reason}"
-            self._record_event(node, "PRE_DISPATCH_BLOCKED_CONTRADICTORY", node.refusal_reason)
-            self.save_state()
+            self.commit_transition(node, NodeStatus.BLOCKED, action="PRE_DISPATCH_BLOCKED_CONTRADICTORY", reason=node.refusal_reason)
             return False
 
         # 3. Pre-Dispatch Capability Gate (Unavailable Capability / Impossible Requirement)
@@ -1167,15 +1550,38 @@ class DAFG:
             impossible_reason = str(node.metadata.get("impossible_reason", "Task marked as impossible capability"))
 
         if is_impossible:
-            node.status = NodeStatus.BLOCKED
             node.refusal_class = RefusalClass.UNAVAILABLE_CAPABILITY
             node.refusal_reason = f"Unavailable capability: {impossible_reason}"
-            self._record_event(node, "PRE_DISPATCH_BLOCKED_IMPOSSIBLE", node.refusal_reason)
-            self.save_state()
+            self.commit_transition(node, NodeStatus.BLOCKED, action="PRE_DISPATCH_BLOCKED_IMPOSSIBLE", reason=node.refusal_reason)
             return False
 
-        node.status = NodeStatus.RUNNING
-        self.save_state()
+        # Form immutable dispatch identity
+        snapshot_id = hashlib.sha256(f"{self.run_id}:{node.id}:{node.epoch}:{self.seq_counter}".encode()).hexdigest()[:16]
+        max_c_ver = max([c.version for c in self.contracts.values()], default=1)
+        dispatch_identity = DispatchIdentity(
+            run_id=self.run_id,
+            node_id=node.id,
+            epoch=node.epoch,
+            attempt_id=node.revisions + 1,
+            context_snapshot_id=snapshot_id,
+            contract_version=max_c_ver,
+        )
+        node.active_dispatch = dispatch_identity
+
+        cmd = ProtocolCommand(
+            idempotency_key=f"disp_{node.id}_{node.epoch}_{node.revisions}_{self.next_seq()}",
+            action=Action.DISPATCH_PROVE,
+            node_id=node.id,
+            run_id=self.run_id,
+            dispatch_identity=dispatch_identity,
+            payload={"dispatch_identity": dispatch_identity.to_dict()},
+        )
+        try:
+            self.submit_command(cmd)
+        except IllegalTransitionError:
+            pass
+
+        self.commit_transition(node, NodeStatus.RUNNING, action="DISPATCHED", reason="Node dispatched for execution")
 
         # Run agent executor
         context = {
@@ -1184,6 +1590,8 @@ class DAFG:
             "budget": self.budget,
             "depth": node.depth,
             "contracts": self.contracts,
+            "dispatch_identity": dispatch_identity.to_dict(),
+            "epoch": node.epoch,
         }
 
         # Persona Compilation & Capability-Aware Routing
@@ -1219,25 +1627,22 @@ class DAFG:
                         self._record_event(node, "PERSONA_ADAPTED", f"Switched to {adapted.persona_id} ({failure_kind.value})")
 
                 if node.revisions >= node.max_revisions:
-                    node.status = NodeStatus.FAILED
+                    tgt = NodeStatus.FAILED
                 else:
-                    node.status = NodeStatus.REJECTED
-                self._record_event(node, node.status.value, f"Agent execution error: {e}")
-                self.save_state()
+                    tgt = NodeStatus.REJECTED
+                self.commit_transition(node, tgt, action=tgt.value, reason=f"Agent execution error: {e}")
                 self.budget.check_revision()
                 return False
 
             # Check explicit worker refusal / honest block
             if response.status in ("BLOCKED", "REFUSED"):
-                node.status = NodeStatus.BLOCKED
                 r_cls = response.metadata.get("refusal_class")
                 if r_cls and isinstance(r_cls, str) and r_cls in [e.value for e in RefusalClass]:
                     node.refusal_class = RefusalClass(r_cls)
                 else:
                     node.refusal_class = RefusalClass.UNAVAILABLE_CAPABILITY
                 node.refusal_reason = response.output or "Worker honestly declared refusal on task"
-                self._record_event(node, "WORKER_REFUSED", node.refusal_reason)
-                self.save_state()
+                self.commit_transition(node, NodeStatus.BLOCKED, action="WORKER_REFUSED", reason=node.refusal_reason)
                 return False
 
             # Check diagnostic revision directive
@@ -1254,16 +1659,16 @@ class DAFG:
                     profile = PersonaProfile.from_dict(node.persona)
                     adapted, switched = self.switcher.adapt(node, profile, failure_kind, feedback=response.output)
                     if switched:
+                        self.budget.check_adaptation()
                         node.persona_history.append(node.persona)
                         node.persona = adapted.to_dict()
                         self._record_event(node, "PERSONA_ADAPTED", f"Switched to {adapted.persona_id} ({failure_kind.value})")
 
                 if node.revisions >= node.max_revisions:
-                    node.status = NodeStatus.FAILED
+                    tgt = NodeStatus.FAILED
                 else:
-                    node.status = NodeStatus.REJECTED
-                self._record_event(node, node.status.value, f"Agent returned failure status '{response.status}': {response.output}")
-                self.save_state()
+                    tgt = NodeStatus.REJECTED
+                self.commit_transition(node, tgt, action=tgt.value, reason=f"Agent returned failure status '{response.status}': {response.output}")
                 self.budget.check_revision()
                 return False
 
@@ -1280,6 +1685,7 @@ class DAFG:
 
             # 1. Dynamic Planning & Dependency Expansion (`needs`)
             if response.needs:
+                self.budget.check_adaptation()
                 for need in response.needs:
                     need_id: str
                     if isinstance(need, str):
@@ -1300,13 +1706,12 @@ class DAFG:
                 # Check if any dependencies are still pending
                 unmet_deps = [d for d in node.needs if self.nodes.get(d) is None or self.nodes[d].status != NodeStatus.ACCEPTED]
                 if unmet_deps:
-                    node.status = NodeStatus.BLOCKED
-                    self._record_event(node, "BLOCKED", f"Dynamic dependencies added: {unmet_deps}")
-                    self.save_state()
+                    self.commit_transition(node, NodeStatus.BLOCKED, action="BLOCKED", reason=f"Dynamic dependencies added: {unmet_deps}")
                     return False
 
             # 2. Depth Tree Decomposition (spawn_children)
             if response.spawn_children:
+                self.budget.check_adaptation()
                 for child_def in response.spawn_children:
                     child_node: TaskNode
                     if isinstance(child_def, TaskNode):
@@ -1324,25 +1729,19 @@ class DAFG:
                     self.add_node(child_node)
 
                 # Parent waits for children
-                node.status = NodeStatus.BLOCKED
-                self._record_event(node, "BLOCKED", f"Spawned children: {node.children}")
-                self.save_state()
+                self.commit_transition(node, NodeStatus.BLOCKED, action="BLOCKED", reason=f"Spawned children: {node.children}")
                 return False
 
             # 3. Layered Objective Verification
             # Layer 1: Structural Checks
             if node.manifest and not node.manifest.checks.get("references_resolve", True):
-                node.status = NodeStatus.REJECTED
-                self._record_event(node, "REJECTED", "Structural check failed: manifest references not resolved")
-                self.save_state()
+                self.commit_transition(node, NodeStatus.REJECTED, action="REJECTED", reason="Structural check failed: manifest references not resolved")
                 return False
 
             # Layer 2: Executable Gate Checks
             if node.assigned_gates:
                 if not self.ledger or not self.engine:
-                    node.status = NodeStatus.FAILED
-                    self._record_event(node, "FAILED", "No gate engine/ledger configured to verify assigned gates")
-                    self.save_state()
+                    self.commit_transition(node, NodeStatus.FAILED, action="FAILED", reason="No gate engine/ledger configured to verify assigned gates")
                     return False
 
                 all_gates_pass = True
@@ -1378,17 +1777,13 @@ class DAFG:
                         profile = PersonaProfile.from_dict(node.persona)
                         adapted, switched = self.switcher.adapt(node, profile, failure_kind, feedback=feedback_str)
                         if switched:
+                            self.budget.check_adaptation()
                             node.persona_history.append(node.persona)
                             node.persona = adapted.to_dict()
                             self._record_event(node, "PERSONA_ADAPTED", f"Switched to {adapted.persona_id} ({failure_kind.value})")
 
-                    if node.revisions >= node.max_revisions:
-                        node.status = NodeStatus.FAILED
-                        self._record_event(node, "FAILED", f"Max revisions reached. Gate failures: {gate_failures}")
-                    else:
-                        node.status = NodeStatus.REJECTED
-                        self._record_event(node, "REJECTED", f"Gate failures: {gate_failures}")
-                    self.save_state()
+                    tgt = NodeStatus.FAILED if node.revisions >= node.max_revisions else NodeStatus.REJECTED
+                    self.commit_transition(node, tgt, action=tgt.value, reason=f"Gate failures: {gate_failures}")
                     self.budget.check_revision()
                     return False
 
@@ -1402,6 +1797,7 @@ class DAFG:
                             evidence_type=EvidenceType.INVARIANT_CHECK,
                             evidence_ref=f"contract_invariant='{inv}'",
                             artifact_version=contract.version,
+                            timestamp=datetime.now(timezone.utc).isoformat(),
                         ))
 
             # 4. Depth Tree Parent Completion Guard: require child and descendant gate reverification
@@ -1409,9 +1805,7 @@ class DAFG:
                 # Check all children are ACCEPTED
                 unaccepted_children = [cid for cid in node.children if cid not in self.nodes or self.nodes[cid].status != NodeStatus.ACCEPTED]
                 if unaccepted_children:
-                    node.status = NodeStatus.BLOCKED
-                    self._record_event(node, "BLOCKED", f"Waiting for children: {unaccepted_children}")
-                    self.save_state()
+                    self.commit_transition(node, NodeStatus.BLOCKED, action="BLOCKED", reason=f"Waiting for children: {unaccepted_children}")
                     return False
 
                 # Reverification of child and descendant gates before parent completion
@@ -1438,32 +1832,48 @@ class DAFG:
                                 if res.status != "MET":
                                     # Descendant reverification failed! Track intermediate false acceptance
                                     self.intermediate_false_acceptances += 1
-                                    desc_node.status = NodeStatus.REJECTED
-                                    node.revisions += 1
-                                    if node.revisions >= node.max_revisions:
-                                        node.status = NodeStatus.FAILED
-                                    else:
-                                        node.status = NodeStatus.REJECTED
-                                    self._record_event(
-                                        node,
-                                        node.status.value,
-                                        f"Descendant {desc_node.id} gate {gid} reverification failed: {res.error}",
+                                    self.commit_transition(
+                                        desc_node,
+                                        NodeStatus.REJECTED,
+                                        action="REJECTED",
+                                        reason=f"Reverification failed under parent {node.id}",
+                                        epoch_bump=True,
                                     )
-                                    self.save_state()
+                                    node.revisions += 1
+                                    tgt = NodeStatus.FAILED if node.revisions >= node.max_revisions else NodeStatus.REJECTED
+                                    self.commit_transition(node, tgt, action=tgt.value, reason=f"Descendant {desc_node.id} gate {gid} reverification failed: {res.error}")
                                     self.budget.check_revision()
                                     return False
 
             # All objective criteria met
-            node.status = NodeStatus.ACCEPTED
             node.result = response.to_dict()
             node.wait_metrics.time_finished = time.time()
-            self._record_event(node, "ACCEPTED", "Objective gate checks and layered verifications passed")
-            self.save_state()
+
+            # Submit protocol command ACCEPT_VERDICT
+            cmd = ProtocolCommand(
+                idempotency_key=f"accept_{node.id}_{node.epoch}_{node.revisions}_{self.next_seq()}",
+                action=Action.ACCEPT_VERDICT,
+                node_id=node.id,
+                run_id=self.run_id,
+                dispatch_identity=getattr(response, "dispatch_identity", None) or node.active_dispatch,
+                payload={"result": response.to_dict()},
+            )
+            try:
+                self.submit_command(cmd)
+            except IllegalTransitionError:
+                pass
+
+            self.commit_transition(
+                node,
+                NodeStatus.ACCEPTED,
+                action="ACCEPTED",
+                reason="Objective gate checks and layered verifications passed",
+                response=response,
+            )
             return True
         except BudgetExceededError:
             if node.status == NodeStatus.RUNNING:
-                node.status = NodeStatus.PENDING
-                self.save_state()
+                self.commit_transition(node, NodeStatus.PENDING, action="BUDGET_HALTED", reason="Budget exceeded")
             raise
 
     def is_eligible_for_bypass(self, node: TaskNode) -> bool:
@@ -1516,14 +1926,41 @@ class DAFG:
         self.budget.check_call()
         self.budget.check_deadline()
 
-        node.status = NodeStatus.RUNNING
-        self.save_state()
+        # Form immutable dispatch identity for fastpath
+        snapshot_id = hashlib.sha256(f"{self.run_id}:{node.id}:{node.epoch}:{self.seq_counter}:fastpath".encode()).hexdigest()[:16]
+        max_c_ver = max([c.version for c in self.contracts.values()], default=1)
+        dispatch_identity = DispatchIdentity(
+            run_id=self.run_id,
+            node_id=node.id,
+            epoch=node.epoch,
+            attempt_id=node.revisions + 1,
+            context_snapshot_id=snapshot_id,
+            contract_version=max_c_ver,
+        )
+        node.active_dispatch = dispatch_identity
+
+        cmd = ProtocolCommand(
+            idempotency_key=f"disp_fast_{node.id}_{node.epoch}_{self.next_seq()}",
+            action=Action.DISPATCH_FASTPATH,
+            node_id=node.id,
+            run_id=self.run_id,
+            dispatch_identity=dispatch_identity,
+            payload={"dispatch_identity": dispatch_identity.to_dict()},
+        )
+        try:
+            self.submit_command(cmd)
+        except IllegalTransitionError:
+            pass
+
+        self.commit_transition(node, NodeStatus.RUNNING, action="DISPATCH_FASTPATH", reason="Dispatched via fastpath branch")
 
         context = {
             "graph": self,
             "ledger": self.ledger,
             "budget": self.budget,
             "fastpath": True,
+            "dispatch_identity": dispatch_identity.to_dict(),
+            "epoch": node.epoch,
         }
 
         try:
@@ -1533,14 +1970,13 @@ class DAFG:
                 response = AgentResponse(output="Fastpath completed", status="COMPLETED")
         except Exception as e:
             self.bypass_telemetry.misrouted_runs += 1
-            self._record_event(node, "BYPASS_FAILED_EXCEPTION", f"Fastpath error: {e}, escalating to full protocol")
-            node.status = NodeStatus.READY
+            self.commit_transition(node, NodeStatus.READY, action="BYPASS_ESCALATED", reason=f"Fastpath error: {e}, escalating to full protocol")
             return self.execute_node(node, executor_fn=executor_fn)
 
         # Check if response requires dynamic dependencies, children, or failed
         if response.status in ("FAILED", "ERROR", "REJECTED") or response.needs or response.spawn_children:
             self.bypass_telemetry.misrouted_runs += 1
-            node.status = NodeStatus.PENDING
+            self.commit_transition(node, NodeStatus.READY, action="BYPASS_ESCALATED", reason="Fastpath requires dynamic dependencies or decomposition")
             return self.execute_node(node, executor_fn=executor_fn)
 
         # POST-EXECUTION DIFF & BOUNDARY VERIFICATION (before publishing/merging)
@@ -1548,20 +1984,19 @@ class DAFG:
         if len(modified) > self.bypass_policy.max_files:
             # File scope boundary violated! Escalate to full multi-agent protocol
             self.bypass_telemetry.misrouted_runs += 1
-            self._record_event(
+            self.commit_transition(
                 node,
-                "BYPASS_ABORTED_SCOPE_VIOLATION",
-                f"Agent modified {len(modified)} files ({modified}), exceeding bypass limit of {self.bypass_policy.max_files}. Escalating.",
+                NodeStatus.READY,
+                action="BYPASS_ESCALATED",
+                reason=f"Agent modified {len(modified)} files ({modified}), exceeding bypass limit of {self.bypass_policy.max_files}. Escalating.",
             )
-            node.status = NodeStatus.READY
             return self.execute_node(node, executor_fn=executor_fn)
 
         # Interface contract violation check
         for f in modified:
             if any(f in c.invariants for c in self.contracts.values()):
                 self.bypass_telemetry.misrouted_runs += 1
-                self._record_event(node, "BYPASS_ABORTED_CONTRACT_VIOLATION", f"Modified file {f} violates shared contract boundary. Escalating.")
-                node.status = NodeStatus.READY
+                self.commit_transition(node, NodeStatus.READY, action="BYPASS_ESCALATED", reason=f"Modified file {f} violates shared contract boundary. Escalating.")
                 return self.execute_node(node, executor_fn=executor_fn)
 
         # Mandatory Tier 1/2 gate checks still apply
@@ -1572,8 +2007,7 @@ class DAFG:
                     res = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
                     if res.status != "MET":
                         self.bypass_telemetry.misrouted_runs += 1
-                        self._record_event(node, "BYPASS_ABORTED_GATE_FAILURE", f"Gate {gid} failed in fastpath ({res.error}). Escalating.")
-                        node.status = NodeStatus.READY
+                        self.commit_transition(node, NodeStatus.READY, action="BYPASS_ESCALATED", reason=f"Gate {gid} failed in fastpath ({res.error}). Escalating.")
                         return self.execute_node(node, executor_fn=executor_fn)
 
         # Shadow Execution Audit (10% sample)
@@ -1586,11 +2020,29 @@ class DAFG:
                     if g and not self.engine.approval_store.is_approved(g):
                         self.bypass_telemetry.shadow_defects_caught += 1
 
-        node.status = NodeStatus.ACCEPTED
         node.result = response.to_dict()
         node.wait_metrics.time_finished = time.time()
-        self._record_event(node, "ACCEPTED_FASTPATH", "Adaptive protocol fastpath verified and committed")
-        self.save_state()
+
+        cmd = ProtocolCommand(
+            idempotency_key=f"accept_fast_{node.id}_{node.epoch}_{self.next_seq()}",
+            action=Action.ACCEPT_VERDICT,
+            node_id=node.id,
+            run_id=self.run_id,
+            dispatch_identity=getattr(response, "dispatch_identity", None) or node.active_dispatch,
+            payload={"result": response.to_dict()},
+        )
+        try:
+            self.submit_command(cmd)
+        except IllegalTransitionError:
+            pass
+
+        self.commit_transition(
+            node,
+            NodeStatus.ACCEPTED,
+            action="ACCEPTED_FASTPATH",
+            reason="Adaptive protocol fastpath verified and committed",
+            response=response,
+        )
         return True
 
     def step(
@@ -1626,6 +2078,7 @@ class DAFG:
         """Run DAFG until completion, failure, or budget exhaustion."""
         for _ in range(max_steps):
             if self.is_completed():
+                self.seal_run()
                 self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
                 self.save_state()
                 return "COMPLETED"
@@ -1644,6 +2097,7 @@ class DAFG:
             if not executed:
                 # No ready nodes can execute. Check if blocked or complete
                 if self.is_completed():
+                    self.seal_run()
                     self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
                     self.save_state()
                     return "COMPLETED"
@@ -1652,6 +2106,7 @@ class DAFG:
                 return "BLOCKED"
 
         if self.is_completed():
+            self.seal_run()
             self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
             self.save_state()
             return "COMPLETED"
@@ -1661,8 +2116,13 @@ class DAFG:
             return "BLOCKED"
 
     def is_completed(self) -> bool:
-        """True if all nodes in graph are ACCEPTED."""
-        return len(self.nodes) > 0 and all(n.status == NodeStatus.ACCEPTED for n in self.nodes.values())
+        """True if all nodes in graph are ACCEPTED and completion integrity holds."""
+        if len(self.nodes) == 0:
+            return False
+        if not all(n.status == NodeStatus.ACCEPTED for n in self.nodes.values()):
+            return False
+        ok, _ = self.verify_completion_integrity()
+        return ok
 
     def has_failed(self) -> bool:
         """True if any node in graph is FAILED."""
@@ -1696,16 +2156,22 @@ class DAFG:
         state = {
             "version": "1.0",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "run_id": self.run_id,
+            "run_epoch": self.run_epoch,
+            "is_sealed": self.is_sealed,
+            "sealed_at": self.sealed_at,
             "outcome_status": self.outcome_status.value if isinstance(self.outcome_status, OutcomeStatus) else self.outcome_status,
             "intermediate_false_acceptances": self.intermediate_false_acceptances,
             "budget": {
                 "max_calls": self.budget.max_calls,
                 "max_nodes": self.budget.max_nodes,
                 "max_revisions": self.budget.max_revisions,
+                "max_adaptations": self.budget.max_adaptations,
                 "deadline": self.budget.deadline,
                 "calls_consumed": self.budget.calls_consumed,
                 "nodes_created": self.budget.nodes_created,
                 "revisions_consumed": self.budget.revisions_consumed,
+                "adaptations_consumed": self.budget.adaptations_consumed,
             },
             "contracts": {cid: c.to_dict() for cid, c in self.contracts.items()},
             "bypass_policy": self.bypass_policy.to_dict(),
@@ -1713,6 +2179,9 @@ class DAFG:
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "gate_states": gate_states,
             "execution_history": self.execution_history,
+            "domain_events": self.domain_events,
+            "audit_log": self.audit_log,
+            "processed_idempotency_keys": list(self.processed_idempotency_keys),
         }
         StateStore.save(state, self.state_path)
 
@@ -1729,10 +2198,12 @@ class DAFG:
             max_calls=b_data.get("max_calls", 50),
             max_nodes=b_data.get("max_nodes", 20),
             max_revisions=b_data.get("max_revisions", 3),
+            max_adaptations=b_data.get("max_adaptations", 15),
             deadline=b_data.get("deadline"),
             calls_consumed=b_data.get("calls_consumed", 0),
             nodes_created=b_data.get("nodes_created", 0),
             revisions_consumed=b_data.get("revisions_consumed", 0),
+            adaptations_consumed=b_data.get("adaptations_consumed", 0),
         )
 
         nodes: Dict[str, TaskNode] = {}
@@ -1749,6 +2220,13 @@ class DAFG:
             engine=engine,
             state_path=state_path,
         )
+        dafg.run_id = data.get("run_id", dafg.run_id)
+        dafg.run_epoch = data.get("run_epoch", 1)
+        dafg.is_sealed = data.get("is_sealed", False)
+        dafg.sealed_at = data.get("sealed_at")
+        dafg.processed_idempotency_keys = set(data.get("processed_idempotency_keys", []))
+        dafg.domain_events = list(data.get("domain_events", []))
+        dafg.audit_log = list(data.get("audit_log", []))
         dafg.execution_history = list(data.get("execution_history", []))
         dafg.gate_states = dict(data.get("gate_states", {}))
         dafg.intermediate_false_acceptances = data.get("intermediate_false_acceptances", 0)
@@ -1794,3 +2272,42 @@ class DAFG:
 
         dafg.save_state()
         return dafg
+
+    @classmethod
+    def replay(
+        cls,
+        events: List[Union[DomainEvent, Dict[str, Any]]],
+        initial_checkpoint: Optional[Dict[str, Any]] = None,
+        ledger: Optional[GateLedger] = None,
+        engine: Optional[GateEngine] = None,
+    ) -> DAFG:
+        """Reconstruct exact canonical protocol state deterministically via ProtocolReducer.
+        
+        Purely applies domain events without live agent calls, tools, or side effects.
+        """
+        if initial_checkpoint:
+            import tempfile
+            with tempfile.NamedTemporaryFile("w", delete=False, suffix=".json") as f:
+                json.dump(initial_checkpoint, f)
+                tmp_path = f.name
+            try:
+                graph = cls.load_state(tmp_path, ledger=ledger, engine=engine)
+            finally:
+                if os.path.exists(tmp_path):
+                    os.remove(tmp_path)
+        else:
+            graph = cls(ledger=ledger, engine=engine)
+
+        for ev_raw in events:
+            ev = ev_raw if isinstance(ev_raw, DomainEvent) else DomainEvent.from_dict(ev_raw)
+            nid = ev.node_id
+            if nid and nid not in graph.nodes:
+                graph.nodes[nid] = TaskNode(
+                    id=nid,
+                    title=ev.payload.get("title", f"Node {nid}"),
+                    role=ev.payload.get("role", "coder"),
+                )
+            ProtocolReducer.apply(graph, ev)
+            graph.domain_events.append(ev.to_dict())
+
+        return graph
