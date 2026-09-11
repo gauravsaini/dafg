@@ -519,6 +519,25 @@ When `task.persona_switches >= max_persona_switches` (default: 2), adaptation fr
 - Critical path nodes and contract owners execute in Wave 0, clearing bottlenecks for downstream workers.
 - Wait telemetry isolates `dependency_wait_seconds`, `queue_wait_seconds`, and `conflict_wait_seconds`.
 
+### 9.11 Adaptive Protocol Bypass & Conservative Safety Guards (`BypassPolicy`, `BypassTelemetry`)
+- Trivial, single-file bugfixes bypass heavy multi-agent wave scheduling if and only if all 4 conservative guards pass:
+  1. `files_touched <= 1` (no wildcards)
+  2. `touches_shared_contract == False`
+  3. `requires_permissions == False`
+  4. `ambiguity_score <= 0.15`
+- **Staged Isolation Inspection**: Post-execution diff inspects actual files modified. If more than 1 file is touched or contract invariants are violated, the fast path aborts, rolls back staging, and escalates to the full multi-agent protocol.
+- **Shadow Audit Telemetry**: Audits a 10% sample of bypassed runs through full verification, measuring `bypass_rate`, `bypass_misroute_rate`, and `shadow_delta`.
+
+### 9.12 Decoupled Execution Adapters & 5-Outcome Benchmark Architecture
+- **Decoupled Agent Loops**: `IterativeCLIAdapter`, `ToolDispatchAdapter` (function-calling), and `ReActStateAdapter` (state-machine) verify true runtime transferability across decoupled agent architectures.
+- **Independent Completion Claim**: Separates `completion_claim` (`SUCCESS`, `PARTIAL`, `BLOCKED`, `FAILED`) from external evaluation to prevent mischaracterizing acknowledged failures as hallucinations.
+- **Standardized 5-Outcome Taxonomy**:
+  1. `VERIFIED_SUCCESS`: Feasible task verified by external judge.
+  2. `CORRECT_BLOCK`: Impossible task correctly refuted/blocked.
+  3. `VERIFIED_FAILURE`: False claims or objective failures.
+  4. `EVALUATION_ERROR`: Pre-flight ast-checked test fixture defect.
+  5. `EXECUTION_ERROR`: Environment or harness crash.
+
 ---
 
 ## 10. Directory Structure & File Map
@@ -543,24 +562,35 @@ dafg/
 ├── .cursor/rules/
 │   └── dafg.mdc                 # Cursor always-on project rules
 │
+├── benchmarks/
+│   ├── v02_regression/          # Frozen 40-task regression gate
+│   └── v03/                     # v0.3 Difficulty Benchmark
+│       ├── dev_set/             # Development tier (horizons, schema shifts)
+│       ├── calibration_set/     # Calibration tier (hostile/flaky tools)
+│       └── held_out_set/        # Frozen held-out tier (adversarial injections)
+│
 ├── docs/
 │   └── LLD.md                   # This Low-Level Design document
 │
 ├── src/dafg/
 │   ├── __init__.py              # Public module exports
-│   ├── cli.py                   # CLI argument parser & subcommands
+│   ├── adapters.py              # Decoupled agent execution adapters (CLI, Dispatch, ReAct)
+│   ├── cli.py                   # CLI argument parser & subcommands (dafg, gates, stop-hook, eval)
+│   ├── eval.py                  # Evaluation engine, metrics, and benchmark runner
 │   ├── gates.py                 # GateLedger, GateEngine, ApprovalStore, GateLinter
 │   ├── hook.py                  # CompletionGuard & stop hook evaluation logic
 │   ├── persona.py               # PersonaCompiler, AgentRouter, BackendRegistry, PolicyEngine
-│   ├── runtime.py               # DAFG graph engine, TaskNode, Budget, wave scheduler
+│   ├── runtime.py               # DAFG graph engine, TaskNode, Budget, wave scheduler, bypass
 │   └── schema.py                # Schema, Field validators, robust JSON recovery
 │
 └── tests/
+    ├── test_adaptive_bypass.py          # Adaptive protocol bypass & safety guard tests
     ├── test_dafg_budgets.py             # Budget caps and deadline tests
     ├── test_dafg_persistence.py         # State persistence and resume tests
     ├── test_dafg_runtime.py             # Dynamic graph scheduling and execution tests
     ├── test_dependency_correctness.py   # Pre-dispatch manifest gating & targeted repair tests
     ├── test_depth_tree_waves.py         # Depth tree and wave scheduling tests
+    ├── test_eval_and_adapters.py        # Evaluation engine & decoupled adapter tests
     ├── test_gates_execution.py          # Gate execution and reverification tests
     ├── test_gates_linter.py             # Ledger linter tests
     ├── test_gates_parser.py             # Markdown ledger parser tests

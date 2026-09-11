@@ -37,7 +37,10 @@ from dafg.hook import (
 )
 from dafg.schema import (
     AgentResponseSchema,
+    BypassPolicySchema,
+    BypassTelemetrySchema,
     CriterionEvidenceSchema,
+    EvaluationTrialSchema,
     Field,
     InputManifestSchema,
     InterfaceContractSchema,
@@ -64,7 +67,24 @@ from dafg.persona import (
     RoutingBlockedError,
 )
 
-__version__ = "0.2.0"
+from dafg.adapters import (
+    BaseRuntimeAdapter,
+    IterativeCLIAdapter,
+    ReActStateAdapter,
+    ToolDispatchAdapter,
+)
+
+from dafg.eval import (
+    BenchmarkTask,
+    CompletionClaim,
+    EvaluationHarness,
+    EvaluationMetrics,
+    EvaluationTrial,
+    StandardOutcome,
+    validate_test_fixture_syntax,
+)
+
+__version__ = "0.3.0"
 __all__ = [
     "ApprovalStore",
     "Gate",
@@ -96,7 +116,10 @@ __all__ = [
     "CompletionGuard",
     "StopDecision",
     "AgentResponseSchema",
+    "BypassPolicySchema",
+    "BypassTelemetrySchema",
     "CriterionEvidenceSchema",
+    "EvaluationTrialSchema",
     "Field",
     "InputManifestSchema",
     "InterfaceContractSchema",
@@ -118,4 +141,15 @@ __all__ = [
     "PersonaSwitcher",
     "PolicyEngine",
     "RoutingBlockedError",
+    "BaseRuntimeAdapter",
+    "IterativeCLIAdapter",
+    "ReActStateAdapter",
+    "ToolDispatchAdapter",
+    "BenchmarkTask",
+    "CompletionClaim",
+    "EvaluationHarness",
+    "EvaluationMetrics",
+    "EvaluationTrial",
+    "StandardOutcome",
+    "validate_test_fixture_syntax",
 ]

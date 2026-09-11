@@ -21,7 +21,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval"], help="Sub-commands")
         parser.print_help()
         return 0
 
@@ -66,17 +66,58 @@ def main(argv: Optional[List[str]] = None) -> int:
         print(f"DAFG run status: {result}")
         return 0 if result == "COMPLETED" else 1
 
+    elif cmd == "eval":
+        parser = argparse.ArgumentParser(prog="dafg eval", description="Run DAFG Benchmark Evaluation Suite")
+        parser.add_argument("--suite", choices=["v02-regression", "v03"], default="v03", help="Benchmark suite")
+        parser.add_argument("--tier", choices=["dev", "calibration", "held_out"], default=None, help="Benchmark tier for v03")
+        parser.add_argument("--adapter", choices=["cli", "dispatch", "react"], default="cli", help="Execution adapter")
+        parser.add_argument("--json", action="store_true", help="Output summary JSON")
+        args = parser.parse_args(sub_args)
+
+        import json
+        from dafg.eval import EvaluationHarness
+        from dafg.adapters import IterativeCLIAdapter, ToolDispatchAdapter, ReActStateAdapter
+
+        if args.adapter == "cli":
+            adapter = IterativeCLIAdapter()
+        elif args.adapter == "dispatch":
+            adapter = ToolDispatchAdapter()
+        else:
+            adapter = ReActStateAdapter()
+
+        harness = EvaluationHarness()
+        tasks = harness.load_builtin_tasks(suite=args.suite, tier=args.tier)
+        print(f"Running benchmark '{args.suite}' (tier: {args.tier or 'all'}) with adapter '{adapter.name}' across {len(tasks)} tasks...")
+
+        for task in tasks:
+            harness.run_trial(task, adapter=adapter, condition_name=args.adapter)
+
+        metrics = harness.compute_metrics()
+        if args.json:
+            print(json.dumps(metrics.to_dict(), indent=2))
+        else:
+            print("=" * 60)
+            print(f"BENCHMARK EVALUATION RESULTS ({args.suite.upper()})")
+            print("=" * 60)
+            print(f"Total Trials:                {metrics.total_trials}")
+            print(f"Correct-Outcome Rate:        {metrics.correct_outcome_rate * 100:.1f}% ({metrics.correct_outcomes}/{metrics.total_trials})")
+            print(f"Delivery Success (Feasible): {metrics.delivery_success_rate * 100:.1f}% ({metrics.verified_success_count}/{metrics.feasible_trials})")
+            print(f"Correct Blocking (Imposs.):  {metrics.correct_block_rate * 100:.1f}% ({metrics.correct_block_count}/{metrics.impossible_trials})")
+            print(f"Tokens / Correct Outcome:    {metrics.tokens_per_correct_outcome:.0f}")
+            print("=" * 60)
+        return 0
+
     elif cmd in ("-h", "--help"):
         parser = argparse.ArgumentParser(
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval"], help="Sub-commands")
         parser.print_help()
         return 0
 
     else:
-        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run'.", file=sys.stderr)
+        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval'.", file=sys.stderr)
         return 1
 
 

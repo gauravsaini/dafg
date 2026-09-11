@@ -138,6 +138,57 @@ class CriterionEvidence:
 
 
 @dataclass
+class BypassPolicy:
+    """Conservative safety guard conditions for the Adaptive Protocol Bypass."""
+    max_files: int = 1
+    allow_contracts: bool = False
+    allow_permissions: bool = False
+    max_ambiguity: float = 0.15
+    shadow_sample_rate: float = 0.10  # 10% shadow verification
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> BypassPolicy:
+        return cls(**data)
+
+
+@dataclass
+class BypassTelemetry:
+    """Telemetry tracking bypass rate, safety violations, and shadow divergence."""
+    total_runs: int = 0
+    bypassed_runs: int = 0
+    misrouted_runs: int = 0  # Bypassed runs that violated bounds or failed
+    shadow_runs: int = 0     # Runs audited via shadow execution
+    shadow_defects_caught: int = 0  # Defects caught by shadow execution that fastpath missed
+
+    @property
+    def bypass_rate(self) -> float:
+        return (self.bypassed_runs / self.total_runs) if self.total_runs > 0 else 0.0
+
+    @property
+    def bypass_misroute_rate(self) -> float:
+        return (self.misrouted_runs / self.bypassed_runs) if self.bypassed_runs > 0 else 0.0
+
+    @property
+    def shadow_delta(self) -> float:
+        return (self.shadow_defects_caught / self.shadow_runs) if self.shadow_runs > 0 else 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = asdict(self)
+        d["bypass_rate"] = self.bypass_rate
+        d["bypass_misroute_rate"] = self.bypass_misroute_rate
+        d["shadow_delta"] = self.shadow_delta
+        return d
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> BypassTelemetry:
+        clean = {k: v for k, v in data.items() if k in ["total_runs", "bypassed_runs", "misrouted_runs", "shadow_runs", "shadow_defects_caught"]}
+        return cls(**clean)
+
+
+@dataclass
 class WaitMetrics:
     """Disaggregated wait latency telemetry."""
     dependency_wait_seconds: float = 0.0
@@ -227,36 +278,136 @@ class RevisionDirective:
 
 @dataclass
 class BypassTelemetry:
-    """Telemetry tracking adaptive bypass decisions and misroutes."""
-    total_evaluations: int = 0
-    bypassed_count: int = 0
+    """Telemetry tracking adaptive bypass decisions, safety violations, and shadow divergence."""
+    total_runs: int = 0
+    bypassed_runs: int = 0
+    misrouted_runs: int = 0  # Bypassed runs that violated bounds or failed
+    shadow_runs: int = 0     # Runs audited via shadow execution
+    shadow_defects_caught: int = 0  # Defects caught by shadow execution that fastpath missed
     coordination_count: int = 0
-    misroute_count: int = 0
-    shadow_audits: int = 0
-    shadow_defects_caught: int = 0
+
+    # Aliases for compatibility
+    @property
+    def total_evaluations(self) -> int:
+        return self.total_runs
+
+    @total_evaluations.setter
+    def total_evaluations(self, val: int) -> None:
+        self.total_runs = val
+
+    @property
+    def bypassed_count(self) -> int:
+        return self.bypassed_runs
+
+    @bypassed_count.setter
+    def bypassed_count(self, val: int) -> None:
+        self.bypassed_runs = val
+
+    @property
+    def misroute_count(self) -> int:
+        return self.misrouted_runs
+
+    @misroute_count.setter
+    def misroute_count(self, val: int) -> None:
+        self.misrouted_runs = val
+
+    @property
+    def shadow_audits(self) -> int:
+        return self.shadow_runs
+
+    @shadow_audits.setter
+    def shadow_audits(self, val: int) -> None:
+        self.shadow_runs = val
 
     @property
     def bypass_rate(self) -> float:
-        return self.bypassed_count / self.total_evaluations if self.total_evaluations > 0 else 0.0
+        return (self.bypassed_runs / self.total_runs) if self.total_runs > 0 else 0.0
 
     @property
     def bypass_misroute_rate(self) -> float:
-        return self.misroute_count / self.bypassed_count if self.bypassed_count > 0 else 0.0
+        return (self.misrouted_runs / self.bypassed_runs) if self.bypassed_runs > 0 else 0.0
 
     @property
-    def shadow_delta(self) -> int:
-        return self.shadow_defects_caught
+    def shadow_delta(self) -> float:
+        return (self.shadow_defects_caught / self.shadow_runs) if self.shadow_runs > 0 else 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "total_runs": self.total_runs,
+            "bypassed_runs": self.bypassed_runs,
+            "misrouted_runs": self.misrouted_runs,
+            "shadow_runs": self.shadow_runs,
+            "shadow_defects_caught": self.shadow_defects_caught,
+            "coordination_count": self.coordination_count,
+            "total_evaluations": self.total_runs,
+            "bypassed_count": self.bypassed_runs,
+            "misroute_count": self.misrouted_runs,
+            "shadow_audits": self.shadow_runs,
+            "bypass_rate": self.bypass_rate,
+            "bypass_misroute_rate": self.bypass_misroute_rate,
+            "shadow_delta": self.shadow_delta,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> BypassTelemetry:
+        t_runs = data.get("total_runs", data.get("total_evaluations", 0))
+        b_runs = data.get("bypassed_runs", data.get("bypassed_count", 0))
+        m_runs = data.get("misrouted_runs", data.get("misroute_count", 0))
+        s_runs = data.get("shadow_runs", data.get("shadow_audits", 0))
+        s_def = data.get("shadow_defects_caught", 0)
+        c_cnt = data.get("coordination_count", 0)
+        return cls(
+            total_runs=t_runs,
+            bypassed_runs=b_runs,
+            misrouted_runs=m_runs,
+            shadow_runs=s_runs,
+            shadow_defects_caught=s_def,
+            coordination_count=c_cnt,
+        )
 
 
 @dataclass
 class BypassPolicy:
-    """Conservative policy constraining Adaptive Protocol Bypass."""
+    """Conservative safety guard conditions for the Adaptive Protocol Bypass."""
     max_files: int = 1
-    allow_shared_contracts: bool = False
-    allow_security_tags: bool = False
-    max_ambiguity_score: float = 0.15
-    shadow_audit_rate: float = 0.10
+    allow_contracts: bool = False
+    allow_permissions: bool = False
+    max_ambiguity: float = 0.15
+    shadow_sample_rate: float = 0.10  # 10% shadow verification
     telemetry: BypassTelemetry = field(default_factory=BypassTelemetry)
+
+    # Aliases for compatibility
+    @property
+    def allow_shared_contracts(self) -> bool:
+        return self.allow_contracts
+
+    @allow_shared_contracts.setter
+    def allow_shared_contracts(self, val: bool) -> None:
+        self.allow_contracts = val
+
+    @property
+    def allow_security_tags(self) -> bool:
+        return self.allow_permissions
+
+    @allow_security_tags.setter
+    def allow_security_tags(self, val: bool) -> None:
+        self.allow_permissions = val
+
+    @property
+    def max_ambiguity_score(self) -> float:
+        return self.max_ambiguity
+
+    @max_ambiguity_score.setter
+    def max_ambiguity_score(self, val: float) -> None:
+        self.max_ambiguity = val
+
+    @property
+    def shadow_audit_rate(self) -> float:
+        return self.shadow_sample_rate
+
+    @shadow_audit_rate.setter
+    def shadow_audit_rate(self, val: float) -> None:
+        self.shadow_sample_rate = val
 
     def evaluate(
         self,
@@ -267,26 +418,59 @@ class BypassPolicy:
         ambiguity_score: float = 0.0,
     ) -> Tuple[bool, str]:
         """Conservatively evaluate whether a task may bypass full coordination."""
-        self.telemetry.total_evaluations += 1
+        self.telemetry.total_runs += 1
 
         if len(files_touched) > self.max_files:
             self.telemetry.coordination_count += 1
             return False, f"Multi-file scope ({len(files_touched)} files > {self.max_files})"
 
-        if contracts_touched and not self.allow_shared_contracts:
+        if contracts_touched and not self.allow_contracts:
             self.telemetry.coordination_count += 1
             return False, "Touches shared interface contract"
 
-        if security_tags and not self.allow_security_tags:
+        if security_tags and not self.allow_permissions:
             self.telemetry.coordination_count += 1
             return False, f"Requires security/permission checks: {security_tags}"
 
-        if ambiguity_score > self.max_ambiguity_score:
+        if ambiguity_score > self.max_ambiguity:
             self.telemetry.coordination_count += 1
-            return False, f"Goal ambiguity too high ({ambiguity_score:.2f} > {self.max_ambiguity_score})"
+            return False, f"Goal ambiguity too high ({ambiguity_score:.2f} > {self.max_ambiguity})"
 
-        self.telemetry.bypassed_count += 1
+        self.telemetry.bypassed_runs += 1
         return True, "Safe single-file change within conservative bypass bounds"
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "max_files": self.max_files,
+            "allow_contracts": self.allow_contracts,
+            "allow_permissions": self.allow_permissions,
+            "max_ambiguity": self.max_ambiguity,
+            "shadow_sample_rate": self.shadow_sample_rate,
+            "allow_shared_contracts": self.allow_contracts,
+            "allow_security_tags": self.allow_permissions,
+            "max_ambiguity_score": self.max_ambiguity,
+            "shadow_audit_rate": self.shadow_sample_rate,
+            "telemetry": self.telemetry.to_dict() if hasattr(self.telemetry, "to_dict") else self.telemetry,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> BypassPolicy:
+        d = data.copy()
+        max_f = d.get("max_files", 1)
+        a_cont = d.get("allow_contracts", d.get("allow_shared_contracts", False))
+        a_perm = d.get("allow_permissions", d.get("allow_security_tags", False))
+        m_amb = d.get("max_ambiguity", d.get("max_ambiguity_score", 0.15))
+        s_rate = d.get("shadow_sample_rate", d.get("shadow_audit_rate", 0.10))
+        t_data = d.get("telemetry")
+        tel = BypassTelemetry.from_dict(t_data) if isinstance(t_data, dict) else BypassTelemetry()
+        return cls(
+            max_files=max_f,
+            allow_contracts=a_cont,
+            allow_permissions=a_perm,
+            max_ambiguity=m_amb,
+            shadow_sample_rate=s_rate,
+            telemetry=tel,
+        )
 
 
 @dataclass
@@ -318,6 +502,10 @@ class TaskNode:
     epoch: int = 1
     evidence_ledger: List[CriterionEvidence] = field(default_factory=list)
     wait_metrics: WaitMetrics = field(default_factory=WaitMetrics)
+
+    # v0.3 Bypass Safety Guards
+    ambiguity_score: float = 0.0
+    requires_permissions: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -449,6 +637,9 @@ class DAFG:
         policy: Optional[Any] = None,
         switcher: Optional[Any] = None,
         classifier: Optional[Any] = None,
+        bypass_policy: Optional[BypassPolicy] = None,
+        bypass_telemetry: Optional[BypassTelemetry] = None,
+        enable_bypass: bool = True,
     ):
         self.nodes: Dict[str, TaskNode] = {}
         self.budget: Budget = budget or Budget()
@@ -469,6 +660,11 @@ class DAFG:
         self.outcome_status: OutcomeStatus = OutcomeStatus.INCOMPLETE_RUN
         self.intermediate_false_acceptances: int = 0
         self._last_step_time: float = time.time()
+
+        # v0.3 Bypass Subsystem
+        self.bypass_policy: BypassPolicy = bypass_policy or BypassPolicy()
+        self.bypass_telemetry: BypassTelemetry = bypass_telemetry or BypassTelemetry()
+        self.enable_bypass: bool = enable_bypass
 
         if nodes:
             for node in nodes.values():
@@ -1163,6 +1359,133 @@ class DAFG:
                 self.save_state()
             raise
 
+    def is_eligible_for_bypass(self, node: TaskNode) -> bool:
+        """Evaluate the conservative safety guard conditions for protocol bypass."""
+        # Role check: only leaf coders/specialists can bypass, never planners/orchestrators
+        if str(node.role).lower() in ("planner", "orchestrator"):
+            return False
+
+        # If compiler/router is configured, full persona routing is required
+        if self.compiler or self.router:
+            return False
+
+        # 1. File Scope Check: exactly 1 file owned, no wildcards
+        if len(node.owns) != 1:
+            return False
+        for p in node.owns:
+            if "*" in p or "?" in p or not p.strip():
+                return False
+
+        # 2. Interface Check: does not own or consume shared contracts
+        if not self.bypass_policy.allow_contracts:
+            if any(c.owner == node.id or node.id in c.consumers for c in self.contracts.values()):
+                return False
+            if len(node.consumed_contracts) > 0:
+                return False
+
+        # 3. Security Check: requires no extra tool permissions
+        if not self.bypass_policy.allow_permissions and node.requires_permissions:
+            return False
+
+        # 4. Ambiguity Guard: ambiguity score within conservative threshold
+        if node.ambiguity_score > self.bypass_policy.max_ambiguity:
+            return False
+
+        # 5. Dependency Check: standalone task with no dependencies
+        if len(node.needs) > 0 or len(node.children) > 0:
+            return False
+
+        return True
+
+    def execute_node_fastpath(
+        self,
+        node: TaskNode,
+        executor_fn: Optional[Callable[[TaskNode, Dict[str, Any]], AgentResponse]] = None,
+    ) -> bool:
+        """Execute a simple task on the fast path with isolated staging & boundary inspection."""
+        self.bypass_telemetry.total_runs += 1
+        self.bypass_telemetry.bypassed_runs += 1
+
+        self.budget.check_call()
+        self.budget.check_deadline()
+
+        node.status = NodeStatus.RUNNING
+        self.save_state()
+
+        context = {
+            "graph": self,
+            "ledger": self.ledger,
+            "budget": self.budget,
+            "fastpath": True,
+        }
+
+        try:
+            if executor_fn:
+                response = executor_fn(node, context)
+            else:
+                response = AgentResponse(output="Fastpath completed", status="COMPLETED")
+        except Exception as e:
+            self.bypass_telemetry.misrouted_runs += 1
+            self._record_event(node, "BYPASS_FAILED_EXCEPTION", f"Fastpath error: {e}, escalating to full protocol")
+            node.status = NodeStatus.READY
+            return self.execute_node(node, executor_fn=executor_fn)
+
+        # Check if response requires dynamic dependencies, children, or failed
+        if response.status in ("FAILED", "ERROR", "REJECTED") or response.needs or response.spawn_children:
+            self.bypass_telemetry.misrouted_runs += 1
+            node.status = NodeStatus.PENDING
+            return self.execute_node(node, executor_fn=executor_fn)
+
+        # POST-EXECUTION DIFF & BOUNDARY VERIFICATION (before publishing/merging)
+        modified = response.files_modified or node.owns
+        if len(modified) > self.bypass_policy.max_files:
+            # File scope boundary violated! Escalate to full multi-agent protocol
+            self.bypass_telemetry.misrouted_runs += 1
+            self._record_event(
+                node,
+                "BYPASS_ABORTED_SCOPE_VIOLATION",
+                f"Agent modified {len(modified)} files ({modified}), exceeding bypass limit of {self.bypass_policy.max_files}. Escalating.",
+            )
+            node.status = NodeStatus.READY
+            return self.execute_node(node, executor_fn=executor_fn)
+
+        # Interface contract violation check
+        for f in modified:
+            if any(f in c.invariants for c in self.contracts.values()):
+                self.bypass_telemetry.misrouted_runs += 1
+                self._record_event(node, "BYPASS_ABORTED_CONTRACT_VIOLATION", f"Modified file {f} violates shared contract boundary. Escalating.")
+                node.status = NodeStatus.READY
+                return self.execute_node(node, executor_fn=executor_fn)
+
+        # Mandatory Tier 1/2 gate checks still apply
+        if node.assigned_gates and self.ledger and self.engine:
+            for gid in node.assigned_gates:
+                gate = self.ledger.get_gate(gid)
+                if gate:
+                    res = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
+                    if res.status != "MET":
+                        self.bypass_telemetry.misrouted_runs += 1
+                        self._record_event(node, "BYPASS_ABORTED_GATE_FAILURE", f"Gate {gid} failed in fastpath ({res.error}). Escalating.")
+                        node.status = NodeStatus.READY
+                        return self.execute_node(node, executor_fn=executor_fn)
+
+        # Shadow Execution Audit (10% sample)
+        if self.bypass_telemetry.bypassed_runs % 10 == 0:
+            self.bypass_telemetry.shadow_runs += 1
+            # Run shadow audit: check if full verification would raise issues
+            if self.ledger and node.assigned_gates:
+                for gid in node.assigned_gates:
+                    g = self.ledger.get_gate(gid)
+                    if g and not self.engine.approval_store.is_approved(g):
+                        self.bypass_telemetry.shadow_defects_caught += 1
+
+        node.status = NodeStatus.ACCEPTED
+        node.result = response.to_dict()
+        node.wait_metrics.time_finished = time.time()
+        self._record_event(node, "ACCEPTED_FASTPATH", "Adaptive protocol fastpath verified and committed")
+        self.save_state()
+        return True
+
     def step(
         self,
         executor_fn: Optional[Callable[[TaskNode, Dict[str, Any]], AgentResponse]] = None,
@@ -1179,7 +1502,10 @@ class DAFG:
 
         executed: List[TaskNode] = []
         for node in current_wave:
-            self.execute_node(node, executor_fn=executor_fn)
+            if self.enable_bypass and self.is_eligible_for_bypass(node):
+                self.execute_node_fastpath(node, executor_fn=executor_fn)
+            else:
+                self.execute_node(node, executor_fn=executor_fn)
             executed.append(node)
 
         self._last_step_time = now
@@ -1275,6 +1601,8 @@ class DAFG:
                 "revisions_consumed": self.budget.revisions_consumed,
             },
             "contracts": {cid: c.to_dict() for cid, c in self.contracts.items()},
+            "bypass_policy": self.bypass_policy.to_dict(),
+            "bypass_telemetry": self.bypass_telemetry.to_dict(),
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "gate_states": gate_states,
             "execution_history": self.execution_history,
@@ -1323,6 +1651,12 @@ class DAFG:
         # Restore contracts
         for cid, cdata in data.get("contracts", {}).items():
             dafg.contracts[cid] = InterfaceContract.from_dict(cdata)
+
+        # Restore bypass state
+        if "bypass_policy" in data:
+            dafg.bypass_policy = BypassPolicy.from_dict(data["bypass_policy"])
+        if "bypass_telemetry" in data:
+            dafg.bypass_telemetry = BypassTelemetry.from_dict(data["bypass_telemetry"])
 
         # Restore gate states into ledger if provided
         if ledger and dafg.gate_states:

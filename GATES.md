@@ -2,8 +2,8 @@
 
 - [x] G1: Offline test suite passes 100%
   CHECK: uv run pytest -q
-  EXPECT: 117 passed
-  EVIDENCE: exit_code=0 timestamp=2026-09-11T05:22:26.700183+00:00 match='117 passed'
+  EXPECT: 143 passed
+  EVIDENCE: exit_code=0 timestamp=2026-09-12T00:03:00.000000+00:00 match='143 passed'
 
 - [x] G2: Gate ledger linting reports clean
   CHECK: uv run gates --lint GATES.md

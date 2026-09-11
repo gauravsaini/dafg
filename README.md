@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Package Manager: uv](https://img.shields.io/badge/package%20manager-uv-blueviolet)](https://github.com/astral-sh/uv)
-[![Tests](https://img.shields.io/badge/tests-128%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-143%20passed-brightgreen.svg)]()
 [![Zero Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime%20deps-success.svg)]()
 
 **DAFG** is a Python-native agent coordination framework that enforces **grounded completion discipline**. It combines a dynamic task graph runtime with runnable acceptance gate ledgers (`GATES.md`), cryptographic approval security, evidence verification, and agent stop hook enforcement.
@@ -22,6 +22,7 @@
 - [CLI Reference](#cli-reference)
   - [`gates` (Ledger Runner & Linter)](#gates-ledger-runner--linter)
   - [`dafg run` (Task Graph Runtime)](#dafg-run-task-graph-runtime)
+  - [`dafg eval` (Benchmark Suite Runner)](#dafg-eval-benchmark-suite-runner)
   - [`stop-hook` (Agent Completion Guard)](#stop-hook-agent-completion-guard)
 - [Python API Usage](#python-api-usage)
   - [1. Programmatic Gate Execution](#1-programmatic-gate-execution)
@@ -270,6 +271,26 @@ uv run dafg run --gates GATES.md --state state.json
 #   --auto-approve            Auto-approve commands (useful in isolated CI/testing)
 ```
 
+### `dafg eval` (Benchmark Suite Runner)
+
+```bash
+# Run the frozen v0.2 automated regression suite (40 tasks)
+uv run dafg eval --suite v02-regression
+
+# Run the v0.3 Difficulty Benchmark across specific tiers
+uv run dafg eval --suite v03 --tier dev
+uv run dafg eval --suite v03 --tier calibration
+uv run dafg eval --suite v03 --tier held_out
+
+# Test across decoupled agent execution adapters
+uv run dafg eval --suite v03 --tier dev --adapter cli       # Iterative CLI agent
+uv run dafg eval --suite v03 --tier dev --adapter dispatch  # Function/tool-dispatch engine
+uv run dafg eval --suite v03 --tier dev --adapter react     # ReAct state machine loop
+
+# Output structured metrics in JSON format
+uv run dafg eval --suite v03 --tier held_out --json
+```
+
 ### `stop-hook` (Agent Completion Guard)
 
 ```bash
@@ -457,7 +478,7 @@ Run the comprehensive offline test suite with `pytest`:
 uv run pytest -v
 ```
 
-- **128/128 tests passing in ~1s**
+- **137/137 tests passing in ~1s**
 - 100% offline (no external APIs or network calls required)
 - Covers:
   - Markdown gate parsing, formatting preservation, and error recovery
@@ -469,6 +490,9 @@ uv run pytest -v
   - Failure-directed repair and targeted transitive invalidation with version fencing
   - Versioned interface contracts and backward compatibility checking
   - Layered verification (structural, executable, invariant, and semantic)
+  - Adaptive protocol bypass with conservative safety guards and staged rollback
+  - Standardized 5-outcome evaluation taxonomy with separate completion claims
+  - Decoupled execution adapters (CLI, Tool-Dispatch, ReAct) and multi-tier benchmark suite
 
 ---
 
@@ -493,21 +517,32 @@ dafg/
 ├── .cursor/rules/
 │   └── dafg.mdc                 # Cursor always-on project rules
 │
+├── benchmarks/
+│   ├── v02_regression/          # Frozen 40-task regression gate
+│   └── v03/                     # v0.3 Difficulty Benchmark
+│       ├── dev_set/             # Development tier (horizons, schema shifts)
+│       ├── calibration_set/     # Calibration tier (hostile/flaky tools)
+│       └── held_out_set/        # Frozen held-out tier (adversarial injections)
+│
 ├── src/dafg/
 │   ├── __init__.py              # Public API exports
-│   ├── cli.py                   # Unified CLI dispatcher (dafg, gates, stop-hook)
+│   ├── adapters.py              # Decoupled agent execution adapters (CLI, Dispatch, ReAct)
+│   ├── cli.py                   # Unified CLI dispatcher (dafg, gates, stop-hook, eval)
+│   ├── eval.py                  # Evaluation engine, metrics, and benchmark runner
 │   ├── gates.py                 # GateLedger, ApprovalStore, GateEngine, GateLinter
 │   ├── hook.py                  # CompletionGuard & stop hook evaluation logic
 │   ├── persona.py               # PersonaCompiler, AgentRouter, PolicyEngine
-│   ├── runtime.py               # DAFG task graph, TaskNode, Budget, rolling waves
+│   ├── runtime.py               # DAFG task graph, TaskNode, Budget, rolling waves, bypass
 │   └── schema.py                # Typed Schema, Field validators, robust JSON repair
 │
 └── tests/
+    ├── test_adaptive_bypass.py          # Adaptive protocol bypass & safety guard tests
     ├── test_dafg_budgets.py             # Budget caps and deadline tests
     ├── test_dafg_persistence.py         # State persistence and resume tests
     ├── test_dafg_runtime.py             # Dynamic graph scheduling and execution tests
     ├── test_dependency_correctness.py   # Pre-dispatch manifest gating & targeted repair tests
     ├── test_depth_tree_waves.py         # Depth tree and wave scheduling tests
+    ├── test_eval_and_adapters.py        # Evaluation engine & decoupled adapter tests
     ├── test_gates_execution.py          # Gate execution and reverification tests
     ├── test_gates_linter.py             # Ledger linter tests
     ├── test_gates_parser.py             # Markdown ledger parser tests

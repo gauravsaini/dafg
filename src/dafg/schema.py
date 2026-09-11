@@ -608,6 +608,47 @@ class AgentResponseSchema(Schema):
     criterion_evidence = Field(list, default_factory=list, description="Structured criterion evidence records")
 
 
+class BypassPolicySchema(Schema):
+    """Schema definition for BypassPolicy."""
+    max_files = Field(int, default=1, min_value=1)
+    allow_contracts = Field(bool, default=False)
+    allow_permissions = Field(bool, default=False)
+    max_ambiguity = Field(float, default=0.15)
+    shadow_sample_rate = Field(float, default=0.10)
+
+
+class BypassTelemetrySchema(Schema):
+    """Schema definition for BypassTelemetry."""
+    total_runs = Field(int, default=0)
+    bypassed_runs = Field(int, default=0)
+    misrouted_runs = Field(int, default=0)
+    shadow_runs = Field(int, default=0)
+    shadow_defects_caught = Field(int, default=0)
+    bypass_rate = Field(float, default=0.0)
+    bypass_misroute_rate = Field(float, default=0.0)
+    shadow_delta = Field(float, default=0.0)
+
+
+class EvaluationTrialSchema(Schema):
+    """Schema definition for EvaluationTrial."""
+    trial_id = Field(str, required=True)
+    task_id = Field(str, required=True)
+    condition = Field(str, default="cli")
+    is_feasible = Field(bool, default=True)
+    completion_claim = Field(str, default="SUCCESS", choices=["SUCCESS", "PARTIAL", "BLOCKED", "FAILED"])
+    standard_outcome = Field(
+        str,
+        default="VERIFIED_SUCCESS",
+        choices=["VERIFIED_SUCCESS", "CORRECT_BLOCK", "VERIFIED_FAILURE", "EVALUATION_ERROR", "EXECUTION_ERROR"],
+    )
+    tokens_consumed = Field(int, default=0)
+    duration_seconds = Field(float, default=0.0)
+    error_reason = Field(Optional[str], default=None)
+    bypass_used = Field(bool, default=False)
+    shadow_divergence = Field(bool, default=False)
+    timestamp = Field(str, default="")
+
+
 class ResponseValidator:
     """Validates raw agent outputs or dictionaries against schemas."""
 

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Boeing 747-400 Interactive 3D Simulation</title>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #050811;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #ui-overlay {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            z-index: 10;
+            color: #ffffff;
+            pointer-events: auto;
+        }
+    </style>
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+</head>
+<body>
+    <div id="canvas-container"></div>
+    <div id="ui-overlay">
+        <h2>Boeing 747-400 Simulation</h2>
+        <div class="controls">
+            <button class="preset-btn" data-preset="hero">Hero</button>
+            <button class="preset-btn" data-preset="cockpit">Cockpit</button>
+            <button class="preset-btn" data-preset="side">Side</button>
+            <button class="preset-btn" data-preset="top">Top</button>
+            <button class="preset-btn" data-preset="front">Front</button>
+            <button class="preset-btn" data-preset="gear">Gear</button>
+            <button class="preset-btn" data-preset="engines">Engines</button>
+            <button class="preset-btn" data-preset="winglet">Winglet</button>
+            <button class="preset-btn" data-preset="tail">Tail</button>
+            <button class="preset-btn" data-preset="cinematic_runway">Runway</button>
+        </div>
+        <div class="lighting">
+            <button class="lighting-btn" data-mode="day">Day</button>
+            <button class="lighting-btn" data-mode="sunset">Sunset</button>
+            <button class="lighting-btn" data-mode="night">Night</button>
+        </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+</body>
+</html>
