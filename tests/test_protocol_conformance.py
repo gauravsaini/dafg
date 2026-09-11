@@ -290,3 +290,48 @@ def test_protocol_audit_runner():
     assert report["passed_checks"] == 7
     for name, passed in report["checks"].items():
         assert passed is True, f"Check {name} failed"
+
+
+def test_dynamic_subagent_spawning_and_protocol_invariants():
+    """Explicitly verifies dynamic subagent creation in Depth Tree with protocol state invariants."""
+    from dafg.runtime import AgentResponse, Role
+
+    graph = DAFG()
+    parent = TaskNode("parent_task", "Orchestrator Planning", role=Role.PLANNER)
+    graph.add_node(parent)
+
+    def planner_with_subagents(n: TaskNode, ctx: dict) -> AgentResponse:
+        return AgentResponse(
+            output="Spawning 2 specialized subagents",
+            spawn_children=[
+                TaskNode("subagent_coder", "Implement Logic", role=Role.CODER, owns=["src/impl.py"]),
+                TaskNode("subagent_reviewer", "Review Logic", role=Role.REVIEWER, owns=["tests/test_impl.py"]),
+            ],
+        )
+
+    # Execute parent step -> dynamically creates both subagents
+    graph.step(executor_fn=planner_with_subagents)
+
+    # 1. Assert subagents are explicitly created and registered in graph
+    assert "subagent_coder" in graph.nodes
+    assert "subagent_reviewer" in graph.nodes
+
+    # 2. Verify parent-child relationship & Depth Tree properties
+    coder = graph.nodes["subagent_coder"]
+    reviewer = graph.nodes["subagent_reviewer"]
+
+    assert coder.parent_id == "parent_task"
+    assert reviewer.parent_id == "parent_task"
+    assert coder.depth == 1
+    assert reviewer.depth == 1
+    assert graph.nodes["parent_task"].children == ["subagent_coder", "subagent_reviewer"]
+
+    # 3. Verify protocol and execution states
+    assert coder.protocol_state == ProtocolState.IDLE
+    assert coder.execution_status == ExecutionStatus.READY
+    assert reviewer.protocol_state == ProtocolState.IDLE
+    assert reviewer.execution_status == ExecutionStatus.READY
+
+    # 4. Parent is blocked waiting for subagents to complete
+    assert graph.nodes["parent_task"].status == NodeStatus.BLOCKED
+    assert graph.nodes["parent_task"].execution_status == ExecutionStatus.BLOCKED
