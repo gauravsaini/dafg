@@ -1,0 +1,33 @@
+# DAFG Protocol Specification v0.2
+protocol_version: "0.2.0"
+release_name: "DAFG Precision & Layered Verification Release"
+
+core_features:
+  1_pre_dispatch_manifest_gating:
+    component: "InputManifest"
+    description: "Blocks worker execution if declared mandatory prerequisites or schema versions are missing/stale."
+    target_bottleneck: "Eliminates Context Assembly defects & prevents worker execution on incomplete context."
+
+  2_versioned_interface_contracts:
+    component: "InterfaceContract"
+    description: "Enforces explicit cross-module type schemas, parameter definitions, and backward compatibility."
+    target_bottleneck: "Eliminates Integration Mismatches & cross-module interface drift."
+
+  3_failure_directed_repair:
+    component: "RevisionDirective & TargetedTransitiveInvalidation"
+    description: "Bypasses single-hunk blind retries (Attempts 1 & 2) and triggers targeted upstream DAG invalidation immediately on structural mismatch."
+    target_bottleneck: "Eliminates wasted revision tokens and lifts repair yield."
+
+  4_layered_verification:
+    component: "LayeredVerification & CriterionEvidence"
+    description: "Executes multi-tier verification (syntax, contract compliance, integration assertions) with typed evidence."
+    target_bottleneck: "Eliminates verifier false accepts & closes the integration gap."
+
+  5_wave_scheduler_with_wait_telemetry:
+    component: "WaveScheduler & WaitMetrics"
+    description: "Priority-scored disjoint wave scheduling tracking queue vs service time."
+    target_bottleneck: "Reduces scheduler contention and serialization delay."
+
+  6_disambiguated_outcome_classification:
+    component: "OutcomeStatus"
+    description: "Explicitly separates VERIFIED_SUCCESS, HONEST_REFUSAL, FALSE_SUCCESS, and LOCAL_FAILURE."

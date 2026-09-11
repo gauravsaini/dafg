@@ -14,3 +14,7 @@ build/
 .claude/settings.local.json
 state*.json
 !state_schema.json
+node_modules/
+screenshots/
+dafg-eval/results/raw_trials.jsonl
+dafg-eval/results/traces.jsonl

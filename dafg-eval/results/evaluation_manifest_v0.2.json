@@ -1,0 +1,33 @@
+{
+  "framework_version": "0.2.0-frozen",
+  "commit": "2aae6b0",
+  "evaluation_scope": "Synthetic 40-task benchmark suite",
+  "harness_architecture": "One primary execution architecture (Harness A CLI Agent) with a secondary cost-modeling adapter (Harness B). Cross-runtime transfer untested.",
+  "trial_accounting": {
+    "total_trials_executed": 984,
+    "tasks_count": 40,
+    "repetitions_per_task": 3,
+    "conditions_evaluated": [
+      "A0",
+      "A1",
+      "A2",
+      "B0",
+      "B1",
+      "B2"
+    ],
+    "ablation_trials": 264
+  },
+  "evaluator_version": "v1.2.0-repaired-rubric",
+  "outcome_taxonomy": [
+    "VERIFIED_SUCCESS",
+    "VERIFIED_FAILURE",
+    "CORRECT_BLOCK",
+    "EVALUATION_ERROR",
+    "EXECUTION_ERROR"
+  ],
+  "bootstrap_parameters": {
+    "iterations": 10000,
+    "clustering": "task_id",
+    "confidence_level": 0.95
+  }
+}

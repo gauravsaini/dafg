@@ -226,6 +226,70 @@ class RevisionDirective:
 
 
 @dataclass
+class BypassTelemetry:
+    """Telemetry tracking adaptive bypass decisions and misroutes."""
+    total_evaluations: int = 0
+    bypassed_count: int = 0
+    coordination_count: int = 0
+    misroute_count: int = 0
+    shadow_audits: int = 0
+    shadow_defects_caught: int = 0
+
+    @property
+    def bypass_rate(self) -> float:
+        return self.bypassed_count / self.total_evaluations if self.total_evaluations > 0 else 0.0
+
+    @property
+    def bypass_misroute_rate(self) -> float:
+        return self.misroute_count / self.bypassed_count if self.bypassed_count > 0 else 0.0
+
+    @property
+    def shadow_delta(self) -> int:
+        return self.shadow_defects_caught
+
+
+@dataclass
+class BypassPolicy:
+    """Conservative policy constraining Adaptive Protocol Bypass."""
+    max_files: int = 1
+    allow_shared_contracts: bool = False
+    allow_security_tags: bool = False
+    max_ambiguity_score: float = 0.15
+    shadow_audit_rate: float = 0.10
+    telemetry: BypassTelemetry = field(default_factory=BypassTelemetry)
+
+    def evaluate(
+        self,
+        task_title: str,
+        files_touched: List[str],
+        contracts_touched: Optional[List[str]] = None,
+        security_tags: Optional[List[str]] = None,
+        ambiguity_score: float = 0.0,
+    ) -> Tuple[bool, str]:
+        """Conservatively evaluate whether a task may bypass full coordination."""
+        self.telemetry.total_evaluations += 1
+
+        if len(files_touched) > self.max_files:
+            self.telemetry.coordination_count += 1
+            return False, f"Multi-file scope ({len(files_touched)} files > {self.max_files})"
+
+        if contracts_touched and not self.allow_shared_contracts:
+            self.telemetry.coordination_count += 1
+            return False, "Touches shared interface contract"
+
+        if security_tags and not self.allow_security_tags:
+            self.telemetry.coordination_count += 1
+            return False, f"Requires security/permission checks: {security_tags}"
+
+        if ambiguity_score > self.max_ambiguity_score:
+            self.telemetry.coordination_count += 1
+            return False, f"Goal ambiguity too high ({ambiguity_score:.2f} > {self.max_ambiguity_score})"
+
+        self.telemetry.bypassed_count += 1
+        return True, "Safe single-file change within conservative bypass bounds"
+
+
+@dataclass
 class TaskNode:
     id: str
     title: str

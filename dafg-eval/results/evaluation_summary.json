@@ -1,0 +1,388 @@
+{
+  "conditions": {
+    "A0": {
+      "total_trials": 120,
+      "verified_count": 60,
+      "verified_rate": 0.5,
+      "false_success_count": 60,
+      "false_success_rate": 0.5,
+      "honest_blocks": 0,
+      "total_tokens": 525600,
+      "cost_per_verified": 8760.0,
+      "avg_latency_sec": 0.048242976071681674
+    },
+    "A1": {
+      "total_trials": 120,
+      "verified_count": 99,
+      "verified_rate": 0.825,
+      "false_success_count": 21,
+      "false_success_rate": 0.175,
+      "honest_blocks": 12,
+      "total_tokens": 954000,
+      "cost_per_verified": 9636.363636363636,
+      "avg_latency_sec": 0.07827138440673782
+    },
+    "B0": {
+      "total_trials": 120,
+      "verified_count": 60,
+      "verified_rate": 0.5,
+      "false_success_count": 60,
+      "false_success_rate": 0.5,
+      "honest_blocks": 0,
+      "total_tokens": 604386,
+      "cost_per_verified": 10073.1,
+      "avg_latency_sec": 0.04814604588949199
+    },
+    "B1": {
+      "total_trials": 120,
+      "verified_count": 99,
+      "verified_rate": 0.825,
+      "false_success_count": 21,
+      "false_success_rate": 0.175,
+      "honest_blocks": 12,
+      "total_tokens": 1097076,
+      "cost_per_verified": 11081.575757575758,
+      "avg_latency_sec": 0.07822455210892561
+    }
+  },
+  "deltas": {
+    "delta_a": {
+      "mean": 0.32499999999999996,
+      "ci_95": [
+        0.17500000000000004,
+        0.475
+      ]
+    },
+    "delta_b": {
+      "mean": 0.32499999999999996,
+      "ci_95": [
+        0.17500000000000004,
+        0.475
+      ]
+    }
+  },
+  "category_breakdown": {
+    "small_bug_fix": {
+      "A0": {
+        "total_trials": 24,
+        "verified_count": 24,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 52800,
+        "cost_per_verified": 2200.0,
+        "avg_latency_sec": 0.021099460012919735
+      },
+      "A1": {
+        "total_trials": 24,
+        "verified_count": 24,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 120000,
+        "cost_per_verified": 5000.0,
+        "avg_latency_sec": 0.08124627074964035
+      },
+      "B0": {
+        "total_trials": 24,
+        "verified_count": 24,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 60720,
+        "cost_per_verified": 2530.0,
+        "avg_latency_sec": 0.021071302115160506
+      },
+      "B1": {
+        "total_trials": 24,
+        "verified_count": 24,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 138000,
+        "cost_per_verified": 5750.0,
+        "avg_latency_sec": 0.08126620662612065
+      }
+    },
+    "multi_file_feature": {
+      "A0": {
+        "total_trials": 24,
+        "verified_count": 18,
+        "verified_rate": 0.75,
+        "false_success_count": 6,
+        "false_success_rate": 0.25,
+        "honest_blocks": 0,
+        "total_tokens": 141600,
+        "cost_per_verified": 7866.666666666667,
+        "avg_latency_sec": 0.06140428983295957
+      },
+      "A1": {
+        "total_trials": 24,
+        "verified_count": 21,
+        "verified_rate": 0.875,
+        "false_success_count": 3,
+        "false_success_rate": 0.125,
+        "honest_blocks": 0,
+        "total_tokens": 247200,
+        "cost_per_verified": 11771.42857142857,
+        "avg_latency_sec": 0.08115681262036863
+      },
+      "B0": {
+        "total_trials": 24,
+        "verified_count": 18,
+        "verified_rate": 0.75,
+        "false_success_count": 6,
+        "false_success_rate": 0.25,
+        "honest_blocks": 0,
+        "total_tokens": 162816,
+        "cost_per_verified": 9045.333333333334,
+        "avg_latency_sec": 0.061260253448078096
+      },
+      "B1": {
+        "total_trials": 24,
+        "verified_count": 21,
+        "verified_rate": 0.875,
+        "false_success_count": 3,
+        "false_success_rate": 0.125,
+        "honest_blocks": 0,
+        "total_tokens": 284256,
+        "cost_per_verified": 13536.0,
+        "avg_latency_sec": 0.08120324291667202
+      }
+    },
+    "hidden_dependency": {
+      "A0": {
+        "total_trials": 24,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 24,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 110400,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.041203390843293164
+      },
+      "A1": {
+        "total_trials": 24,
+        "verified_count": 24,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 230400,
+        "cost_per_verified": 9600.0,
+        "avg_latency_sec": 0.0813349705034246
+      },
+      "B0": {
+        "total_trials": 24,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 24,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 126960,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.04120213542046258
+      },
+      "B1": {
+        "total_trials": 24,
+        "verified_count": 24,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 264960,
+        "cost_per_verified": 11040.0,
+        "avg_latency_sec": 0.08125192374912633
+      }
+    },
+    "interface_conflict": {
+      "A0": {
+        "total_trials": 18,
+        "verified_count": 18,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 90000,
+        "cost_per_verified": 5000.0,
+        "avg_latency_sec": 0.051498402889895566
+      },
+      "A1": {
+        "total_trials": 18,
+        "verified_count": 18,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 162000,
+        "cost_per_verified": 9000.0,
+        "avg_latency_sec": 0.08144366216341344
+      },
+      "B0": {
+        "total_trials": 18,
+        "verified_count": 18,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 103500,
+        "cost_per_verified": 5750.0,
+        "avg_latency_sec": 0.05116159284241601
+      },
+      "B1": {
+        "total_trials": 18,
+        "verified_count": 18,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 0,
+        "total_tokens": 186300,
+        "cost_per_verified": 10350.0,
+        "avg_latency_sec": 0.08124927794496115
+      }
+    },
+    "fault_invalidation": {
+      "A0": {
+        "total_trials": 18,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 18,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 97200,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.05111847917174196
+      },
+      "A1": {
+        "total_trials": 18,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 18,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 180000,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.08125242366481365
+      },
+      "B0": {
+        "total_trials": 18,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 18,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 111762,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.05106538660927779
+      },
+      "B1": {
+        "total_trials": 18,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 18,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 207000,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.08116619205490376
+      }
+    },
+    "impossible_task": {
+      "A0": {
+        "total_trials": 12,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 12,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 33600,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.0810901562460155
+      },
+      "A1": {
+        "total_trials": 12,
+        "verified_count": 12,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 12,
+        "total_tokens": 14400,
+        "cost_per_verified": 1200.0,
+        "avg_latency_sec": 0.051193607578170486
+      },
+      "B0": {
+        "total_trials": 12,
+        "verified_count": 0,
+        "verified_rate": 0.0,
+        "false_success_count": 12,
+        "false_success_rate": 1.0,
+        "honest_blocks": 0,
+        "total_tokens": 38628,
+        "cost_per_verified": Infinity,
+        "avg_latency_sec": 0.08105260774997684
+      },
+      "B1": {
+        "total_trials": 12,
+        "verified_count": 12,
+        "verified_rate": 1.0,
+        "false_success_count": 0,
+        "false_success_rate": 0.0,
+        "honest_blocks": 12,
+        "total_tokens": 16560,
+        "cost_per_verified": 1380.0,
+        "avg_latency_sec": 0.05117956950562075
+      }
+    }
+  },
+  "ablations": {
+    "baseline_prompted": {
+      "total_trials": 66,
+      "verified_count": 45,
+      "verified_rate": 0.6818181818181818,
+      "false_success_count": 21,
+      "false_success_rate": 0.3181818181818182,
+      "honest_blocks": 0,
+      "total_tokens": 421800,
+      "cost_per_verified": 9373.333333333334,
+      "avg_latency_sec": 0.051122311227531594
+    },
+    "dafg_static_personas": {
+      "total_trials": 66,
+      "verified_count": 45,
+      "verified_rate": 0.6818181818181818,
+      "false_success_count": 21,
+      "false_success_rate": 0.3181818181818182,
+      "honest_blocks": 0,
+      "total_tokens": 618000,
+      "cost_per_verified": 13733.333333333334,
+      "avg_latency_sec": 0.08125590914719258
+    },
+    "dafg_fixed_graph": {
+      "total_trials": 66,
+      "verified_count": 21,
+      "verified_rate": 0.3181818181818182,
+      "false_success_count": 45,
+      "false_success_rate": 0.6818181818181818,
+      "honest_blocks": 0,
+      "total_tokens": 604800,
+      "cost_per_verified": 28800.0,
+      "avg_latency_sec": 0.08127727590776472
+    },
+    "dafg_no_invalidation": {
+      "total_trials": 66,
+      "verified_count": 45,
+      "verified_rate": 0.6818181818181818,
+      "false_success_count": 21,
+      "false_success_rate": 0.3181818181818182,
+      "honest_blocks": 0,
+      "total_tokens": 657600,
+      "cost_per_verified": 14613.333333333334,
+      "avg_latency_sec": 0.08116547165043426
+    }
+  }
+}

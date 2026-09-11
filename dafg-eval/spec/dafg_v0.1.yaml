@@ -1,0 +1,27 @@
+dafg_version: "0.1"
+
+enabled_features:
+  - shared_goal_contract:
+      description: "Immutable top-level goal specification shared across all sub-agents and ledger nodes"
+      artifact: "GOAL.md"
+  - dynamic_task_graph:
+      description: "Hierarchical directed acyclic graph decomposition that discovers tasks dynamically"
+      artifact: "GATES.md"
+  - dynamic_persona_generation:
+      description: "Contextual role formulation and tool capability assignment tailored per leaf"
+      format: "Role(skills, tools, permissions)"
+  - capability_aware_dispatch:
+      description: "Dispatch waves with declared disjoint OWNS paths and validation gates"
+      concurrency: true
+  - artifact_verification:
+      description: "Evidence-based verification requiring zero exit code and exact string pattern matches"
+      engine: "dafg.gates"
+  - bounded_revision:
+      description: "Strict retry ceiling on failed gates before triggering escalation or handoff"
+      max_revisions_per_gate: 3
+  - dependency_invalidation:
+      description: "Cascading invalidation and reverification of downstream gates when upstream artifacts change"
+      policy: "eager_reverify"
+  - final_integration_check:
+      description: "Stop-hook ledger audit verifying that all required gates are met with valid evidence"
+      hook: "dafg.hook"

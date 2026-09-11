@@ -1,0 +1,362 @@
+{
+  "integration_gap": 0.0,
+  "revision_yield_by_attempt": {
+    "1": {
+      "invocations": 114,
+      "repairs": 0,
+      "cost_tokens": 388200,
+      "repair_yield_per_1k_tokens": 0.0,
+      "marginal_success_rate": 0.0
+    },
+    "2": {
+      "invocations": 90,
+      "repairs": 0,
+      "cost_tokens": 333000,
+      "repair_yield_per_1k_tokens": 0.0,
+      "marginal_success_rate": 0.0
+    },
+    "3": {
+      "invocations": 90,
+      "repairs": 72,
+      "cost_tokens": 333000,
+      "repair_yield_per_1k_tokens": 0.216,
+      "marginal_success_rate": 0.8
+    }
+  },
+  "stage_profiles": {
+    "goal_interpretation": {
+      "invocations": 438,
+      "total_duration_sec": 3.504,
+      "duration_share_pct": 9.3,
+      "critical_path_duration_sec": 3.504,
+      "total_tokens": 678900,
+      "token_share_pct": 7.8,
+      "cost_usd": 1.752,
+      "defects_introduced": 0,
+      "defects_detected": 24,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {
+        "UNSUPPORTED_ASSERTION": 24
+      }
+    },
+    "graph_construction": {
+      "invocations": 414,
+      "total_duration_sec": 4.968,
+      "duration_share_pct": 13.2,
+      "critical_path_duration_sec": 4.968,
+      "total_tokens": 952200,
+      "token_share_pct": 10.9,
+      "cost_usd": 2.484,
+      "defects_introduced": 24,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 24,
+      "top_reasons": {
+        "WRONG_DECOMPOSITION": 24
+      }
+    },
+    "persona_generation": {
+      "invocations": 414,
+      "total_duration_sec": 2.484,
+      "duration_share_pct": 6.6,
+      "critical_path_duration_sec": 0.0,
+      "total_tokens": 703800,
+      "token_share_pct": 8.1,
+      "cost_usd": 1.656,
+      "defects_introduced": 0,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {}
+    },
+    "capability_routing": {
+      "invocations": 414,
+      "total_duration_sec": 1.656,
+      "duration_share_pct": 4.4,
+      "critical_path_duration_sec": 1.656,
+      "total_tokens": 434700,
+      "token_share_pct": 5.0,
+      "cost_usd": 0.828,
+      "defects_introduced": 0,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {}
+    },
+    "context_assembly": {
+      "invocations": 414,
+      "total_duration_sec": 3.726,
+      "duration_share_pct": 9.9,
+      "critical_path_duration_sec": 3.726,
+      "total_tokens": 1076400,
+      "token_share_pct": 12.3,
+      "cost_usd": 2.898,
+      "defects_introduced": 45,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {
+        "INSUFFICIENT_CONTEXT": 45
+      }
+    },
+    "worker_execution": {
+      "invocations": 414,
+      "total_duration_sec": 9.108,
+      "duration_share_pct": 24.1,
+      "critical_path_duration_sec": 9.108,
+      "total_tokens": 1945800,
+      "token_share_pct": 22.3,
+      "cost_usd": 6.21,
+      "defects_introduced": 0,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {
+        "INTERFACE_MISMATCH": 69
+      }
+    },
+    "verification": {
+      "invocations": 414,
+      "total_duration_sec": 4.14,
+      "duration_share_pct": 11.0,
+      "critical_path_duration_sec": 4.14,
+      "total_tokens": 890100,
+      "token_share_pct": 10.2,
+      "cost_usd": 2.07,
+      "defects_introduced": 0,
+      "defects_detected": 345,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {
+        "VERIFIER_FALSE_ACCEPT": 69
+      }
+    },
+    "integration": {
+      "invocations": 414,
+      "total_duration_sec": 2.898,
+      "duration_share_pct": 7.7,
+      "critical_path_duration_sec": 2.898,
+      "total_tokens": 745200,
+      "token_share_pct": 8.5,
+      "cost_usd": 1.656,
+      "defects_introduced": 0,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {}
+    },
+    "delivery": {
+      "invocations": 414,
+      "total_duration_sec": 1.242,
+      "duration_share_pct": 3.3,
+      "critical_path_duration_sec": 1.242,
+      "total_tokens": 289800,
+      "token_share_pct": 3.3,
+      "cost_usd": 0.414,
+      "defects_introduced": 0,
+      "defects_detected": 0,
+      "defects_repaired": 0,
+      "revisions_triggered": 0,
+      "top_reasons": {}
+    },
+    "revision_invalidation": {
+      "invocations": 270,
+      "total_duration_sec": 4.05,
+      "duration_share_pct": 10.7,
+      "critical_path_duration_sec": 4.05,
+      "total_tokens": 999000,
+      "token_share_pct": 11.5,
+      "cost_usd": 2.97,
+      "defects_introduced": 0,
+      "defects_detected": 270,
+      "defects_repaired": 72,
+      "revisions_triggered": 180,
+      "top_reasons": {
+        "STALE_INPUT": 270
+      }
+    }
+  },
+  "critical_path": {
+    "total_critical_path_sec": 74.388,
+    "critical_service_time_sec": 35.292,
+    "critical_queue_wait_sec": 39.096,
+    "queue_to_service_ratio": 1.108,
+    "top_critical_path_stages": [
+      {
+        "stage": "worker_execution",
+        "duration_sec": 9.108,
+        "share_pct": 25.8
+      },
+      {
+        "stage": "graph_construction",
+        "duration_sec": 4.968,
+        "share_pct": 14.1
+      },
+      {
+        "stage": "verification",
+        "duration_sec": 4.14,
+        "share_pct": 11.7
+      },
+      {
+        "stage": "revision_invalidation",
+        "duration_sec": 4.05,
+        "share_pct": 11.5
+      },
+      {
+        "stage": "context_assembly",
+        "duration_sec": 3.726,
+        "share_pct": 10.6
+      },
+      {
+        "stage": "goal_interpretation",
+        "duration_sec": 3.504,
+        "share_pct": 9.9
+      },
+      {
+        "stage": "integration",
+        "duration_sec": 2.898,
+        "share_pct": 8.2
+      },
+      {
+        "stage": "capability_routing",
+        "duration_sec": 1.656,
+        "share_pct": 4.7
+      },
+      {
+        "stage": "delivery",
+        "duration_sec": 1.242,
+        "share_pct": 3.5
+      }
+    ]
+  },
+  "failure_lineage_origins": {
+    "graph_construction": {
+      "occurrences": 24,
+      "total_wasted_tokens": 408000,
+      "avg_wasted_tokens_per_incident": 17000,
+      "top_escape_points": {
+        "verification": 24
+      },
+      "top_detection_points": {
+        "graph_construction": 24
+      }
+    },
+    "context_assembly": {
+      "occurrences": 45,
+      "total_wasted_tokens": 537750,
+      "avg_wasted_tokens_per_incident": 11950,
+      "top_escape_points": {
+        "verification": 45
+      },
+      "top_detection_points": {
+        "delivery": 45
+      }
+    }
+  },
+  "component_replacement_probes": {
+    "probe_a_expert_graph": {
+      "probe": "probe_a_expert_graph",
+      "trials": 120,
+      "verified_count": 104,
+      "verified_completion_rate": 0.867,
+      "false_success_rate": 0.133,
+      "avg_tokens_per_trial": 6800,
+      "cost_per_verified": 7846.2,
+      "uplift_vs_baseline_pp": 36.7,
+      "uplift_vs_dafg_pp": 4.2
+    },
+    "probe_b_prerequisite_context": {
+      "probe": "probe_b_prerequisite_context",
+      "trials": 120,
+      "verified_count": 108,
+      "verified_completion_rate": 0.9,
+      "false_success_rate": 0.1,
+      "avg_tokens_per_trial": 6400,
+      "cost_per_verified": 7111.1,
+      "uplift_vs_baseline_pp": 40.0,
+      "uplift_vs_dafg_pp": 7.5
+    },
+    "probe_c_matched_static_personas": {
+      "probe": "probe_c_matched_static_personas",
+      "trials": 120,
+      "verified_count": 92,
+      "verified_completion_rate": 0.767,
+      "false_success_rate": 0.233,
+      "avg_tokens_per_trial": 6200,
+      "cost_per_verified": 8087.0,
+      "uplift_vs_baseline_pp": 26.7,
+      "uplift_vs_dafg_pp": -5.8
+    },
+    "probe_d_validated_routing": {
+      "probe": "probe_d_validated_routing",
+      "trials": 120,
+      "verified_count": 101,
+      "verified_completion_rate": 0.842,
+      "false_success_rate": 0.158,
+      "avg_tokens_per_trial": 7100,
+      "cost_per_verified": 8435.6,
+      "uplift_vs_baseline_pp": 34.2,
+      "uplift_vs_dafg_pp": 1.7
+    },
+    "probe_e_stronger_verifier": {
+      "probe": "probe_e_stronger_verifier",
+      "trials": 120,
+      "verified_count": 114,
+      "verified_completion_rate": 0.95,
+      "false_success_rate": 0.05,
+      "avg_tokens_per_trial": 8200,
+      "cost_per_verified": 8631.6,
+      "uplift_vs_baseline_pp": 45.0,
+      "uplift_vs_dafg_pp": 12.5
+    },
+    "probe_f_explicit_interface_contract": {
+      "probe": "probe_f_explicit_interface_contract",
+      "trials": 120,
+      "verified_count": 112,
+      "verified_completion_rate": 0.933,
+      "false_success_rate": 0.067,
+      "avg_tokens_per_trial": 7400,
+      "cost_per_verified": 7928.6,
+      "uplift_vs_baseline_pp": 43.3,
+      "uplift_vs_dafg_pp": 10.8
+    }
+  },
+  "fixed_graph_5way_investigation": {
+    "A_original_fixed_graph": {
+      "verified_completion_rate": 0.318,
+      "false_success_rate": 0.682,
+      "total_tokens": 604800,
+      "cost_per_verified": 28800.0,
+      "avg_latency_sec": 0.081
+    },
+    "B_expert_authored_fixed_graph": {
+      "verified_completion_rate": 0.775,
+      "false_success_rate": 0.225,
+      "total_tokens": 480000,
+      "cost_per_verified": 15483.0,
+      "avg_latency_sec": 0.065
+    },
+    "C_dynamic_dependency_insertion_only": {
+      "verified_completion_rate": 0.725,
+      "false_success_rate": 0.275,
+      "total_tokens": 710000,
+      "cost_per_verified": 24482.0,
+      "avg_latency_sec": 0.076
+    },
+    "D_dynamic_dep_insertion_plus_repairs": {
+      "verified_completion_rate": 0.8,
+      "false_success_rate": 0.2,
+      "total_tokens": 840000,
+      "cost_per_verified": 26250.0,
+      "avg_latency_sec": 0.082
+    },
+    "E_full_dafg_adaptation": {
+      "verified_completion_rate": 0.825,
+      "false_success_rate": 0.175,
+      "total_tokens": 954000,
+      "cost_per_verified": 9636.0,
+      "avg_latency_sec": 0.078
+    }
+  }
+}
