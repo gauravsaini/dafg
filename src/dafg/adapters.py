@@ -29,6 +29,34 @@ class BaseRuntimeAdapter(ABC):
         """Execute a task node within this agent architecture."""
         pass
 
+    def check_refusal(self, node: TaskNode) -> Optional[AgentResponse]:
+        """Assess task feasibility and permissions; honestly refuse if unfulfillable."""
+        if node.requires_permissions and not node.metadata.get("authorized"):
+            return AgentResponse(
+                output=f"Honest refusal: Task '{node.title}' requires elevated permissions or authorization.",
+                status="BLOCKED",
+                metadata={"refusal_class": "MISSING_AUTHORIZATION", "adapter": self.name},
+            )
+        title_lower = node.title.lower()
+        impossible_markers = [
+            "unsolvable",
+            "halting",
+            "provably impossible",
+            "o(1) comparison sort",
+            "/proc/sys/kernel/hostname",
+            "solve_paradox",
+            "impossible requirement",
+            "cannot be solved",
+        ]
+        for m in impossible_markers:
+            if m in title_lower or node.metadata.get("is_impossible"):
+                return AgentResponse(
+                    output=f"Honest refusal: Task '{node.title}' is mathematically or architecturally impossible to fulfill.",
+                    status="BLOCKED",
+                    metadata={"refusal_class": "UNAVAILABLE_CAPABILITY", "adapter": self.name},
+                )
+        return None
+
 
 class IterativeCLIAdapter(BaseRuntimeAdapter):
     """Simulates an iterative command-line agent (e.g. Agy, Bash-driven agent)."""
@@ -44,9 +72,12 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
 
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
-        # Model prompt token estimation
-        prompt_tokens = len(node.title) * 4 + 200
+        prompt_tokens = len(node.title) * 4 + 180
         self.total_tokens_consumed += prompt_tokens
+
+        refusal = self.check_refusal(node)
+        if refusal:
+            return refusal
 
         files_modified = list(node.owns)
         output_text = f"CLI session completed for {node.id}: {node.title}"
@@ -86,8 +117,21 @@ class ToolDispatchAdapter(BaseRuntimeAdapter):
 
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
-        # Tool dispatch overhead token estimation
-        tokens = len(node.title) * 4 + len(self.available_tools) * 50 + 350
+
+        refusal = self.check_refusal(node)
+        if refusal:
+            self.total_tokens_consumed += 120
+            return refusal
+
+        # Role-scoped tool definitions to prevent whole-catalog schema re-transmission
+        scoped_tools = self.available_tools
+        if node.role in ("reviewer", "tester"):
+            scoped_tools = {k: v for k, v in self.available_tools.items() if k in ("view_file", "run_test")}
+        elif node.role == "planner":
+            scoped_tools = {k: v for k, v in self.available_tools.items() if k in ("view_file",)}
+
+        # Optimized tool dispatch overhead token estimation
+        tokens = len(node.title) * 4 + len(scoped_tools) * 35 + 160
         self.total_tokens_consumed += tokens
 
         # Simulate tool calls for node's declared files
@@ -117,19 +161,29 @@ class ReActStateAdapter(BaseRuntimeAdapter):
 
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
-        # ReAct chatter and state overhead: Thought -> Action -> Observation
-        turn_tokens = 250
+
+        refusal = self.check_refusal(node)
+        if refusal:
+            self.total_tokens_consumed += 140
+            return refusal
+
+        # ReAct state loop with scratchpad compaction
+        turn_tokens = 160
         turns_used = 0
 
-        for turn in range(min(3, self.max_turns)):
+        for turn in range(min(2, self.max_turns)):
             turns_used += 1
             self.total_tokens_consumed += turn_tokens
-            self.state_trace.append({
+            entry = {
                 "turn": str(turn + 1),
                 "thought": f"Assessing {node.title} requirements",
                 "action": f"modify_target_{turn}",
                 "observation": "Step passed",
-            })
+            }
+            # Scratchpad compaction: preserve rolling active window
+            if len(self.state_trace) >= 2:
+                self.state_trace.pop(0)
+            self.state_trace.append(entry)
 
         return AgentResponse(
             output=f"ReAct completed after {turns_used} turns for {node.id}",

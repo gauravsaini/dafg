@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Package Manager: uv](https://img.shields.io/badge/package%20manager-uv-blueviolet)](https://github.com/astral-sh/uv)
-[![Tests](https://img.shields.io/badge/tests-143%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-149%20passed-brightgreen.svg)]()
 [![Zero Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime%20deps-success.svg)]()
 
 **DAFG** is a Python-native agent coordination framework that enforces **grounded completion discipline**. It combines a dynamic task graph runtime with runnable acceptance gate ledgers (`GATES.md`), cryptographic approval security, evidence verification, and agent stop hook enforcement.

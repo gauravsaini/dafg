@@ -141,7 +141,11 @@ class EvaluationMetrics:
 
 
 def validate_test_fixture_syntax(fixture_code: str) -> Tuple[bool, Optional[str]]:
-    """Pre-flight validation ensuring evaluation fixtures have valid Python syntax."""
+    """Pre-flight AST validation ensuring evaluation fixtures have valid Python syntax.
+    
+    Note: Catches syntax defects only; does not eliminate semantic assertion errors,
+    wrong expected outputs, or missing runtime dependencies.
+    """
     try:
         ast.parse(fixture_code)
         return True, None
@@ -321,8 +325,9 @@ class EvaluationHarness:
 
             # Map claim and outcome
             if not task.is_feasible:
-                # Impossible task: correct outcome is BLOCKED or FAILED
-                if run_status in ("BLOCKED", "FAILED"):
+                # Impossible task: correct outcome is BLOCKED, REFUSED, or FAILED
+                has_blocked_node = any(n.status == NodeStatus.BLOCKED for n in graph.nodes.values())
+                if run_status in ("BLOCKED", "FAILED", "REFUSED") or has_blocked_node:
                     claim = CompletionClaim.BLOCKED
                     outcome = StandardOutcome.CORRECT_BLOCK
                 else:

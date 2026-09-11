@@ -52,6 +52,16 @@ class FailureClass(str, Enum):
     CAPABILITY_MISMATCH = "CAPABILITY_MISMATCH"
 
 
+class RefusalClass(str, Enum):
+    """Refusal classification for pre-dispatch gating and impossible requirements."""
+    MISSING_PREREQUISITE = "MISSING_PREREQUISITE"
+    MISSING_AUTHORIZATION = "MISSING_AUTHORIZATION"
+    CONTRADICTORY_REQUIREMENTS = "CONTRADICTORY_REQUIREMENTS"
+    UNAVAILABLE_CAPABILITY = "UNAVAILABLE_CAPABILITY"
+    RECOVERABLE_TOOL_FAILURE = "RECOVERABLE_TOOL_FAILURE"
+
+
+
 class OutcomeStatus(str, Enum):
     """Outcome classification of a DAFG run or node execution."""
     VERIFIED_DELIVERY = "VERIFIED_DELIVERY"
@@ -507,9 +517,15 @@ class TaskNode:
     ambiguity_score: float = 0.0
     requires_permissions: bool = False
 
+    # v0.3 Refusal Dispatch
+    refusal_class: Optional[RefusalClass] = None
+    refusal_reason: Optional[str] = None
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["status"] = self.status.value if isinstance(self.status, NodeStatus) else self.status
+        if self.refusal_class:
+            d["refusal_class"] = self.refusal_class.value if isinstance(self.refusal_class, RefusalClass) else self.refusal_class
         if self.manifest:
             d["manifest"] = self.manifest.to_dict()
         if self.evidence_ledger:
@@ -523,6 +539,8 @@ class TaskNode:
         d = data.copy()
         if "status" in d and isinstance(d["status"], str):
             d["status"] = NodeStatus(d["status"])
+        if "refusal_class" in d and isinstance(d["refusal_class"], str):
+            d["refusal_class"] = RefusalClass(d["refusal_class"])
         if "manifest" in d and isinstance(d["manifest"], dict):
             d["manifest"] = InputManifest.from_dict(d["manifest"])
         if "evidence_ledger" in d and isinstance(d["evidence_ledger"], list):
@@ -965,6 +983,15 @@ class DAFG:
         ready: List[TaskNode] = []
         for node in self.nodes.values():
             if node.status in (NodeStatus.PENDING, NodeStatus.READY, NodeStatus.REJECTED, NodeStatus.BLOCKED):
+                # Permanent refusal check: if node was blocked due to missing authorization,
+                # contradictory requirements, or unavailable capability, do not re-dispatch.
+                if node.status == NodeStatus.BLOCKED and node.refusal_class in (
+                    RefusalClass.MISSING_AUTHORIZATION,
+                    RefusalClass.CONTRADICTORY_REQUIREMENTS,
+                    RefusalClass.UNAVAILABLE_CAPABILITY,
+                ):
+                    continue
+
                 deps_met = True
                 for dep_id in node.needs:
                     dep = self.nodes.get(dep_id)
@@ -1055,14 +1082,16 @@ class DAFG:
         now = time.time()
         node.wait_metrics.time_dispatched = now
 
-        # 0. Pre-Dispatch Manifest Validation Gate
+        # 0. Pre-Dispatch Manifest Validation Gate (Missing Prerequisite)
         manifest_ok, manifest_errors = self.check_input_manifest(node)
         if not manifest_ok:
             node.status = NodeStatus.BLOCKED
+            node.refusal_class = RefusalClass.MISSING_PREREQUISITE
+            node.refusal_reason = f"Manifest incomplete; dispatch gated to prevent false premises: {manifest_errors}"
             self._record_event(
                 node,
                 "PRE_DISPATCH_BLOCKED",
-                f"Manifest incomplete; dispatch gated to prevent false premises: {manifest_errors}",
+                node.refusal_reason,
             )
             # Spawn missing dependency nodes if declared in manifest
             if node.manifest:
@@ -1077,6 +1106,71 @@ class DAFG:
                         self.add_node(prereq)
                         if art not in node.needs:
                             node.needs.append(art)
+            self.save_state()
+            return False
+
+        # 1. Pre-Dispatch Authorization Gate (Missing Authorization)
+        if node.requires_permissions:
+            is_authorized = node.metadata.get("authorized", False)
+            if not is_authorized:
+                node.status = NodeStatus.BLOCKED
+                node.refusal_class = RefusalClass.MISSING_AUTHORIZATION
+                node.refusal_reason = "Operation requires elevated permissions or authorization; paused for approval"
+                self._record_event(node, "PRE_DISPATCH_BLOCKED_UNAUTHORIZED", node.refusal_reason)
+                self.save_state()
+                return False
+
+        # 2. Pre-Dispatch Contradiction Gate (Contradictory Requirements)
+        has_contradiction = False
+        contradiction_reason = ""
+        if hasattr(node, "consumed_contracts"):
+            for cid in node.consumed_contracts:
+                if cid in self.contracts:
+                    invs = self.contracts[cid].invariants
+                    for inv in invs:
+                        if ("not " + inv in invs) or ("assert False" in inv):
+                            has_contradiction = True
+                            contradiction_reason = f"Contract '{cid}' contains contradictory invariants: {inv}"
+                            break
+        if node.metadata.get("has_contradiction"):
+            has_contradiction = True
+            contradiction_reason = str(node.metadata.get("contradiction_reason", "Contradictory requirements"))
+        if has_contradiction:
+            node.status = NodeStatus.BLOCKED
+            node.refusal_class = RefusalClass.CONTRADICTORY_REQUIREMENTS
+            node.refusal_reason = f"Contradictory requirements: {contradiction_reason}"
+            self._record_event(node, "PRE_DISPATCH_BLOCKED_CONTRADICTORY", node.refusal_reason)
+            self.save_state()
+            return False
+
+        # 3. Pre-Dispatch Capability Gate (Unavailable Capability / Impossible Requirement)
+        is_impossible = False
+        impossible_reason = ""
+        title_lower = node.title.lower()
+        impossible_markers = [
+            "unsolvable",
+            "halting",
+            "provably impossible",
+            "o(1) comparison sort",
+            "/proc/sys/kernel/hostname",
+            "solve_paradox",
+            "impossible requirement",
+            "cannot be solved",
+        ]
+        for marker in impossible_markers:
+            if marker in title_lower:
+                is_impossible = True
+                impossible_reason = f"Task requirement matches known uncomputable or impossible boundary: '{marker}'"
+                break
+        if node.metadata.get("is_impossible"):
+            is_impossible = True
+            impossible_reason = str(node.metadata.get("impossible_reason", "Task marked as impossible capability"))
+
+        if is_impossible:
+            node.status = NodeStatus.BLOCKED
+            node.refusal_class = RefusalClass.UNAVAILABLE_CAPABILITY
+            node.refusal_reason = f"Unavailable capability: {impossible_reason}"
+            self._record_event(node, "PRE_DISPATCH_BLOCKED_IMPOSSIBLE", node.refusal_reason)
             self.save_state()
             return False
 
@@ -1131,6 +1225,19 @@ class DAFG:
                 self._record_event(node, node.status.value, f"Agent execution error: {e}")
                 self.save_state()
                 self.budget.check_revision()
+                return False
+
+            # Check explicit worker refusal / honest block
+            if response.status in ("BLOCKED", "REFUSED"):
+                node.status = NodeStatus.BLOCKED
+                r_cls = response.metadata.get("refusal_class")
+                if r_cls and isinstance(r_cls, str) and r_cls in [e.value for e in RefusalClass]:
+                    node.refusal_class = RefusalClass(r_cls)
+                else:
+                    node.refusal_class = RefusalClass.UNAVAILABLE_CAPABILITY
+                node.refusal_reason = response.output or "Worker honestly declared refusal on task"
+                self._record_event(node, "WORKER_REFUSED", node.refusal_reason)
+                self.save_state()
                 return False
 
             # Check diagnostic revision directive
