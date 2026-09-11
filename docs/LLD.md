@@ -1,0 +1,517 @@
+# Low-Level Design (LLD): Integrated DAFG
+
+This document details the Low-Level Design (LLD), object models, subsystem interactions, security boundaries, and execution flows of **Integrated DAFG (Dynamic Autonomous Flow Graph)**.
+
+---
+
+## 1. System Overview & Core Invariants
+
+**Integrated DAFG** coordinates autonomous LLM worker collectives while enforcing deterministic completion discipline. Unlike systems that rely on model self-certification, Integrated DAFG grounds completion in:
+
+1. **Deterministic Acceptance Ledgers**: Outcomes are defined as executable shell commands (`CHECK:`) matched against decisive outputs (`EXPECT:`).
+2. **Cryptographic Approval Boundary**: Arbitrary commands authored by LLMs cannot execute without explicit cryptographic approval.
+3. **Capability-Aware Routing**: Tasks are compiled into structured persona profiles and routed only to backends that satisfy their required capabilities.
+4. **Bounded Failure Adaptation**: Failed attempts trigger failure classification and bounded persona/method adaptation rather than unbounded retry loops.
+5. **Agent Stop Hook Discipline**: Agent termination is intercepted and blocked until all assigned gates are objectively met.
+
+---
+
+## 2. Architectural Lineage: Synthesis & Dimension Comparison
+
+Integrated DAFG is the synthesis of two complementary paradigms:
+- **Execution & Coordination Plane** (originated from the DAFG dynamic task graph runtime): Dynamic DAG planning, runtime worker dispatch, prerequisite discovery (`needs`), capability-aware routing, persona compilation, and atomic state checkpoints.
+- **Verification & Discipline Plane** : Acceptance gate ledgers (`GATES.md`), cryptographic check approvals, objective shell execution evidence, and agent stop hooks.
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                     INTEGRATED DAFG (Current)                          │
+│                                                                        │
+│   • Dynamic DAG Planning (TaskNode)       • Persona Compiler           │
+│   • Prerequisite Expansion (needs)        • Capability Router          │
+│   • Wave Scheduler (Disjoint OWNS)        • Budget Engine              │
+│   • Bounded Adaptation (PersonaSwitcher)  • Atomic State Persistence   │
+│                                                                        │
+│   ┌────────────────────────────────────────────────────────────────┐   │
+│   │               Verification & Discipline Plane                  │   │
+│   │                                                                │   │
+│   │   • Acceptance Gate Ledger (GATES.md)                          │   │
+│   │   • Cryptographic Approval Boundary (.approved_gates.json)     │   │
+│   │   • Deterministic Shell Check Execution & Evidence Recording   │   │
+│   │   • Ledger Linter & Reverification (--reverify)                │   │
+│   │   • Agent Stop Hook Completion Guard (decision: block)         │   │
+│   └────────────────────────────────────────────────────────────────┘   │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+### Dimension Comparison Matrix
+
+| Dimension | Ad-Hoc Agent Execution | DAFG v0.2 (Legacy) | DAFG (Current v0.3+) |
+|---|---|---|---|
+| **Autonomous Agent Loop** | ❌ None (external tool) | ✅ Yes (`ask()`) | ✅ Yes (`DAFG.run()`) |
+| **Dynamic DAG & Prerequisite Spawning** | ❌ Manual in `PLAN.md` | ✅ Yes (`needs`) | ✅ Yes (`needs` + waves) |
+| **Model Selection & Routing** | ❌ None | ❌ Hardcoded model | ✅ Capability-aware `AgentRouter` |
+| **Persona Compilation** | ❌ None | ❌ Static string label | ✅ `PersonaProfile` + `PolicyEngine` |
+| **Node Acceptance Mechanism** | ✅ Runnable shell checks | ❌ Subjective LLM review | ✅ **Objective gate evidence** |
+| **Security Approval Boundary** | ✅ Cryptographic hash | ❌ None | ✅ `ApprovalStore` SHA-256 |
+| **Interruption Resumption** | ❌ Git/ledger only | ✅ `state.json` | ✅ Atomic `StateStore` + budgets |
+| **Agent Termination Discipline** | ✅ Stop hook (`block`) | ❌ None | ✅ `CompletionGuard` stop hook |
+
+---
+
+## 3. Component & Data Flow Architecture
+
+The following diagram illustrates how tasks flow through planning, compilation, routing, execution, gate verification, state persistence, and stop hook enforcement.
+
+```mermaid
+flowchart TD
+    subgraph Planning ["1. Planning & Dependency Phase"]
+        UserGoal["User Task / Goal"] --> DAFG_Init["DAFG Graph Initialization"]
+        LedgerParse["GateLedger.parse('GATES.md')"] --> DAFG_Init
+        DAFG_Init --> ReadyQueue["Task Ready Queue (Wave Scheduler)"]
+    end
+
+    subgraph PersonaAndRouting ["2. Persona Compilation & Routing"]
+        ReadyQueue --> NodeReady["TaskNode Selected"]
+        NodeReady --> Compiler["PersonaCompiler.compile(task)"]
+        Compiler --> Profile["PersonaProfile (role, mission, capabilities, requested tools)"]
+        Profile --> Policy["PolicyEngine.authorize(requested_tools) & allows(backend)"]
+        Policy --> Router["AgentRouter.dispatch(task, profile)"]
+        Router --> Plan["DispatchPlan (backend, persona, authorized_tools, scoped_context)"]
+    end
+
+    subgraph Execution ["3. Worker Execution"]
+        Plan --> WorkerExec["Worker / LLM Invocation (executor_fn)"]
+        WorkerExec --> AgentResp["AgentResponse (output, needs, spawn_children, files)"]
+    end
+
+    subgraph Verification ["4. Objective Gate Verification"]
+        AgentResp --> CheckGates{"Assigned Gates?"}
+        CheckGates -- Yes --> ApprovalCheck{"Approved in .approved_gates.json?"}
+        ApprovalCheck -- Yes --> GateExec["GateEngine.execute_gate(reverify=True)"]
+        ApprovalCheck -- No --> SecFail["SECURITY: UNAPPROVED"]
+        GateExec --> GateVerdict{"Exit 0 & EXPECT matched?"}
+        GateVerdict -- Yes --> RecordEvidence["Record EVIDENCE into GATES.md"]
+        GateVerdict -- No --> GateFailed["Gate Check Failed"]
+    end
+
+    subgraph Adaptation ["5. Failure Classification & Bounded Adaptation"]
+        SecFail --> Classifier["FailureClassifier.classify()"]
+        GateFailed --> Classifier
+        Classifier --> FailureKind["FailureKind (INCOMPLETE, WRONG_APPROACH, CAPABILITY_MISMATCH, etc.)"]
+        FailureKind --> Switcher["PersonaSwitcher.adapt(task, profile, kind)"]
+        Switcher --> Switched{"Within Switch Budget?"}
+        Switched -- Yes --> UpdatePersona["Update Persona & Re-queue"]
+        Switched -- No --> TaskFail["Task Node: FAILED"]
+    end
+
+    subgraph Finalization ["6. Completion & Persistence"]
+        RecordEvidence --> AcceptNode["Task Node: ACCEPTED"]
+        AcceptNode --> StatePersist["StateStore.save('state.json') via Atomic Rename"]
+        StatePersist --> StopHookCheck["CompletionGuard.evaluate('GATES.md')"]
+        StopHookCheck --> FinalDecision{"All Gates Met?"}
+        FinalDecision -- Yes --> AllowStop["STOP ALLOWED"]
+        FinalDecision -- No --> BlockStop["STOP BLOCKED"]
+    end
+```
+
+---
+
+## 4. Core Class Diagram
+
+The following class diagram illustrates the primary abstractions, their attributes, and relationships across the framework.
+
+```mermaid
+classDiagram
+    class DAFG {
+        +dict nodes
+        +Budget budget
+        +GateLedger ledger
+        +GateEngine engine
+        +AgentRouter router
+        +PersonaCompiler compiler
+        +PersonaSwitcher switcher
+        +FailureClassifier classifier
+        +Path state_path
+        +add_node(node) TaskNode
+        +schedule_waves() List
+        +execute_node(node, executor_fn) bool
+        +step(executor_fn) dict
+        +run(executor_fn, max_steps) str
+        +save_state() void
+    }
+
+    class TaskNode {
+        +str id
+        +str title
+        +str role
+        +NodeStatus status
+        +list needs
+        +list assigned_gates
+        +list owns
+        +str parent_id
+        +list children
+        +int depth
+        +int revisions
+        +int max_revisions
+        +dict persona
+        +list persona_history
+        +str backend_name
+        +int persona_switches
+        +int max_persona_switches
+        +to_dict() dict
+        +from_dict(data) TaskNode
+    }
+
+    class PersonaProfile {
+        +str persona_id
+        +str role
+        +str mission
+        +list expertise
+        +list method
+        +list required_capabilities
+        +list requested_tools
+        +str output_schema
+        +list review_focus
+        +int version
+        +to_dict() dict
+        +from_dict(data) PersonaProfile
+    }
+
+    class PersonaCompiler {
+        +compile(task, context, previous_feedback, attempt) PersonaProfile
+    }
+
+    class Backend {
+        +str name
+        +set capabilities
+        +float cost_per_call
+        +str risk_tier
+        +int max_context
+        +int priority
+        +supports(required_capabilities) bool
+    }
+
+    class BackendRegistry {
+        -dict _backends
+        +register(backend) void
+        +get(name) Backend
+        +list_backends() List
+        +default_registry() BackendRegistry
+    }
+
+    class PolicyEngine {
+        +set allowed_tools
+        +str max_risk_tier
+        +set allowed_backends
+        +set denied_backends
+        +allows(backend, persona, task) bool
+        +authorize(requested_tools, task) List
+    }
+
+    class AgentRouter {
+        +BackendRegistry registry
+        +PolicyEngine policy
+        +find_eligible(persona, task, budget) List
+        +select_backend(eligible, task_risk, prior_failures) Backend
+        +dispatch(task, persona, context, budget) DispatchPlan
+    }
+
+    class GateLedger {
+        +dict gates
+        +list raw_lines
+        +Path filepath
+        +parse(text, filepath) GateLedger
+        +load(filepath) GateLedger
+        +get_gate(id) Gate
+        +update_gate_evidence(id, evidence, status) bool
+        +save(filepath) void
+    }
+
+    class Gate {
+        +str id
+        +str title
+        +str check
+        +str expect
+        +str owns
+        +str cwd
+        +str status
+        +str evidence
+        +str abandon_reason
+        +is_runnable() bool
+    }
+
+    class ApprovalStore {
+        +Path filepath
+        +compute_hash(check, expect, cwd, env_keys) str
+        +approve(gate) str
+        +is_approved(gate) bool
+        +save() void
+    }
+
+    class GateEngine {
+        +ApprovalStore approval_store
+        +bool auto_approve
+        +execute_gate(gate, ledger, reverify) GateResult
+    }
+
+    class CompletionGuard {
+        +GateLedger ledger
+        +ApprovalStore approval_store
+        +Path state_file
+        +int max_stagnant_blocks
+        +evaluate() StopDecision
+    }
+
+    class Schema {
+        +dict fields
+        +validate(data) dict
+    }
+
+    DAFG --> TaskNode : manages
+    DAFG --> GateLedger : references
+    DAFG --> GateEngine : executes gates via
+    DAFG --> AgentRouter : dispatches via
+    DAFG --> PersonaCompiler : compiles profiles with
+    DAFG --> PersonaSwitcher : adapts failures with
+    AgentRouter --> BackendRegistry : queries
+    AgentRouter --> PolicyEngine : validates against
+    GateEngine --> ApprovalStore : checks approvals
+    GateLedger --> Gate : contains
+    CompletionGuard --> GateLedger : inspects
+    TaskNode --> PersonaProfile : stores
+```
+
+---
+
+## 5. Execution & Dispatch Sequence
+
+The interaction between the core subsystems during a single execution wave is captured below:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant DAFG as DAFG Engine
+    participant Compiler as PersonaCompiler
+    participant Policy as PolicyEngine
+    participant Router as AgentRouter
+    participant Worker as Worker / LLM
+    participant Engine as GateEngine
+    participant Store as ApprovalStore
+    participant Ledger as GateLedger (GATES.md)
+    participant State as StateStore (state.json)
+
+    DAFG->>DAFG: schedule_waves() (filters dependencies & disjoint OWNS)
+    DAFG->>Compiler: compile(task, context)
+    Compiler-->>DAFG: PersonaProfile(role, mission, capabilities, requested_tools)
+
+    DAFG->>Router: dispatch(task, profile, context)
+    Router->>Policy: allows(backend, profile, task)
+    Policy-->>Router: true
+    Router->>Policy: authorize(profile.requested_tools, task)
+    Policy-->>Router: authorized_tools (strictly filtered)
+    Router-->>DAFG: DispatchPlan(backend, authorized_tools, scoped_context)
+
+    DAFG->>Worker: executor_fn(task, scoped_context)
+    Worker-->>DAFG: AgentResponse(output, needs, files_modified)
+
+    opt If task has assigned gates
+        loop For each gate in task.assigned_gates
+            DAFG->>Engine: execute_gate(gate, reverify=True)
+            Engine->>Store: is_approved(gate)
+            Store-->>Engine: true (hash matched)
+            Engine->>Engine: run process (subprocess.run)
+            Engine->>Engine: match stdout/stderr against EXPECT
+            Engine-->>DAFG: GateResult(status='MET', exit_code=0)
+            DAFG->>Ledger: update_gate_evidence(gate_id, evidence)
+            Ledger->>Ledger: write inline evidence to GATES.md
+        end
+    end
+
+    DAFG->>DAFG: node.status = ACCEPTED
+    DAFG->>State: save(state_dict, 'state.json')
+    State->>State: write to temp file & atomic replace
+```
+
+---
+
+## 6. TaskNode State Machine & Bounded Adaptation
+
+A `TaskNode` transitions through strict lifecycle states. When verification fails, the failure is categorized and governed by bounded adaptation:
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING: Initialized in graph
+
+    PENDING --> READY: All dependencies (needs) ACCEPTED
+    READY --> RUNNING: Claimed by wave scheduler
+
+    RUNNING --> BLOCKED: Worker returns 'needs' or 'spawn_children'
+    BLOCKED --> READY: All injected dependencies ACCEPTED
+
+    RUNNING --> VERIFYING: Worker outputs artifact; assigned gates exist
+    RUNNING --> ACCEPTED: No assigned gates & clean exit
+
+    VERIFYING --> ACCEPTED: All assigned gates MET with evidence
+
+    VERIFYING --> REJECTED: Gate check failed or unapproved
+    RUNNING --> REJECTED: Agent returned ERROR/FAILED status
+
+    state REJECTED {
+        [*] --> Classify
+        Classify --> IncompleteWork: INCOMPLETE_WORK (syntax/timeout)
+        Classify --> WrongApproach: WRONG_APPROACH (flawed design/race)
+        Classify --> CapabilityMismatch: CAPABILITY_MISMATCH (reasoning deficit)
+        Classify --> MissingDep: MISSING_DEPENDENCY (missing prereq)
+        Classify --> MissingPerm: MISSING_PERMISSION (unapproved tool)
+
+        IncompleteWork --> RetainPersona: Provide concrete feedback
+        WrongApproach --> AdaptMethod: Increment version & adjust method
+        CapabilityMismatch --> EscalateBackend: Upgrade capability tier
+        MissingDep --> InjectPrereq: Add to task.needs
+        MissingPerm --> ApprovalRequest: Flag policy blocker
+    }
+
+    REJECTED --> PENDING: revisions < max_revisions & switch budget available
+    REJECTED --> FAILED: revisions >= max_revisions
+
+    ACCEPTED --> [*]
+    FAILED --> [*]
+```
+
+---
+
+## 7. Security Approval Boundary & Verification Flow
+
+To prevent untrusted agent-generated code from executing arbitrary shell commands, Integrated DAFG employs a cryptographic approval boundary:
+
+```mermaid
+flowchart TD
+    GateDecl["Gate in GATES.md:
+CHECK: uv run pytest -q
+EXPECT: 117 passed
+CWD: ."] --> HashFunc["ApprovalStore.compute_hash(check, expect, cwd, env_keys)"]
+    HashFunc --> SHA256["SHA-256 Digest (64 chars)"]
+
+    subgraph ApprovalStoreFile [".approved_gates.json"]
+        StoredHash["Stored Hash Entry:
+{
+  'G1': 'a3f9e...c71b'
+}"]
+    end
+
+    SHA256 --> CompareHash{"Matches Stored Hash?"}
+    StoredHash --> CompareHash
+
+    CompareHash -- Yes --> ExecApproved["Subprocess Execution Allowed"]
+    CompareHash -- No --> RefuseExec["Return GateResult(status='UNAPPROVED')"]
+
+    subgraph ManualApproval ["Approval Step (uv run gates --approve)"]
+        HumanOrAudit["User / Security Audit Review"] --> ApproveCmd["ApprovalStore.approve(gate)"]
+        ApproveCmd --> StoredHash
+    end
+```
+
+---
+
+## 8. Agent Stop Hook Completion Guard
+
+The stop hook acts as the final quality gate before an agent or harness can terminate a session:
+
+```mermaid
+flowchart TD
+    AgentStopRequest["Agent Attempting to Exit / Terminate"] --> GuardEval["CompletionGuard.evaluate()"]
+    GuardEval --> ParseLedger["Parse active GATES.md"]
+
+    ParseLedger --> CheckPending{"Any gates pending?"}
+    CheckPending -- Yes --> ReasonPending["Record pending gate IDs"]
+
+    ParseLedger --> CheckApprovals{"Any checks unapproved?"}
+    CheckApprovals -- Yes --> ReasonUnapproved["Record unapproved gate IDs"]
+
+    ParseLedger --> CheckEvidence{"Any checks unverified?"}
+    CheckEvidence -- Yes --> ReasonUnverified["Record unverified gate IDs"]
+
+    ReasonPending --> ComputeDecision{"Any issues found?"}
+    ReasonUnapproved --> ComputeDecision
+    ReasonUnverified --> ComputeDecision
+    CheckPending -- No --> CheckApprovals
+    CheckApprovals -- No --> CheckEvidence
+    CheckEvidence -- No --> ComputeDecision
+
+    ComputeDecision -- Yes --> CheckStagnant{"Progress Guard:
+consecutive stagnant blocks >= 6?"}
+    CheckStagnant -- Yes --> ReleaseGuard["Release Progress Guard (break deadlock)"]
+    CheckStagnant -- No --> EmitBlock["Emit: { 'decision': 'block', 'allowed': false }"]
+
+    ComputeDecision -- No --> EmitAllow["Emit: { 'decision': 'allow', 'allowed': true }"]
+    ReleaseGuard --> EmitAllow
+```
+
+---
+
+## 9. Subsystem Deep-Dive & Invariants
+
+### 9.1 Disjoint File Ownership (`OWNS:`) & Rolling Wave Dispatch
+- Each task or gate declares its file ownership patterns (`OWNS: src/foo.py, tests/test_foo.py`).
+- Function `paths_overlap(p1, p2)` detects exact matches, directory prefix containment (e.g. `src/db` vs `src/db/models.py`), and glob intersections (`src/*.py` vs `src/main.py`).
+- Function `schedule_waves()` groups runnable nodes into parallel execution waves where **no two nodes in the same wave touch overlapping paths**, preventing write collisions and dirty workspace reads.
+
+### 9.2 The Persona vs Policy Boundary
+- A `PersonaProfile` can specify `requested_tools: ["repository_read", "test_runner", "arbitrary_exec"]`.
+- The `PolicyEngine` evaluates these against its configured `allowed_tools` and task-specific constraints.
+- **Invariant**: The executing worker receives only `authorized_tools = policy.authorize(...)`. A persona prompt cannot grant permissions beyond the policy.
+
+### 9.3 Strict Capability Routing vs Phantom Capabilities
+- `BackendRegistry` registers models with concrete capability sets (`"technical_reasoning"`, `"code_analysis"`, `"system_design"`, `"formal_verification"`).
+- `AgentRouter` requires `backend.supports(persona.required_capabilities)`.
+- If no backend satisfies the requirement, the router raises `RoutingBlockedError`. It **never** silently dispatches to an under-capable model while pretending the persona prompt will compensate.
+
+### 9.4 Failure Classification & Bounded Adaptation Matrix
+
+| Failure Kind | Typical Signal | Persona Action | Backend Action | Switch Budget Impact |
+|---|---|---|---|:---:|
+| `INCOMPLETE_WORK` | Syntax errors, timeouts, unmet assertions | Retain persona; feed back decisive error snippet | Retain current backend | No switch consumed |
+| `WRONG_APPROACH` | Flawed design, race condition, invariant violation | Increment version (`P-v2`); adapt methodology steps | Retain or upgrade backend | 1 switch consumed |
+| `CAPABILITY_MISMATCH` | Reasoning exhaustion, unsupported complexity | Escalate required capabilities (`+system_design`) | Route to higher-tier backend | 1 switch consumed |
+| `MISSING_DEPENDENCY` | Unresolved import, missing prerequisite node | Retain persona; expand task graph (`node.needs`) | Retain current backend | No switch consumed |
+| `MISSING_PERMISSION` | Tool refused, unapproved command check | Retain persona; surface authorization blocker | Retain current backend | No switch consumed |
+
+When `task.persona_switches >= max_persona_switches` (default: 2), adaptation freezes and the task fails cleanly rather than looping.
+
+### 9.5 Atomic State Persistence (`StateStore`)
+- State file writes in `StateStore.save(state, filepath)` write to a process-unique temporary file:
+  `f"{filepath}.tmp.{pid}"`
+- The file is closed and flushed before an atomic OS-level replacement (`os.replace(tmp, filepath)`).
+- This guarantees that an abrupt process crash, power loss, or external kill signal never leaves a corrupt or half-written `state.json`.
+
+---
+
+## 10. Directory Structure & File Map
+
+```text
+framework/
+├── docs/
+│   └── LLD.md                 # This Low-Level Design document
+├── GATES.md                    # Active acceptance gate ledger
+├── GATES_SCHEMA.md             # Schema validation gate ledger
+├── pyproject.toml              # Packaging & scripts (dafg, gates, stop-hook)
+├── README.md                   # Installation & usage guide
+├── dfag.py                     # Root compatibility shim
+├── state_schema.json           # Sample persisted graph state
+│
+├── src/dafg/
+│   ├── __init__.py             # Public module exports
+│   ├── cli.py                  # CLI argument parser & subcommands
+│   ├── gates.py                # GateLedger, GateEngine, ApprovalStore, GateLinter
+│   ├── hook.py                 # CompletionGuard & stop hook evaluation logic
+│   ├── persona.py              # PersonaCompiler, AgentRouter, BackendRegistry, PolicyEngine
+│   ├── runtime.py              # DAFG graph engine, TaskNode, Budget, wave scheduler
+│   └── schema.py               # Schema, Field validators, robust JSON recovery
+│
+└── tests/
+    ├── test_gates.py           # Gate ledger parsing, execution & security tests
+    ├── test_hook.py            # Stop hook decision tree tests
+    ├── test_persona.py         # Persona compilation, routing, and adaptation tests
+    ├── test_runtime.py         # Dynamic graph, wave scheduling & budget tests
+    └── test_schema.py          # Schema validation & JSON repair tests
+```

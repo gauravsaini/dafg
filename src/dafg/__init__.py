@@ -1,0 +1,93 @@
+"""Python-native agent coordination and completion-discipline framework."""
+
+from dafg.gates import (
+    ApprovalStore,
+    Gate,
+    GateEngine,
+    GateLedger,
+    GateLinter,
+    GateResult,
+    LintIssue,
+)
+from dafg.runtime import (
+    DAFG,
+    AgentResponse,
+    Budget,
+    BudgetExceededError,
+    NodeStatus,
+    Role,
+    StateStore,
+    TaskNode,
+    nodes_conflict,
+    paths_overlap,
+)
+from dafg.hook import (
+    CompletionGuard,
+    StopDecision,
+)
+from dafg.schema import (
+    AgentResponseSchema,
+    Field,
+    ResponseValidator,
+    Schema,
+    ValidationError,
+    extract_json,
+    parse_json_response,
+    repair_json,
+)
+
+from dafg.persona import (
+    AgentRouter,
+    Backend,
+    BackendRegistry,
+    DispatchPlan,
+    FailureClassifier,
+    FailureKind,
+    PersonaCompiler,
+    PersonaProfile,
+    PersonaSwitcher,
+    PolicyEngine,
+    RoutingBlockedError,
+)
+
+__version__ = "0.1.0"
+__all__ = [
+    "ApprovalStore",
+    "Gate",
+    "GateEngine",
+    "GateLedger",
+    "GateLinter",
+    "GateResult",
+    "LintIssue",
+    "DAFG",
+    "AgentResponse",
+    "Budget",
+    "BudgetExceededError",
+    "NodeStatus",
+    "Role",
+    "StateStore",
+    "TaskNode",
+    "nodes_conflict",
+    "paths_overlap",
+    "CompletionGuard",
+    "StopDecision",
+    "AgentResponseSchema",
+    "Field",
+    "ResponseValidator",
+    "Schema",
+    "ValidationError",
+    "extract_json",
+    "parse_json_response",
+    "repair_json",
+    "AgentRouter",
+    "Backend",
+    "BackendRegistry",
+    "DispatchPlan",
+    "FailureClassifier",
+    "FailureKind",
+    "PersonaCompiler",
+    "PersonaProfile",
+    "PersonaSwitcher",
+    "PolicyEngine",
+    "RoutingBlockedError",
+]

@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+dist/
+build/
+*.egg-info/
+.DS_Store
+.agents/
+*.tmp.*
+.dafg_hook_state.json
+.dafg/
+.claude/settings.local.json
+state*.json
+!state_schema.json

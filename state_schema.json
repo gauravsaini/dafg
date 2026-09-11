@@ -1,0 +1,136 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-09-10T15:50:17.769381+00:00",
+  "budget": {
+    "max_calls": 50,
+    "max_nodes": 20,
+    "max_revisions": 3,
+    "deadline": null,
+    "calls_consumed": 3,
+    "nodes_created": 3,
+    "revisions_consumed": 0
+  },
+  "nodes": {
+    "task_G1": {
+      "id": "task_G1",
+      "title": "Complete gate G1: Schema validation passes valid agent responses and rejects invalid ones",
+      "role": "coder",
+      "status": "ACCEPTED",
+      "needs": [],
+      "assigned_gates": [
+        "G1"
+      ],
+      "owns": [
+        "src/dafg/schema.py",
+        "tests/test_schema.py"
+      ],
+      "parent_id": null,
+      "children": [],
+      "depth": 0,
+      "revisions": 0,
+      "max_revisions": 3,
+      "result": {
+        "output": "Default execution completed",
+        "status": "COMPLETED",
+        "files_modified": [],
+        "metadata": {}
+      },
+      "metadata": {}
+    },
+    "task_G2": {
+      "id": "task_G2",
+      "title": "Complete gate G2: Schema validation automatically repairs and extracts JSON from noisy outputs and markdown fences",
+      "role": "coder",
+      "status": "ACCEPTED",
+      "needs": [],
+      "assigned_gates": [
+        "G2"
+      ],
+      "owns": [
+        "src/dafg/schema.py",
+        "tests/test_schema.py"
+      ],
+      "parent_id": null,
+      "children": [],
+      "depth": 0,
+      "revisions": 0,
+      "max_revisions": 3,
+      "result": {
+        "output": "Default execution completed",
+        "status": "COMPLETED",
+        "files_modified": [],
+        "metadata": {}
+      },
+      "metadata": {}
+    },
+    "task_G3": {
+      "id": "task_G3",
+      "title": "Complete gate G3: New test suite for schema validation passes in pytest",
+      "role": "coder",
+      "status": "ACCEPTED",
+      "needs": [],
+      "assigned_gates": [
+        "G3"
+      ],
+      "owns": [
+        "src/dafg/schema.py",
+        "tests/test_schema.py"
+      ],
+      "parent_id": null,
+      "children": [],
+      "depth": 0,
+      "revisions": 0,
+      "max_revisions": 3,
+      "result": {
+        "output": "Default execution completed",
+        "status": "COMPLETED",
+        "files_modified": [],
+        "metadata": {}
+      },
+      "metadata": {}
+    }
+  },
+  "gate_states": {
+    "G1": {
+      "status": "MET",
+      "evidence": "exit_code=0 timestamp=2026-09-10T15:50:17.511654+00:00 match='G1_VALIDATION_OK'",
+      "abandon_reason": null
+    },
+    "G2": {
+      "status": "MET",
+      "evidence": "exit_code=0 timestamp=2026-09-10T15:50:17.572250+00:00 match='G2_REPAIR_OK'",
+      "abandon_reason": null
+    },
+    "G3": {
+      "status": "MET",
+      "evidence": "exit_code=0 timestamp=2026-09-10T15:50:17.768326+00:00 match='20 passed'",
+      "abandon_reason": null
+    }
+  },
+  "execution_history": [
+    {
+      "timestamp": "2026-09-10T15:50:17.512113+00:00",
+      "node_id": "task_G1",
+      "role": "coder",
+      "action": "ACCEPTED",
+      "details": "Objective gate checks and child verifications passed",
+      "revisions": 0
+    },
+    {
+      "timestamp": "2026-09-10T15:50:17.572730+00:00",
+      "node_id": "task_G2",
+      "role": "coder",
+      "action": "ACCEPTED",
+      "details": "Objective gate checks and child verifications passed",
+      "revisions": 0
+    },
+    {
+      "timestamp": "2026-09-10T15:50:17.769365+00:00",
+      "node_id": "task_G3",
+      "role": "coder",
+      "action": "ACCEPTED",
+      "details": "Objective gate checks and child verifications passed",
+      "revisions": 0
+    }
+  ]
+}
