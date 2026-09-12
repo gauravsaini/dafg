@@ -20,5 +20,5 @@
     "mandatory_invalidation_under_exhausted_budget: unconstrained invalidation marked 1 dependents STALE",
     "graph_sealing_invariance: seal_run locked graph against post-seal mutations"
   ],
-  "timestamp": "2026-09-12T12:24:10.375673+00:00"
+  "timestamp": "2026-09-12T13:25:07.270605+00:00"
 }

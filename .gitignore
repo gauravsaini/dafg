@@ -9,11 +9,10 @@ build/
 .DS_Store
 .agents/
 *.tmp.*
-.dafg_hook_state.json
-.dafg/
 .claude/settings.local.json
 state*.json
 !state_schema.json
+.dafg_hook_state.json
 node_modules/
 dafg-eval/results/raw_trials.jsonl
 dafg-eval/results/traces.jsonl

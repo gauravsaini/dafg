@@ -1,5 +1,9 @@
 # Low-Level Design (LLD): DAFG Framework
 
+> **Location**: `docs/LLD.md`  
+> **Applicable Version**: DAFG v0.3+  
+> **Source Modules**: `src/dafg/runtime.py`, `src/dafg/protocol.py`, `src/dafg/gates.py`, `src/dafg/adapters.py`, `src/dafg/persona.py`
+
 This document details the Low-Level Design (LLD), object models, subsystem interactions, security boundaries, and execution flows of **DAFG (Dynamic Autonomous Flow Graph)**.
 
 ---
@@ -16,11 +20,11 @@ This document details the Low-Level Design (LLD), object models, subsystem inter
 
 ---
 
-## 2. Architectural Lineage: Synthesis & Dimension Comparison
+## 2. Architecture & Operational Planes
 
-DAFG is the synthesis of two complementary paradigms:
-- **Execution & Coordination Plane** (originated from the DAFG dynamic task graph runtime): Dynamic DAG planning, runtime worker dispatch, prerequisite discovery (`needs`), capability-aware routing, persona compilation, and atomic state checkpoints.
-- **Verification & Discipline Plane** : Acceptance gate ledgers (`GATES.md`), cryptographic check approvals, objective shell execution evidence, and agent stop hooks.
+DAFG coordinates execution across two unified operational planes:
+- **Execution & Coordination Plane**: Dynamic DAG planning, runtime worker dispatch, prerequisite discovery (`needs`), capability-aware routing, persona compilation, and atomic state checkpoints.
+- **Verification & Discipline Plane**: Acceptance gate ledgers (`GATES.md`), cryptographic check approvals, objective shell execution evidence, and agent stop hooks.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────┐
@@ -43,18 +47,18 @@ DAFG is the synthesis of two complementary paradigms:
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Dimension Comparison Matrix
+### Architectural Evolution Matrix
 
 | Dimension | Ad-Hoc Agent Execution | DAFG v0.2 (Legacy) | DAFG (Current v0.3+) |
 |---|---|---|---|
-| **Autonomous Agent Loop** | ❌ None (external tool) | ✅ Yes (`ask()`) | ✅ Yes (`DAFG.run()`) |
-| **Dynamic DAG & Prerequisite Spawning** | ❌ Manual in `PLAN.md` | ✅ Yes (`needs`) | ✅ Yes (`needs` + waves) |
-| **Model Selection & Routing** | ❌ None | ❌ Hardcoded model | ✅ Capability-aware `AgentRouter` |
-| **Persona Compilation** | ❌ None | ❌ Static string label | ✅ `PersonaProfile` + `PolicyEngine` |
-| **Node Acceptance Mechanism** | ✅ Runnable shell checks | ❌ Subjective LLM review | ✅ **Objective gate evidence** |
-| **Security Approval Boundary** | ✅ Cryptographic hash | ❌ None | ✅ `ApprovalStore` SHA-256 |
-| **Interruption Resumption** | ❌ Git/ledger only | ✅ `state.json` | ✅ Atomic `StateStore` + budgets |
-| **Agent Termination Discipline** | ✅ Stop hook (`block`) | ❌ None | ✅ `CompletionGuard` stop hook |
+| **Autonomous Agent Loop** | ❌ Unstructured prompt loop | ⚠️ Basic loop (`dfag.ask()`) | ✅ Deterministic runtime (`DAFG.run()`) |
+| **Dynamic DAG & Prerequisite Spawning** | ❌ None (monolithic prompt) | ⚠️ Linear `needs` expansion | ✅ Dynamic DAG + multi-wave disjoint execution |
+| **Model Selection & Routing** | ❌ Single hardcoded model | ❌ Static default model | ✅ Capability-aware `AgentRouter` |
+| **Persona Compilation** | ❌ Static system prompt | ❌ Static string label | ✅ `PersonaProfile` + `PolicyEngine` |
+| **Node Acceptance Mechanism** | ❌ Subjective LLM self-assessment | ❌ Subjective LLM review | ✅ **Objective gate evidence** (`GATES.md`) |
+| **Security Approval Boundary** | ❌ None (unbounded tool calls) | ❌ None | ✅ `ApprovalStore` SHA-256 cryptographic boundary |
+| **Interruption Resumption** | ❌ Lost context on crash | ⚠️ Basic `state.json` | ✅ Atomic `StateStore` + budget caps |
+| **Agent Termination Discipline** | ❌ Prompt-based ("stop when done") | ❌ None | ✅ `CompletionGuard` stop hook (`block` until verified) |
 
 ---
 

@@ -38,7 +38,7 @@ DAFG decouples task coordination into two orthogonal, synchronized state spaces:
 
 ## 2. The Complete Authoritative Node FSM (`ProtocolState`)
 
-The authoritative protocol state machine implements the formal 9-pillar execution discipline:
+The authoritative protocol state machine implements the formal 7-pillar execution discipline:
 
 ```mermaid
 stateDiagram-v2
