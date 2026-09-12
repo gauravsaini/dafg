@@ -691,6 +691,8 @@ class GateLinter:
             if gate.status == "ABANDONED" or not gate.check:
                 continue
             if any(ref in gate.check for ref in ["GATES.md", "gates.md", str(getattr(ledger, 'filepath', ''))]) and not GateLinter.detect_self_reference(gate, ledger):
+                if "--lint" in gate.check:
+                    continue
                 issues.append(LintIssue(
                     severity="WARNING",
                     gate_id=gid,
