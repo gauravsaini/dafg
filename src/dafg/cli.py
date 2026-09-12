@@ -43,6 +43,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--gates", default="GATES.md", help="Path to GATES.md")
         parser.add_argument("--approvals-file", default=".approved_gates.json", help="Path to approvals file")
         parser.add_argument("--auto-approve", action="store_true", help="Auto approve check commands")
+        parser.add_argument("--no-analytics", action="store_true", help="Suppress analytics report")
+        parser.add_argument("--json-analytics", action="store_true", help="Print analytics as JSON")
         args = parser.parse_args(sub_args)
 
         # Print trend briefing if available
@@ -78,6 +80,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"Initialized new DAFG with state file {state_fp}.")
         result = graph.run()
         print(f"DAFG run status: {result}")
+        if not args.no_analytics:
+            if args.json_analytics:
+                import json
+                print(json.dumps(graph.get_run_analytics(), indent=2))
+            else:
+                print()
+                print(graph.format_analytics_report())
         return 0 if result == "COMPLETED" else 1
 
     elif cmd == "eval":

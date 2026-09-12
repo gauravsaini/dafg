@@ -10,6 +10,7 @@ versioned interface contracts, and layered verification.
 from __future__ import annotations
 
 import concurrent.futures
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -182,19 +183,24 @@ class Budget:
     revisions_consumed: int = 0
     adaptations_consumed: int = 0
 
+    # ponytail: single coarse lock for all counters; split per-counter if profiling shows contention
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+
     def check_call(self) -> None:
-        if self.calls_consumed >= self.max_calls:
-            raise BudgetExceededError(
-                f"Model call budget exceeded: {self.calls_consumed}/{self.max_calls}"
-            )
-        self.calls_consumed += 1
+        with self._lock:
+            if self.calls_consumed >= self.max_calls:
+                raise BudgetExceededError(
+                    f"Model call budget exceeded: {self.calls_consumed}/{self.max_calls}"
+                )
+            self.calls_consumed += 1
 
     def check_node(self) -> None:
-        if self.nodes_created >= self.max_nodes:
-            raise BudgetExceededError(
-                f"Node budget exceeded: {self.nodes_created}/{self.max_nodes}"
-            )
-        self.nodes_created += 1
+        with self._lock:
+            if self.nodes_created >= self.max_nodes:
+                raise BudgetExceededError(
+                    f"Node budget exceeded: {self.nodes_created}/{self.max_nodes}"
+                )
+            self.nodes_created += 1
 
     def check_deadline(self) -> None:
         if self.deadline is not None and time.time() > self.deadline:
@@ -203,18 +209,20 @@ class Budget:
             )
 
     def check_revision(self) -> None:
-        if self.revisions_consumed >= self.max_revisions:
-            raise BudgetExceededError(
-                f"Revision budget exceeded: {self.revisions_consumed}/{self.max_revisions}"
-            )
-        self.revisions_consumed += 1
+        with self._lock:
+            if self.revisions_consumed >= self.max_revisions:
+                raise BudgetExceededError(
+                    f"Revision budget exceeded: {self.revisions_consumed}/{self.max_revisions}"
+                )
+            self.revisions_consumed += 1
 
     def check_adaptation(self) -> None:
-        if self.adaptations_consumed >= self.max_adaptations:
-            raise BudgetExceededError(
-                f"Adaptation budget exceeded: {self.adaptations_consumed}/{self.max_adaptations}"
-            )
-        self.adaptations_consumed += 1
+        with self._lock:
+            if self.adaptations_consumed >= self.max_adaptations:
+                raise BudgetExceededError(
+                    f"Adaptation budget exceeded: {self.adaptations_consumed}/{self.max_adaptations}"
+                )
+            self.adaptations_consumed += 1
 
 
 @dataclass
@@ -613,7 +621,8 @@ class TaskNode:
     status: NodeStatus = NodeStatus.PENDING
     needs: List[str] = field(default_factory=list)  # prerequisite node IDs
     assigned_gates: List[str] = field(default_factory=list)  # gate IDs in GATES.md
-    owns: List[str] = field(default_factory=list)  # declared file paths / patterns
+    owns: List[str] = field(default_factory=list)  # declared file paths / patterns (write ownership)
+    owns_read: List[str] = field(default_factory=list)  # read-only ownership (doesn't conflict with other reads)
     parent_id: Optional[str] = None  # parent in depth tree
     children: List[str] = field(default_factory=list)  # child node IDs
     depth: int = 0
@@ -778,36 +787,68 @@ def paths_overlap(path1: str, path2: str) -> bool:
 
 
 def nodes_conflict(node1: TaskNode, node2: TaskNode, ledger: Optional[GateLedger] = None) -> bool:
-    """Check if two nodes have overlapping file ownership."""
-    def get_owns(n: TaskNode) -> Set[str]:
-        res = set(n.owns)
+    """Check if two nodes have overlapping file ownership using reader-writer semantics.
+
+    Conflict rules (like a reader-writer lock):
+      - write vs write on overlapping paths -> CONFLICT
+      - write vs read  on overlapping paths -> CONFLICT
+      - read  vs read  on overlapping paths -> NO CONFLICT
+
+    ``OWNS:`` (and gate ``OWNS:``) is write ownership.
+    ``owns_read`` (and gate ``OWNS_READ:``) is read-only ownership.
+    """
+    def get_owns_rw(n: TaskNode) -> Tuple[Set[str], Set[str]]:
+        """Returns (write_paths, read_paths) for a node."""
+        writes = set(n.owns)
+        reads = set(n.owns_read)
         if ledger and n.assigned_gates:
             for gid in n.assigned_gates:
                 g = ledger.get_gate(gid)
-                if g and g.owns:
-                    for p in [x.strip() for x in g.owns.split(",") if x.strip()]:
-                        res.add(p)
-        return res
+                if g:
+                    if g.owns:
+                        for p in [x.strip() for x in g.owns.split(",") if x.strip()]:
+                            writes.add(p)
+                    owns_read_val = getattr(g, "owns_read", None)
+                    if owns_read_val:
+                        for p in [x.strip() for x in owns_read_val.split(",") if x.strip()]:
+                            reads.add(p)
+        return writes, reads
 
-    owns1 = get_owns(node1)
-    owns2 = get_owns(node2)
-    for p1 in owns1:
-        for p2 in owns2:
+    w1, r1 = get_owns_rw(node1)
+    w2, r2 = get_owns_rw(node2)
+
+    # Write-write conflicts
+    for p1 in w1:
+        for p2 in w2:
             if paths_overlap(p1, p2):
                 return True
+    # Write-read conflicts (either direction)
+    for p1 in w1:
+        for p2 in r2:
+            if paths_overlap(p1, p2):
+                return True
+    for p1 in r1:
+        for p2 in w2:
+            if paths_overlap(p1, p2):
+                return True
+    # Read-read: NO conflict (this is the whole point)
     return False
 
 
 class StateStore:
     """Handles atomic persistence of DAFG runtime state."""
 
+    # ponytail: module-level lock prevents concurrent os.replace() races under ThreadPoolExecutor
+    _save_lock = threading.Lock()
+
     @staticmethod
     def save(state: Dict[str, Any], filepath: Union[str, Path]) -> None:
-        fp = Path(filepath)
-        fp.parent.mkdir(parents=True, exist_ok=True)
-        tmp_file = fp.with_name(f"{fp.name}.tmp.{os.getpid()}")
-        tmp_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
-        os.replace(tmp_file, fp)
+        with StateStore._save_lock:
+            fp = Path(filepath)
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            tmp_file = fp.with_name(f"{fp.name}.tmp.{os.getpid()}")
+            tmp_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
+            os.replace(tmp_file, fp)
 
     @staticmethod
     def load(filepath: Union[str, Path]) -> Dict[str, Any]:
@@ -858,6 +899,9 @@ class DAFG:
         # Wave concurrency diagnostics
         self.wave_diagnostics: List[WaveDiagnostics] = []
         self.max_parallel_workers: int = 4  # 0 = serial (legacy), >0 = ThreadPoolExecutor
+
+        # ponytail: coarse lock for node state mutations under parallel dispatch
+        self._state_lock = threading.Lock()
 
         # v0.3 Bypass Subsystem
         self.bypass_policy: BypassPolicy = bypass_policy or BypassPolicy()
@@ -1045,79 +1089,145 @@ class DAFG:
     ) -> ProtocolEvent:
         """Bridge to ProtocolEngine: maps legacy (NodeStatus, action) to a ProtocolCommand
         and delegates to submit_command() for unified state authority."""
-        if self.is_sealed:
-            raise RunSealedError(f"Cannot commit transition on sealed run '{self.run_id}'")
-        if isinstance(target_status, str):
-            target_status = NodeStatus(target_status)
-        from_status = node.status if isinstance(node.status, NodeStatus) else NodeStatus(node.status)
+        with self._state_lock:
+            if self.is_sealed:
+                raise RunSealedError(f"Cannot commit transition on sealed run '{self.run_id}'")
+            if isinstance(target_status, str):
+                target_status = NodeStatus(target_status)
+            from_status = node.status if isinstance(node.status, NodeStatus) else NodeStatus(node.status)
 
-        # --- Map legacy action string to protocol Action ---
-        protocol_action = self._map_legacy_action(target_status, action, from_status, epoch_bump)
+            # --- Map legacy action string to protocol Action ---
+            protocol_action = self._map_legacy_action(target_status, action, from_status, epoch_bump)
 
-        if protocol_action is not None:
-            # Route through ProtocolEngine (the unified authority)
-            dispatch_ident = (
-                getattr(response, "dispatch_identity", None)
-                or getattr(node, "active_dispatch", None)
-                or kwargs.get("dispatch_identity")
-            )
-            cmd_payload = dict(payload or {})
-            if response and "result" not in cmd_payload:
-                cmd_payload["result"] = response.to_dict()
-            if dispatch_ident and "dispatch_identity" not in cmd_payload:
-                cmd_payload["dispatch_identity"] = (
-                    dispatch_ident.to_dict() if hasattr(dispatch_ident, "to_dict") else dispatch_ident
+            if protocol_action is not None:
+                # Route through ProtocolEngine (the unified authority)
+                dispatch_ident = (
+                    getattr(response, "dispatch_identity", None)
+                    or getattr(node, "active_dispatch", None)
+                    or kwargs.get("dispatch_identity")
                 )
-            if "revisions" not in cmd_payload:
-                cmd_payload["revisions"] = node.revisions
+                cmd_payload = dict(payload or {})
+                if response and "result" not in cmd_payload:
+                    cmd_payload["result"] = response.to_dict()
+                if dispatch_ident and "dispatch_identity" not in cmd_payload:
+                    cmd_payload["dispatch_identity"] = (
+                        dispatch_ident.to_dict() if hasattr(dispatch_ident, "to_dict") else dispatch_ident
+                    )
+                if "revisions" not in cmd_payload:
+                    cmd_payload["revisions"] = node.revisions
 
-            # If accepting from PROVING, transition to VERIFYING first via SUBMIT_PROPOSAL
-            current_p_state = getattr(node, "protocol_state", ProtocolState.IDLE)
-            if isinstance(current_p_state, str):
-                current_p_state = ProtocolState(current_p_state)
-            if protocol_action == Action.ACCEPT_VERDICT and current_p_state == ProtocolState.PROVING:
-                prop_cmd = ProtocolCommand(
-                    idempotency_key=f"prop_{node.id}_{self.next_seq()}",
-                    action=Action.SUBMIT_PROPOSAL,
+                # If accepting from PROVING, transition to VERIFYING first via SUBMIT_PROPOSAL
+                current_p_state = getattr(node, "protocol_state", ProtocolState.IDLE)
+                if isinstance(current_p_state, str):
+                    current_p_state = ProtocolState(current_p_state)
+                if protocol_action == Action.ACCEPT_VERDICT and current_p_state == ProtocolState.PROVING:
+                    prop_cmd = ProtocolCommand(
+                        idempotency_key=f"prop_{node.id}_{self.next_seq()}",
+                        action=Action.SUBMIT_PROPOSAL,
+                        node_id=node.id,
+                        run_id=self.run_id,
+                        dispatch_identity=dispatch_ident,
+                        reason="Submitting proposal for objective verification",
+                        payload=cmd_payload,
+                    )
+                    try:
+                        self.submit_command(prop_cmd)
+                    except IllegalTransitionError as e:
+                        self._record_event(
+                            node,
+                            "ILLEGAL_TRANSITION_ATTEMPT",
+                            f"Prohibited transition {from_status.value} -> VERIFYING: {e}",
+                        )
+                        raise
+
+                cmd = ProtocolCommand(
+                    idempotency_key=f"ct_{node.id}_{self.next_seq()}",
+                    action=protocol_action,
                     node_id=node.id,
                     run_id=self.run_id,
                     dispatch_identity=dispatch_ident,
-                    reason="Submitting proposal for objective verification",
+                    reason=reason,
                     payload=cmd_payload,
                 )
+                if epoch_bump:
+                    cmd.payload["epoch_bump"] = True
+
                 try:
-                    self.submit_command(prop_cmd)
+                    events, audit = self.submit_command(cmd)
                 except IllegalTransitionError as e:
                     self._record_event(
                         node,
                         "ILLEGAL_TRANSITION_ATTEMPT",
-                        f"Prohibited transition {from_status.value} -> VERIFYING: {e}",
+                        f"Prohibited transition {from_status.value} -> {target_status.value}: {e}",
                     )
                     raise
 
-            cmd = ProtocolCommand(
-                idempotency_key=f"ct_{node.id}_{self.next_seq()}",
-                action=protocol_action,
-                node_id=node.id,
-                run_id=self.run_id,
-                dispatch_identity=dispatch_ident,
-                reason=reason,
-                payload=cmd_payload,
-            )
-            if epoch_bump:
-                cmd.payload["epoch_bump"] = True
+                # Build legacy ProtocolEvent for callers that depend on the return value
+                event_id = len(self.execution_history) + 1
+                event = ProtocolEvent(
+                    event_id=event_id,
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    node_id=node.id,
+                    role=node.role,
+                    from_status=from_status.value,
+                    to_status=target_status.value,
+                    action=action,
+                    epoch=node.epoch,
+                    revisions=node.revisions,
+                    details=reason,
+                    reason=reason,
+                    payload=payload or {},
+                )
+                self.execution_history.append(event.to_dict())
 
-            try:
-                events, audit = self.submit_command(cmd)
-            except IllegalTransitionError as e:
+                # Ensure NodeStatus is in sync (reducer sets it via ProtocolState mapping,
+                # but some transitions need exact NodeStatus like BLOCKED/FAILED/PENDING)
+                if node.status != target_status:
+                    node.status = target_status
+                if target_status == NodeStatus.BLOCKED:
+                    node.execution_status = ExecutionStatus.BLOCKED
+                elif target_status == NodeStatus.FAILED:
+                    node.execution_status = ExecutionStatus.SETTLED
+
+                self.save_state()
+                return event
+
+            # --- Fallback: legacy path for unmapped transitions ---
+            valid, err = self.validate_transition(
+                node,
+                target_status,
+                epoch_bump=epoch_bump,
+                response=response,
+                **kwargs,
+            )
+            if not valid:
                 self._record_event(
                     node,
                     "ILLEGAL_TRANSITION_ATTEMPT",
-                    f"Prohibited transition {from_status.value} -> {target_status.value}: {e}",
+                    f"Prohibited transition {from_status.value} -> {target_status.value}: {err}",
                 )
-                raise
+                raise IllegalTransitionError(f"Protocol violation for node '{node.id}': {err}")
 
-            # Build legacy ProtocolEvent for callers that depend on the return value
+            if epoch_bump:
+                node.epoch += 1
+
+            node.status = target_status
+            if target_status == NodeStatus.READY:
+                if from_status == NodeStatus.ACCEPTED or action in ("INVALIDATED", "INVALIDATE"):
+                    node.protocol_state = ProtocolState.STALE
+                else:
+                    node.protocol_state = ProtocolState.IDLE
+                node.execution_status = ExecutionStatus.READY
+            elif target_status == NodeStatus.ACCEPTED:
+                node.protocol_state = ProtocolState.ACCEPTED
+                node.execution_status = ExecutionStatus.SETTLED
+            elif target_status == NodeStatus.REJECTED:
+                node.protocol_state = ProtocolState.REJECTED
+                node.execution_status = ExecutionStatus.SETTLED
+            elif target_status == NodeStatus.BLOCKED:
+                node.execution_status = ExecutionStatus.BLOCKED
+            elif target_status == NodeStatus.RUNNING:
+                node.execution_status = ExecutionStatus.RUNNING
             event_id = len(self.execution_history) + 1
             event = ProtocolEvent(
                 event_id=event_id,
@@ -1134,73 +1244,8 @@ class DAFG:
                 payload=payload or {},
             )
             self.execution_history.append(event.to_dict())
-
-            # Ensure NodeStatus is in sync (reducer sets it via ProtocolState mapping,
-            # but some transitions need exact NodeStatus like BLOCKED/FAILED/PENDING)
-            if node.status != target_status:
-                node.status = target_status
-            if target_status == NodeStatus.BLOCKED:
-                node.execution_status = ExecutionStatus.BLOCKED
-            elif target_status == NodeStatus.FAILED:
-                node.execution_status = ExecutionStatus.SETTLED
-
             self.save_state()
             return event
-
-        # --- Fallback: legacy path for unmapped transitions ---
-        valid, err = self.validate_transition(
-            node,
-            target_status,
-            epoch_bump=epoch_bump,
-            response=response,
-            **kwargs,
-        )
-        if not valid:
-            self._record_event(
-                node,
-                "ILLEGAL_TRANSITION_ATTEMPT",
-                f"Prohibited transition {from_status.value} -> {target_status.value}: {err}",
-            )
-            raise IllegalTransitionError(f"Protocol violation for node '{node.id}': {err}")
-
-        if epoch_bump:
-            node.epoch += 1
-
-        node.status = target_status
-        if target_status == NodeStatus.READY:
-            if from_status == NodeStatus.ACCEPTED or action in ("INVALIDATED", "INVALIDATE"):
-                node.protocol_state = ProtocolState.STALE
-            else:
-                node.protocol_state = ProtocolState.IDLE
-            node.execution_status = ExecutionStatus.READY
-        elif target_status == NodeStatus.ACCEPTED:
-            node.protocol_state = ProtocolState.ACCEPTED
-            node.execution_status = ExecutionStatus.SETTLED
-        elif target_status == NodeStatus.REJECTED:
-            node.protocol_state = ProtocolState.REJECTED
-            node.execution_status = ExecutionStatus.SETTLED
-        elif target_status == NodeStatus.BLOCKED:
-            node.execution_status = ExecutionStatus.BLOCKED
-        elif target_status == NodeStatus.RUNNING:
-            node.execution_status = ExecutionStatus.RUNNING
-        event_id = len(self.execution_history) + 1
-        event = ProtocolEvent(
-            event_id=event_id,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            node_id=node.id,
-            role=node.role,
-            from_status=from_status.value,
-            to_status=target_status.value,
-            action=action,
-            epoch=node.epoch,
-            revisions=node.revisions,
-            details=reason,
-            reason=reason,
-            payload=payload or {},
-        )
-        self.execution_history.append(event.to_dict())
-        self.save_state()
-        return event
 
     @staticmethod
     def _map_legacy_action(
@@ -1838,7 +1883,9 @@ class DAFG:
             context.update(dispatch_plan.scoped_context)
 
         response: AgentResponse
+        _triad_timings: Dict[str, float] = {}  # stage -> milliseconds
         try:
+            _t_prover_start = time.time()
             try:
                 if executor_fn:
                     raw_response = executor_fn(node, context)
@@ -1873,6 +1920,8 @@ class DAFG:
                 self.commit_transition(node, tgt, action=tgt.value, reason=f"Agent execution error: {e}")
                 self.budget.check_revision()
                 return False
+
+            _triad_timings["prover_ms"] = round((time.time() - _t_prover_start) * 1000, 1)
 
             # Check explicit worker refusal / honest block
             if response.status in ("BLOCKED", "REFUSED"):
@@ -1979,6 +2028,7 @@ class DAFG:
                 return False
 
             # Layer 2: Executable Gate Checks
+            _t_verifier_start = time.time()
             if node.assigned_gates:
                 if not self.ledger or not self.engine:
                     self.commit_transition(node, NodeStatus.FAILED, action="FAILED", reason="No gate engine/ledger configured to verify assigned gates")
@@ -2086,6 +2136,10 @@ class DAFG:
                                     return False
 
             # All objective criteria met
+            _triad_timings["verifier_ms"] = round((time.time() - _t_verifier_start) * 1000, 1)
+            _triad_timings["total_ms"] = round((time.time() - _t_prover_start) * 1000, 1)
+            node.metadata["_triad_timings"] = _triad_timings
+            node.metadata["_revision_triggers"] = node.revisions
             node.result = response.to_dict()
             node.wait_metrics.time_finished = time.time()
 
@@ -2470,6 +2524,269 @@ class DAFG:
             "revisions": node.revisions,
         })
 
+    def get_wave_report(self) -> Dict[str, Any]:
+        """Aggregated wave concurrency report for the current run."""
+        from collections import Counter
+
+        if not self.wave_diagnostics:
+            return {"steps": 0, "avg_concurrency_ratio": 0.0, "wave_width_histogram": {},
+                    "total_conflict_deferrals": 0, "top_conflict_paths": [], "avg_speedup_ratio": 1.0}
+
+        n = len(self.wave_diagnostics)
+        avg_cr = sum(d.concurrency_ratio for d in self.wave_diagnostics) / n
+        avg_sr = sum(d.speedup_ratio for d in self.wave_diagnostics) / n
+        histogram = dict(Counter(w for d in self.wave_diagnostics for w in d.wave_widths))
+
+        # Top conflicting OWNS: paths across all steps
+        path_counts: Dict[str, int] = {}
+        for d in self.wave_diagnostics:
+            for cr in d.conflict_reasons:
+                for p in cr.get("deferred_owns", []) + cr.get("conflicting_owns", []):
+                    path_counts[p] = path_counts.get(p, 0) + 1
+        top_paths = sorted(path_counts.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return {
+            "steps": n,
+            "avg_concurrency_ratio": round(avg_cr, 3),
+            "wave_width_histogram": histogram,
+            "total_conflict_deferrals": sum(len(d.conflict_reasons) for d in self.wave_diagnostics),
+            "top_conflict_paths": top_paths,
+            "avg_speedup_ratio": round(avg_sr, 3),
+        }
+
+    def critical_path(self) -> List[str]:
+        """Longest-latency dependency chain through the executed graph.
+
+        Uses node wall-clock duration as edge weight. Returns node IDs
+        in execution order (root → leaf of the longest chain).
+        """
+        # Build cost per node: time_finished - time_dispatched, or 0
+        cost: Dict[str, float] = {}
+        for nid, node in self.nodes.items():
+            wm = node.wait_metrics
+            if wm.time_dispatched and wm.time_finished:
+                cost[nid] = wm.time_finished - wm.time_dispatched
+            else:
+                cost[nid] = 0.0
+
+        # Longest path via topological DP (O(V+E))
+        dist: Dict[str, float] = {}
+        pred: Dict[str, Optional[str]] = {}
+
+        def _longest(nid: str) -> float:
+            if nid in dist:
+                return dist[nid]
+            node = self.nodes.get(nid)
+            if not node or not node.needs:
+                dist[nid] = cost.get(nid, 0.0)
+                pred[nid] = None
+                return dist[nid]
+            best_parent: Optional[str] = None
+            best_val = 0.0
+            for dep_id in node.needs:
+                v = _longest(dep_id)
+                if v > best_val:
+                    best_val = v
+                    best_parent = dep_id
+            dist[nid] = best_val + cost.get(nid, 0.0)
+            pred[nid] = best_parent
+            return dist[nid]
+
+        for nid in self.nodes:
+            _longest(nid)
+
+        if not dist:
+            return []
+
+        # Trace back from the node with the longest distance
+        end = max(dist, key=dist.get)  # type: ignore[arg-type]
+        path: List[str] = []
+        cur: Optional[str] = end
+        while cur is not None:
+            path.append(cur)
+            cur = pred.get(cur)
+        path.reverse()
+        return path
+
+    def get_run_analytics(self) -> Dict[str, Any]:
+        """Comprehensive end-of-run analytics combining funnel convergence,
+        wave concurrency, triad stage latencies, critical path, and budget utilization.
+        """
+        total_nodes = len(self.nodes)
+        accepted = sum(1 for n in self.nodes.values() if n.status == NodeStatus.ACCEPTED)
+        failed = sum(1 for n in self.nodes.values() if n.status == NodeStatus.FAILED)
+        blocked = sum(1 for n in self.nodes.values() if n.status == NodeStatus.BLOCKED)
+        pending = sum(1 for n in self.nodes.values() if n.status in (NodeStatus.PENDING, NodeStatus.READY, NodeStatus.RUNNING))
+        total_revisions = sum(n.revisions for n in self.nodes.values())
+
+        # Funnel metrics
+        funnel = {
+            "total_nodes": total_nodes,
+            "accepted_nodes": accepted,
+            "failed_nodes": failed,
+            "blocked_nodes": blocked,
+            "pending_nodes": pending,
+            "convergence_rate": round(accepted / total_nodes, 4) if total_nodes > 0 else 0.0,
+            "total_revisions": total_revisions,
+            "revision_rate": round(total_revisions / total_nodes, 2) if total_nodes > 0 else 0.0,
+            "outcome_status": self.outcome_status.value if isinstance(self.outcome_status, OutcomeStatus) else str(self.outcome_status),
+            "is_sealed": self.is_sealed,
+        }
+
+        # Concurrency & wave metrics
+        wave_rpt = self.get_wave_report()
+        concurrency = {
+            "steps": wave_rpt.get("steps", 0),
+            "avg_concurrency_ratio": wave_rpt.get("avg_concurrency_ratio", 0.0),
+            "avg_speedup_ratio": wave_rpt.get("avg_speedup_ratio", 1.0),
+            "wave_width_histogram": wave_rpt.get("wave_width_histogram", {}),
+            "total_conflict_deferrals": wave_rpt.get("total_conflict_deferrals", 0),
+            "top_conflict_paths": wave_rpt.get("top_conflict_paths", []),
+            "parallel_dispatch_enabled": self.max_parallel_workers > 0,
+            "max_workers": self.max_parallel_workers,
+        }
+
+        # Triad latency telemetry
+        prover_ms_total = 0.0
+        verifier_ms_total = 0.0
+        nodes_with_timings = 0
+        for node in self.nodes.values():
+            timings = node.metadata.get("_triad_timings", {})
+            if timings:
+                nodes_with_timings += 1
+                prover_ms_total += timings.get("prover_ms", 0.0)
+                verifier_ms_total += timings.get("verifier_ms", 0.0)
+
+        total_triad_ms = prover_ms_total + verifier_ms_total
+        triad = {
+            "nodes_instrumented": nodes_with_timings,
+            "prover_ms_total": round(prover_ms_total, 1),
+            "verifier_ms_total": round(verifier_ms_total, 1),
+            "total_ms": round(total_triad_ms, 1),
+            "prover_share_pct": round((prover_ms_total / total_triad_ms) * 100, 1) if total_triad_ms > 0 else 0.0,
+            "verifier_share_pct": round((verifier_ms_total / total_triad_ms) * 100, 1) if total_triad_ms > 0 else 0.0,
+            "avg_prover_ms": round(prover_ms_total / nodes_with_timings, 1) if nodes_with_timings > 0 else 0.0,
+            "avg_verifier_ms": round(verifier_ms_total / nodes_with_timings, 1) if nodes_with_timings > 0 else 0.0,
+        }
+
+        # Critical path
+        crit_nodes = self.critical_path()
+        crit_duration = sum(
+            (self.nodes[nid].wait_metrics.time_finished or 0.0) - (self.nodes[nid].wait_metrics.time_dispatched or 0.0)
+            for nid in crit_nodes
+            if nid in self.nodes and self.nodes[nid].wait_metrics.time_dispatched and self.nodes[nid].wait_metrics.time_finished
+        )
+        critical_path_info = {
+            "chain": crit_nodes,
+            "length": len(crit_nodes),
+            "duration_seconds": round(crit_duration, 3),
+        }
+
+        # Budget utilization
+        budget = {
+            "calls": f"{self.budget.calls_consumed}/{self.budget.max_calls}",
+            "nodes": f"{self.budget.nodes_created}/{self.budget.max_nodes}",
+            "revisions": f"{self.budget.revisions_consumed}/{self.budget.max_revisions}",
+            "adaptations": f"{self.budget.adaptations_consumed}/{self.budget.max_adaptations}",
+            "calls_pct": round((self.budget.calls_consumed / self.budget.max_calls) * 100, 1) if self.budget.max_calls else 0.0,
+            "nodes_pct": round((self.budget.nodes_created / self.budget.max_nodes) * 100, 1) if self.budget.max_nodes else 0.0,
+        }
+
+        # Gates
+        gates_info: Dict[str, Any] = {"available": False}
+        if self.ledger:
+            g_total = len(self.ledger.gates)
+            g_met = sum(1 for g in self.ledger.gates.values() if g.status == "MET")
+            g_pending = sum(1 for g in self.ledger.gates.values() if g.status == "PENDING")
+            g_abandoned = sum(1 for g in self.ledger.gates.values() if g.status == "ABANDONED")
+            gates_info = {
+                "available": True,
+                "total": g_total,
+                "met": g_met,
+                "pending": g_pending,
+                "abandoned": g_abandoned,
+                "pass_rate": round(g_met / g_total, 4) if g_total > 0 else 0.0,
+            }
+        elif self.gate_states:
+            g_total = len(self.gate_states)
+            g_met = sum(1 for g in self.gate_states.values() if g.get("status") == "MET")
+            gates_info = {
+                "available": True,
+                "total": g_total,
+                "met": g_met,
+                "pass_rate": round(g_met / g_total, 4) if g_total > 0 else 0.0,
+            }
+
+        return {
+            "run_id": self.run_id,
+            "funnel": funnel,
+            "concurrency": concurrency,
+            "triad": triad,
+            "critical_path": critical_path_info,
+            "budget": budget,
+            "gates": gates_info,
+        }
+
+    def format_analytics_report(self) -> str:
+        """Render a clean, human-readable terminal report of run analytics."""
+        a = self.get_run_analytics()
+        f = a["funnel"]
+        c = a["concurrency"]
+        t = a["triad"]
+        cp = a["critical_path"]
+        b = a["budget"]
+        g = a["gates"]
+
+        lines = [
+            "=" * 70,
+            "                     DAFG RUN ANALYTICS & FUNNEL",
+            "=" * 70,
+            f"  Run ID: {a['run_id']} | Outcome: {f['outcome_status']} | Sealed: {f['is_sealed']}",
+            "-" * 70,
+            "  FUNNEL CONVERGENCE",
+            f"    Nodes: {f['total_nodes']} total | {f['accepted_nodes']} accepted ({f['convergence_rate']*100:.1f}%) | {f['failed_nodes']} failed | {f['blocked_nodes']} blocked",
+        ]
+        if g.get("available"):
+            lines.append(f"    Gates: {g['total']} total | {g['met']} MET ({g.get('pass_rate', 0.0)*100:.1f}%) | {g.get('pending', 0)} pending | {g.get('abandoned', 0)} abandoned")
+        lines.append(f"    Revisions: {f['total_revisions']} across {f['total_nodes']} nodes ({f['revision_rate']:.2f} rev/node)")
+
+        lines.extend([
+            "-" * 70,
+            "  CONCURRENCY & THROUGHPUT",
+            f"    Steps: {c['steps']} | Concurrency Ratio: {c['avg_concurrency_ratio']:.3f} | Speedup: {c['avg_speedup_ratio']:.2f}x",
+            f"    Wave Widths: {c['wave_width_histogram']} | Workers: {c['max_workers']} (Parallel: {c['parallel_dispatch_enabled']})",
+            f"    Serialization Conflicts: {c['total_conflict_deferrals']}",
+        ])
+        if c.get("top_conflict_paths"):
+            top_strs = [f"{p} ({cnt}x)" for p, cnt in c["top_conflict_paths"][:3]]
+            lines.append(f"    Top Conflicting Paths: {', '.join(top_strs)}")
+
+        if t["nodes_instrumented"] > 0:
+            lines.extend([
+                "-" * 70,
+                "  TRIAD LATENCIES",
+                f"    Prover (Synthesis): {t['prover_ms_total']:.1f}ms ({t['prover_share_pct']:.1f}%) | Avg: {t['avg_prover_ms']:.1f}ms",
+                f"    Verifier (Gates):   {t['verifier_ms_total']:.1f}ms ({t['verifier_share_pct']:.1f}%) | Avg: {t['avg_verifier_ms']:.1f}ms",
+                f"    Total Triad Time:   {t['total_ms']:.1f}ms across {t['nodes_instrumented']} nodes",
+            ])
+
+        if cp["length"] > 0:
+            chain_str = " -> ".join(cp["chain"])
+            lines.extend([
+                "-" * 70,
+                "  CRITICAL PATH",
+                f"    Chain ({cp['length']} nodes): {chain_str}",
+                f"    Total Chain Duration: {cp['duration_seconds']:.2f}s",
+            ])
+
+        lines.extend([
+            "-" * 70,
+            "  BUDGET UTILIZATION",
+            f"    Calls: {b['calls']} ({b['calls_pct']}%) | Nodes: {b['nodes']} ({b['nodes_pct']}%) | Revisions: {b['revisions']}",
+            "=" * 70,
+        ])
+        return "\n".join(lines)
+
     def save_state(self) -> None:
         if not self.state_path:
             return
@@ -2510,6 +2827,8 @@ class DAFG:
             "bypass_telemetry": self.bypass_telemetry.to_dict(),
             "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
             "gate_states": gate_states,
+            "wave_diagnostics": [d.to_dict() for d in self.wave_diagnostics],
+            "analytics": self.get_run_analytics(),
             "execution_history": self.execution_history,
             "domain_events": self.domain_events,
             "audit_log": self.audit_log,
@@ -2574,6 +2893,10 @@ class DAFG:
             dafg.bypass_policy = BypassPolicy.from_dict(data["bypass_policy"])
         if "bypass_telemetry" in data:
             dafg.bypass_telemetry = BypassTelemetry.from_dict(data["bypass_telemetry"])
+
+        # Restore wave diagnostics
+        if "wave_diagnostics" in data:
+            dafg.wave_diagnostics = [WaveDiagnostics.from_dict(d) for d in data["wave_diagnostics"]]
 
         # Restore gate states into ledger if provided
         if ledger and dafg.gate_states:

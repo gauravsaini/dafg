@@ -25,7 +25,7 @@ GATE_HEADER_RE = re.compile(
 )
 MALFORMED_HEADER_RE = re.compile(r"^[ \t]*-\s*\[.*\]")
 PROPERTY_RE = re.compile(
-    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET):\s*(?P<value>.*)$",
+    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS_READ|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET):\s*(?P<value>.*)$",
     re.IGNORECASE,
 )
 TOP_ABANDON_RE = re.compile(
@@ -89,6 +89,7 @@ class Gate:
     cwd: Optional[str] = None
     evidence: Optional[str] = None
     owns: Optional[str] = None
+    owns_read: Optional[str] = None  # read-only ownership (doesn't conflict with other reads)
     abandon_reason: Optional[str] = None
     timeout: Optional[float] = None
     visual_ref: Optional[str] = None
@@ -236,6 +237,8 @@ class GateLedger:
                         current_gate.evidence_index = idx
                     elif key_upper == "OWNS":
                         current_gate.owns = val
+                    elif key_upper == "OWNS_READ":
+                        current_gate.owns_read = val
                     elif key_upper == "ABANDON":
                         current_gate.status = "ABANDONED"
                         current_gate.abandon_reason = val
