@@ -25,7 +25,8 @@ GATE_HEADER_RE = re.compile(
 )
 MALFORMED_HEADER_RE = re.compile(r"^[ \t]*-\s*\[.*\]")
 PROPERTY_RE = re.compile(
-    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS|ABANDON|TIMEOUT):\s*(?P<value>.*)$"
+    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET):\s*(?P<value>.*)$",
+    re.IGNORECASE,
 )
 TOP_ABANDON_RE = re.compile(
     r"^ABANDON:\s*(?P<id>[A-Za-z0-9_.:-]+)(?:\s+(?P<reason>.*))?$"
@@ -90,6 +91,13 @@ class Gate:
     owns: Optional[str] = None
     abandon_reason: Optional[str] = None
     timeout: Optional[float] = None
+    visual_ref: Optional[str] = None
+    visual_diff: Optional[float] = None
+    visual_retries: Optional[int] = None
+    visual_assertions: Optional[str] = None
+    determinism: Optional[str] = None
+    adversarial: Optional[str] = None
+    adversarial_budget: Optional[int] = None
     header_index: int = -1
     evidence_index: Optional[int] = None
     abandon_index: Optional[int] = None
@@ -216,24 +224,48 @@ class GateLedger:
                     key = prop_match.group("key")
                     val = prop_match.group("value").strip()
                     current_gate.end_index = idx
-                    if key == "CHECK":
+                    key_upper = key.upper()
+                    if key_upper == "CHECK":
                         current_gate.check = val
-                    elif key == "EXPECT":
+                    elif key_upper == "EXPECT":
                         current_gate.expect = val
-                    elif key == "CWD":
+                    elif key_upper == "CWD":
                         current_gate.cwd = val
-                    elif key == "EVIDENCE":
+                    elif key_upper == "EVIDENCE":
                         current_gate.evidence = val
                         current_gate.evidence_index = idx
-                    elif key == "OWNS":
+                    elif key_upper == "OWNS":
                         current_gate.owns = val
-                    elif key == "ABANDON":
+                    elif key_upper == "ABANDON":
                         current_gate.status = "ABANDONED"
                         current_gate.abandon_reason = val
                         current_gate.abandon_index = idx
-                    elif key == "TIMEOUT":
+                    elif key_upper == "TIMEOUT":
                         try:
                             current_gate.timeout = float(val)
+                        except ValueError:
+                            pass
+                    elif key_upper == "VISUAL_REF":
+                        current_gate.visual_ref = val
+                    elif key_upper == "VISUAL_DIFF":
+                        try:
+                            current_gate.visual_diff = float(val)
+                        except ValueError:
+                            pass
+                    elif key_upper == "VISUAL_RETRIES":
+                        try:
+                            current_gate.visual_retries = int(val)
+                        except ValueError:
+                            pass
+                    elif key_upper == "VISUAL_ASSERTIONS":
+                        current_gate.visual_assertions = val
+                    elif key_upper == "DETERMINISM":
+                        current_gate.determinism = val
+                    elif key_upper == "ADVERSARIAL":
+                        current_gate.adversarial = val
+                    elif key_upper == "ADVERSARIAL_BUDGET":
+                        try:
+                            current_gate.adversarial_budget = int(val)
                         except ValueError:
                             pass
                 continue
@@ -823,6 +855,64 @@ class GateEngine:
 
         timeout_val = gate.timeout or self.timeout
 
+        # Visual gate delegation
+        if gate.visual_ref:
+            from dafg.visual import VisualGateConfig, VisualGateEngine, VisualAssertion
+            assertions = []
+            if gate.visual_assertions:
+                for a in gate.visual_assertions.split(','):
+                    a = a.strip().upper()
+                    try:
+                        assertions.append(VisualAssertion(a))
+                    except ValueError:
+                        pass
+            if not assertions:
+                assertions = [VisualAssertion.PERCEPTUAL_DIFF]
+            
+            det_env = {}
+            if gate.determinism:
+                for pair in gate.determinism.split(','):
+                    if '=' in pair:
+                        k, v = pair.split('=', 1)
+                        det_env[k.strip()] = v.strip()
+            
+            import tempfile
+            output_path = tempfile.mktemp(suffix='.png')
+            
+            config = VisualGateConfig(
+                reference_image=gate.visual_ref,
+                capture_command=gate.check or '',
+                output_path=output_path,
+                assertions=assertions,
+                diff_threshold=gate.visual_diff if gate.visual_diff is not None else 0.05,
+                retries=gate.visual_retries if gate.visual_retries is not None else 2,
+                determinism_env=det_env,
+                timeout=timeout_val,
+            )
+            
+            vge = VisualGateEngine()
+            visual_result = vge.execute(config)
+            
+            if visual_result.passed:
+                now_str = datetime.now(timezone.utc).isoformat()
+                evidence_str = f"exit_code=0 timestamp={now_str} {visual_result.evidence}"
+                if ledger:
+                    ledger.update_gate_evidence(gate.id, evidence_str, met=True)
+                    if ledger.filepath:
+                        ledger.save()
+                return GateResult(gate_id=gate.id, status='MET', exit_code=0, evidence=evidence_str)
+            else:
+                error_detail = visual_result.capture_error or 'Visual assertions failed'
+                for ar in visual_result.assertion_results:
+                    if not ar.passed:
+                        error_detail += f'; {ar.assertion.value}: {ar.detail}'
+                
+                if ledger and (gate.status == "MET" or gate.evidence):
+                    ledger.update_gate_evidence(gate.id, None, met=False)
+                    if ledger.filepath:
+                        ledger.save()
+                        
+                return GateResult(gate_id=gate.id, status='FAILED', exit_code=1, error=error_detail)
         def _demote_failure() -> None:
             if ledger and (gate.status == "MET" or gate.evidence):
                 ledger.update_gate_evidence(gate.id, None, met=False)
@@ -920,6 +1010,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--trends", action="store_true", help="Show trend briefing from recent runs")
     parser.add_argument("--approvals-file", default=".approved_gates.json", help="Path to approvals file")
     parser.add_argument("--mutate", action="store_true", help="Run mutation adequacy tests on gates")
+    parser.add_argument("--repair", action="store_true", help="Run failing gates through the repair loop")
+    parser.add_argument("--repair-fn", default=None, help="Path to repair script (receives gate_id, diagnosis, check as args)")
+    parser.add_argument("--max-repair-attempts", type=int, default=3, help="Maximum repair attempts per gate")
+    parser.add_argument("--adversarial", action="store_true", help="Run adversarial search on gates with ADVERSARIAL config")
     args = parser.parse_args(argv)
 
     ledger_path = Path(args.file)
@@ -953,6 +1047,31 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.approve:
         approval_store.approve_all(ledger)
         print(f"✓ Approved all commands in '{ledger_path}' (saved to {args.approvals_file})")
+        return 0
+
+    if args.adversarial:
+        from dafg.adversarial import AdversarialInspector, ParameterSpace, SearchStrategy
+        inspector = AdversarialInspector()
+        found_failures = False
+        for gid, gate in ledger.gates.items():
+            if not gate.adversarial or gate.status == "ABANDONED":
+                continue
+            space = ParameterSpace.parse(gate.adversarial)
+            budget = gate.adversarial_budget or 50
+            result = inspector.search(
+                gate, space,
+                strategy=SearchStrategy.GRID,
+                budget=budget,
+                cwd=ledger_path.parent,
+            )
+            status = "✗ FAILURE FOUND" if result.found_failure else "✓ No failures"
+            print(f"{gid:10} {status} (searched {result.budget_used}/{space.total_combinations} combos, {result.coverage_pct:.0f}% coverage)")
+            if result.found_failure:
+                print(f"           Worst params: {result.worst_params} (score={result.worst_score:.3f})")
+                found_failures = True
+            print(f"           Best params:  {result.best_params} (score={result.best_score:.3f})")
+        if found_failures:
+            return 1
         return 0
 
     if args.run or args.reverify:
@@ -1019,6 +1138,40 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 1
         print(f"\n✓ All gates have adequate mutation kill rates")
         return 0
+
+    if args.repair:
+        from dafg.repair import RepairLoop, RepairBudget, RepairStatus
+        import subprocess as repair_subprocess
+        
+        repair_fn = None
+        if args.repair_fn:
+            def _repair_fn(gate_id, diagnosis, check_cmd):
+                proc = repair_subprocess.run(
+                    [args.repair_fn, gate_id, diagnosis, check_cmd],
+                    capture_output=True, text=True, timeout=30.0,
+                )
+                return proc.stdout.strip() or f"exit_code={proc.returncode}"
+            repair_fn = _repair_fn
+        
+        budget = RepairBudget(max_repair_attempts=args.max_repair_attempts)
+        engine = GateEngine(approval_store=approval_store)
+        loop = RepairLoop(ledger=ledger, engine=engine, repair_fn=repair_fn, budget=budget)
+        results = loop.repair_all_failing()
+        
+        repaired = sum(1 for r in results.values() if r.final_status == RepairStatus.REPAIRED)
+        failed = sum(1 for r in results.values() if r.final_status != RepairStatus.REPAIRED)
+        
+        for gid, result in results.items():
+            status_str = result.final_status.value
+            print(f"{gid:10} {status_str:20} ({result.attempts} attempt(s))")
+            for attempt in result.attempt_history:
+                print(f"           #{attempt.attempt_num}: {attempt.diagnosis} -> {attempt.post_status} ({attempt.duration_ms:.0f}ms)")
+        
+        if results:
+            print(f"\nRepair summary: {repaired} repaired, {failed} still failing")
+        else:
+            print("No failing gates to repair")
+        return 1 if failed > 0 else 0
 
     # Default: --status
     print(f"Gate Ledger: {ledger_path}")
