@@ -334,28 +334,89 @@ sequenceDiagram
 
 ---
 
-## 6. TaskNode State Machine & Bounded Adaptation
+## 6. TaskNode State Machine & Dual-Dimensional Protocol Architecture
 
-A `TaskNode` transitions through strict lifecycle states. When verification fails, the failure is categorized and governed by bounded adaptation:
+> For the comprehensive specification and interactive diagrams, see [`docs/STATE_MACHINE.md`](docs/STATE_MACHINE.md).
+
+DAFG separates node lifecycle management into two orthogonal, synchronized planes:
+1. **Authoritative Protocol FSM (`ProtocolState`)**: pure decision logic (`ProtocolEngine.decide`) and deterministic reducer replay (`ProtocolReducer.apply`).
+2. **Scheduler Execution Projection (`ExecutionStatus` / `NodeStatus`)**: derived via `state_projection(node.protocol_state)`.
+
+### 6.1 Authoritative Node FSM (`ProtocolState`)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> PENDING: Initialized in graph
+    [*] --> IDLE
 
-    PENDING --> READY: All dependencies (needs) ACCEPTED
-    READY --> RUNNING: Claimed by wave scheduler
+    IDLE --> CONTEXT_LOADED : LOAD_CONTEXT [G_manifest, G_auth]
+    IDLE --> PROVING : DISPATCH_PROVE / DISPATCH_FASTPATH [G_auth, stamps DispatchIdentity]
+    IDLE --> IDLE : BLOCK [dependency unfulfilled]
+    IDLE --> STALE : INVALIDATE [upstream cascade]
 
-    RUNNING --> BLOCKED: Worker returns 'needs' or 'spawn_children'
-    BLOCKED --> READY: All injected dependencies ACCEPTED
+    CONTEXT_LOADED --> PROVING : DISPATCH_PROVE / DISPATCH_FASTPATH [stamps DispatchIdentity]
+    CONTEXT_LOADED --> REJECTED : REFUSE [G_auth failure / contradictory requirements]
+    CONTEXT_LOADED --> DEGRADED : DEGRADE [partial capability fallback]
+    CONTEXT_LOADED --> IDLE : BLOCK [prerequisite wait]
+    CONTEXT_LOADED --> STALE : INVALIDATE [upstream cascade]
 
-    RUNNING --> VERIFYING: Worker outputs artifact; assigned gates exist
-    RUNNING --> ACCEPTED: No assigned gates & clean exit
+    PROVING --> VERIFYING : SUBMIT_PROPOSAL [artifact produced]
+    PROVING --> CHALLENGING : CHALLENGE [adversarial review requested]
+    PROVING --> REJECTED : REJECT / FAIL [local defect / killswitch activation]
+    PROVING --> REVISING : REVISE [targeted revision directive]
+    PROVING --> IDLE : BLOCK / HALT [resource cap / budget halt]
+    PROVING --> STALE : INVALIDATE [in-flight preemption]
 
-    VERIFYING --> ACCEPTED: All assigned gates MET with evidence
+    CHALLENGING --> VERIFYING : SUBMIT_EVIDENCE [evidence submitted]
+    CHALLENGING --> REVISING : REVISE [challenge defect exposed]
+    CHALLENGING --> IDLE : BLOCK
+    CHALLENGING --> STALE : INVALIDATE [in-flight preemption]
 
-    VERIFYING --> REJECTED: Gate check failed or unapproved
-    RUNNING --> REJECTED: Agent returned ERROR/FAILED status
+    VERIFYING --> ACCEPTED : ACCEPT_VERDICT [G_fence match, G_gate MET, exit_code=0]
+    VERIFYING --> REVISING : REVISE [verification defect found]
+    VERIFYING --> REJECTED : REJECT / FAIL [unrecoverable failure]
+    VERIFYING --> IDLE : BLOCK
+    VERIFYING --> STALE : INVALIDATE [in-flight preemption]
 
+    REVISING --> CONTEXT_LOADED : LOAD_CONTEXT [reload updated context]
+    REVISING --> PROVING : DISPATCH_PROVE [re-dispatch revision]
+    REVISING --> REJECTED : REJECT [max_revisions budget exhausted]
+    REVISING --> STALE : INVALIDATE [upstream cascade]
+
+    STALE --> CONTEXT_LOADED : LOAD_CONTEXT [re-sync updated contracts]
+    STALE --> PROVING : DISPATCH_PROVE [re-dispatch with bumped epoch]
+
+    ACCEPTED --> STALE : INVALIDATE [upstream REVISE_SUPERSEDES / schema drift / epoch++]
+    ACCEPTED --> REJECTED : REJECT [post-acceptance audit defect]
+    ACCEPTED --> REVISING : REVISE [post-acceptance repair]
+    DEGRADED --> STALE : INVALIDATE [upstream invalidation]
+
+    REJECTED --> IDLE : REOPEN [repair wave initiated]
+    REJECTED --> CONTEXT_LOADED : LOAD_CONTEXT [re-contextualized repair]
+    REJECTED --> PROVING : DISPATCH_PROVE / FASTPATH [direct retry]
+    REJECTED --> REVISING : REVISE [repair directive applied]
+
+    ACCEPTED --> [*] : SEAL_RUN [G_seal: completion integrity verified]
+```
+
+### 6.2 Two-Dimensional Mapping Matrix
+
+| `ProtocolState` (Authoritative) | `ExecutionStatus` (Scheduler) | Legacy `NodeStatus` | Operational Semantics |
+|---|---|---|---|
+| `IDLE` | `READY` | `PENDING` | Initial state; inputs and dependencies pending |
+| `CONTEXT_LOADED` | `READY` | `READY` | Manifest verified; ready for wave dispatch |
+| `PROVING` | `RUNNING` | `RUNNING` | Active worker execution; `DispatchIdentity` stamped |
+| `CHALLENGING` | `RUNNING` | `RUNNING` | Adversarial reviewer testing counter-examples |
+| `VERIFYING` | `WAITING_IO` | `RUNNING` | Evaluating runnable gates in `GATES.md` |
+| `REVISING` | `BLOCKED` | `REJECTED` | Diagnostic repair directive applied; waiting re-dispatch |
+| `STALE` | `BLOCKED` | `READY` | Upstream dependency invalidated; epoch bumped |
+| `ACCEPTED` | `SETTLED` | `ACCEPTED` | Decisive gate evidence recorded (`exit_code=0`) |
+| `DEGRADED` | `SETTLED` | `ACCEPTED` | Authorized partial capability fallback |
+| `REJECTED` | `SETTLED` | `REJECTED` | Terminal refusal or repair candidate |
+
+### 6.3 Diagnostic Bounded Adaptation Flow
+
+```mermaid
+stateDiagram-v2
     state REJECTED {
         [*] --> Classify
         Classify --> IncompleteWork: INCOMPLETE_WORK (syntax/timeout)
@@ -371,11 +432,8 @@ stateDiagram-v2
         MissingPerm --> ApprovalRequest: Flag policy blocker
     }
 
-    REJECTED --> PENDING: revisions < max_revisions & switch budget available
-    REJECTED --> FAILED: revisions >= max_revisions
-
-    ACCEPTED --> [*]
-    FAILED --> [*]
+    REJECTED --> IDLE: revisions < max_revisions & REOPEN action
+    REJECTED --> [*]: revisions >= max_revisions (TERMINAL)
 ```
 
 ---
