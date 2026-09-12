@@ -333,6 +333,12 @@ class ReActStateAdapter(BaseRuntimeAdapter):
       spec_gap_theta: speculation gap threshold (0.0-1.0). When the ratio of
           speculative (non-progressing) turns to total turns exceeds this,
           the loop aborts. Default 0.0 = disabled.
+      kill_epsilon: minimum token delta per turn (default: 0.0 = disabled).
+          When the per-turn token increment falls below this threshold, the
+          turn is flagged as below-epsilon and consecutive below-epsilon turns
+          trigger an abort. This catches dead-end loops that burn tokens
+          without meaningful progress, converting horizon exhaustion into
+          fast-fail REJECTED states.
     """
 
     def __init__(
@@ -341,11 +347,13 @@ class ReActStateAdapter(BaseRuntimeAdapter):
         max_turns: int = 5,
         kill_n: int = 0,
         spec_gap_theta: float = 0.0,
+        kill_epsilon: float = 0.0,
     ):
         super().__init__(name)
         self.max_turns = max_turns
         self.kill_n = kill_n
         self.spec_gap_theta = spec_gap_theta
+        self.kill_epsilon = kill_epsilon
         self.state_trace: List[Dict[str, str]] = []
         self.killswitch_activations: int = 0
 
@@ -413,9 +421,13 @@ class ReActStateAdapter(BaseRuntimeAdapter):
         consecutive_no_progress = 0
         speculative_turns = 0
 
+        prev_tokens = self.total_tokens_consumed
+        consecutive_below_epsilon = 0
+
         for turn in range(num_turns):
             turns_used += 1
-            self.total_tokens_consumed += turn_tokens + (turn * 50)
+            token_increment = turn_tokens + (turn * 50)
+            self.total_tokens_consumed += token_increment
             obs = "Transient error, retrying" if (is_flaky and turn == 0) else "Step passed"
 
             # Determine if this turn made progress
@@ -470,6 +482,31 @@ class ReActStateAdapter(BaseRuntimeAdapter):
                             "spec_gap_theta": self.spec_gap_theta,
                             "spec_ratio": spec_ratio,
                             "speculative_turns": speculative_turns,
+                            "turns_used": turns_used,
+                        },
+                        epoch=epoch,
+                        dispatch_identity=disp,
+                    )
+
+            # KillSwitch: kill_epsilon minimum token delta check
+            if self.kill_epsilon > 0.0:
+                if token_increment < self.kill_epsilon:
+                    consecutive_below_epsilon += 1
+                else:
+                    consecutive_below_epsilon = 0
+                # Trigger on first below-epsilon turn (dead-end detection)
+                if consecutive_below_epsilon >= 1:
+                    self.killswitch_activations += 1
+                    return AgentResponse(
+                        output=f"KillSwitch(kill_ε={self.kill_epsilon}): token delta {token_increment} below epsilon on {node.id}",
+                        status="FAILED",
+                        files_modified=[],
+                        metadata={
+                            "adapter": self.name,
+                            "error": "KILLSWITCH_KILL_EPSILON",
+                            "kill_epsilon": self.kill_epsilon,
+                            "token_delta": token_increment,
+                            "consecutive_below_epsilon": consecutive_below_epsilon,
                             "turns_used": turns_used,
                         },
                         epoch=epoch,

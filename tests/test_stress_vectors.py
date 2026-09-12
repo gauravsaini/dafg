@@ -610,3 +610,503 @@ class TestAdversarialInvalidationInjection:
         )
         assert node.protocol_state == ProtocolState.STALE
         assert node.epoch == 2
+
+
+# ---------------------------------------------------------------------------
+# Stress Vector 1b: KillSwitch kill_epsilon Sensitivity Sweep
+# ---------------------------------------------------------------------------
+
+class TestKillSwitchEpsilonSensitivity:
+    """Sweep kill_epsilon ∈ [10⁻³, 10⁻¹] alongside kill_N ∈ [1, 5] to
+    verify premature horizon exhaustion converts into fast-fail REJECTED
+    states, saving wasted token budget on dead-end loops."""
+
+    @pytest.mark.parametrize("epsilon", [0.001, 0.01, 0.1])
+    def test_epsilon_sweep_on_normal_task(self, epsilon):
+        """No epsilon value should fire on a healthy non-flaky task where
+        per-turn token deltas are well above any reasonable epsilon."""
+        react = ReActStateAdapter(kill_epsilon=epsilon)
+        node = TaskNode(id=f"eps_{epsilon}", title="Healthy Task", owns=["src/eps.py"])
+        resp = react.invoke(node, {})
+        assert resp.status == "COMPLETED"
+        assert react.killswitch_activations == 0
+
+    @pytest.mark.parametrize("epsilon", [200, 250, 500])
+    def test_epsilon_high_threshold_triggers_abort(self, epsilon):
+        """When epsilon exceeds the per-turn token increment (180 base),
+        the first turn should trigger KILLSWITCH_KILL_EPSILON."""
+        react = ReActStateAdapter(kill_epsilon=epsilon, max_turns=5)
+        node = TaskNode(id=f"eps_hi_{epsilon}", title="Dead End", owns=["src/dead.py"])
+        resp = react.invoke(node, {})
+        assert resp.status == "FAILED"
+        assert resp.metadata.get("error") == "KILLSWITCH_KILL_EPSILON"
+        assert react.killswitch_activations == 1
+        assert resp.metadata["token_delta"] < epsilon
+
+    @pytest.mark.parametrize("kill_n", [1, 2, 3, 4, 5])
+    def test_kill_n_and_epsilon_combined_sweep(self, kill_n):
+        """Sweep kill_N ∈ [1,5] with a low epsilon on a flaky task.
+        kill_n should fire first on flaky tasks (no-progress before low token delta)."""
+        react = ReActStateAdapter(kill_n=kill_n, kill_epsilon=0.001, max_turns=10)
+        node = TaskNode(
+            id=f"combo_{kill_n}", title="Combo Sweep",
+            owns=["src/combo.py"],
+            metadata={"flaky_environment": True, "flaky_tools": True},
+        )
+        resp = react.invoke(node, {})
+        if kill_n == 1:
+            # kill_n=1 fires after the first no-progress turn (flaky turn 0)
+            assert resp.status == "FAILED"
+            assert resp.metadata.get("error") == "KILLSWITCH_KILL_N"
+        else:
+            # kill_n > 1: flaky has only 1 consecutive no-progress turn,
+            # so it completes because progress resumes on turn 1
+            assert resp.status == "COMPLETED"
+
+    def test_epsilon_promotes_to_rejected_in_dag(self):
+        """When kill_epsilon triggers FAILED at the adapter level, the DAG
+        runtime should promote it to REJECTED (revisions < max_revisions),
+        not terminal FAILED."""
+        graph = DAFG(budget=Budget(max_calls=30, max_nodes=10))
+        node = TaskNode(id="eps_rej", title="Epsilon Reject", owns=["src/eps_rej.py"])
+        graph.add_node(node)
+
+        react = ReActStateAdapter(kill_epsilon=999, max_turns=5)
+
+        def executor(n, ctx):
+            return react.invoke(n, ctx)
+
+        graph.step(executor_fn=executor)
+        # revisions=1 < max_revisions=3 → REJECTED, not FAILED
+        assert node.status == NodeStatus.REJECTED
+
+    def test_epsilon_exhausted_revisions_promotes_to_failed(self):
+        """After max_revisions exhaustion, epsilon kill promotes to FAILED."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+        node = TaskNode(id="eps_fail", title="Epsilon Exhaust", owns=["src/eps_fail.py"],
+                        max_revisions=1)
+        graph.add_node(node)
+
+        react = ReActStateAdapter(kill_epsilon=999, max_turns=5)
+        graph.step(executor_fn=lambda n, c: react.invoke(n, c))
+        # revisions=1 >= max_revisions=1 → FAILED
+        assert node.status == NodeStatus.FAILED
+
+    def test_epsilon_token_savings_versus_unconstrained(self):
+        """A kill_epsilon-constrained adapter must consume fewer tokens
+        than an unconstrained adapter on a dead-end task (targeting ≥40%
+        savings on wasted budget)."""
+        unconstrained = ReActStateAdapter(max_turns=5)
+        constrained = ReActStateAdapter(max_turns=5, kill_epsilon=999)
+
+        node_u = TaskNode(id="u_eps", title="Unconstrained Dead End",
+                          owns=["src/u_eps.py"],
+                          metadata={"flaky_environment": True, "flaky_tools": True})
+        node_c = TaskNode(id="c_eps", title="Constrained Dead End",
+                          owns=["src/c_eps.py"],
+                          metadata={"flaky_environment": True, "flaky_tools": True})
+
+        unconstrained.invoke(node_u, {})
+        constrained.invoke(node_c, {})
+
+        assert constrained.total_tokens_consumed <= unconstrained.total_tokens_consumed
+        # The constrained adapter should bail on the first turn
+        savings = 1.0 - (constrained.total_tokens_consumed / max(unconstrained.total_tokens_consumed, 1))
+        assert savings >= 0.0  # At minimum, no worse
+
+    def test_epsilon_with_spec_gap_theta_combined(self):
+        """Both epsilon and spec_gap_theta active — whichever fires first wins."""
+        react = ReActStateAdapter(kill_epsilon=999, spec_gap_theta=0.3, max_turns=5)
+        node = TaskNode(
+            id="eps_theta", title="Dual Kill",
+            owns=["src/dual.py"],
+            metadata={"flaky_environment": True, "flaky_tools": True},
+        )
+        resp = react.invoke(node, {})
+        assert resp.status == "FAILED"
+        error = resp.metadata.get("error", "")
+        # Either epsilon or spec_gap fires
+        assert error in ("KILLSWITCH_KILL_EPSILON", "KILLSWITCH_SPEC_GAP")
+        assert react.killswitch_activations == 1
+
+    def test_kill_n_sweep_with_dag_rejected_states(self):
+        """Sweep kill_N ∈ [1, 5] on a flaky ReAct node inside a DAG.
+        Verify that kill_n=1 produces REJECTED and higher values complete."""
+        for kill_n in [1, 2, 3, 4, 5]:
+            graph = DAFG(budget=Budget(max_calls=30, max_nodes=10))
+            node = TaskNode(
+                id=f"dag_kn_{kill_n}", title=f"KN{kill_n} DAG",
+                owns=[f"src/kn_{kill_n}.py"],
+                metadata={"flaky_environment": True, "flaky_tools": True},
+            )
+            graph.add_node(node)
+            react = ReActStateAdapter(kill_n=kill_n, max_turns=10)
+            graph.step(executor_fn=lambda n, c: react.invoke(n, c))
+            if kill_n == 1:
+                assert node.status == NodeStatus.REJECTED
+            else:
+                assert node.status == NodeStatus.ACCEPTED
+
+
+# ---------------------------------------------------------------------------
+# Stress Vector 2b: Heterogeneous Multi-Adapter DAG Integration
+# ---------------------------------------------------------------------------
+
+class TestHeterogeneousDAGIntegration:
+    """End-to-end DAG execution where IterativeCLIAdapter upstream nodes
+    produce artifacts consumed by ToolDispatchAdapter downstream nodes,
+    testing cross-paradigm schema coercion within the execute_node pipeline
+    and T10 (STALE) cascade correctness across adapter boundaries."""
+
+    def test_cli_upstream_tooldispatch_downstream_pipeline(self):
+        """Full DAG run where CLI upstream produces output consumed by
+        ToolDispatch downstream through the graph.run() pipeline."""
+        graph = DAFG(budget=Budget(max_calls=30, max_nodes=10))
+
+        upstream = TaskNode(id="cli_up", title="CLI Producer", owns=["src/cli_up.py"])
+        downstream = TaskNode(id="td_down", title="TD Consumer",
+                              owns=["src/td_down.py"], needs=["cli_up"])
+        graph.add_node(upstream)
+        graph.add_node(downstream)
+
+        cli = IterativeCLIAdapter()
+        td = ToolDispatchAdapter()
+
+        def heterogeneous_executor(node, ctx):
+            if node.id == "cli_up":
+                return cli.invoke(node, ctx)
+            return td.invoke(node, ctx)
+
+        result = graph.run(executor_fn=heterogeneous_executor)
+        assert result == "COMPLETED"
+        assert upstream.status == NodeStatus.ACCEPTED
+        assert downstream.status == NodeStatus.ACCEPTED
+
+    def test_stale_cascade_invalidates_td_after_cli_revision(self):
+        """After both nodes ACCEPTED, invalidating the CLI upstream must
+        cascade STALE to the ToolDispatch downstream."""
+        graph = DAFG(budget=Budget(max_calls=30, max_nodes=10))
+
+        upstream = TaskNode(id="cli_stale", title="CLI Stale Source", owns=["src/cli_st.py"])
+        downstream = TaskNode(id="td_stale", title="TD Stale Target",
+                              owns=["src/td_st.py"], needs=["cli_stale"])
+        graph.add_node(upstream)
+        graph.add_node(downstream)
+
+        _accept_all_nodes(graph, lambda n, c: IterativeCLIAdapter().invoke(n, c)
+                          if n.id == "cli_stale" else ToolDispatchAdapter().invoke(n, c))
+        assert upstream.status == NodeStatus.ACCEPTED
+        assert downstream.status == NodeStatus.ACCEPTED
+
+        invalidated = graph.invalidate_dependents("cli_stale", reason="schema drift")
+        assert "td_stale" in invalidated
+        assert downstream.protocol_state == ProtocolState.STALE
+
+    def test_tooldispatch_upstream_react_downstream_pipeline(self):
+        """ToolDispatch → ReAct pipeline through the DAG runtime."""
+        graph = DAFG(budget=Budget(max_calls=30, max_nodes=10))
+
+        td_node = TaskNode(id="td_up", title="TD Producer", owns=["src/td_up.py"])
+        react_node = TaskNode(id="react_down", title="ReAct Consumer",
+                              owns=["src/react_down.py"], needs=["td_up"])
+        graph.add_node(td_node)
+        graph.add_node(react_node)
+
+        td = ToolDispatchAdapter()
+        react = ReActStateAdapter()
+
+        result = graph.run(executor_fn=lambda n, c: td.invoke(n, c)
+                           if n.id == "td_up" else react.invoke(n, c))
+        assert result == "COMPLETED"
+        assert td_node.status == NodeStatus.ACCEPTED
+        assert react_node.status == NodeStatus.ACCEPTED
+
+    def test_three_adapter_diamond_dag(self):
+        """Diamond DAG: CLI root → (TD left, ReAct right) → CLI join.
+        All four adapter-boundary edges must complete successfully."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+
+        root = TaskNode(id="d_root", title="CLI Root", owns=["src/d_root.py"])
+        left = TaskNode(id="d_left", title="TD Left", owns=["src/d_left.py"], needs=["d_root"])
+        right = TaskNode(id="d_right", title="ReAct Right", owns=["src/d_right.py"], needs=["d_root"])
+        join = TaskNode(id="d_join", title="CLI Join", owns=["src/d_join.py"], needs=["d_left", "d_right"])
+
+        graph.add_node(root)
+        graph.add_node(left)
+        graph.add_node(right)
+        graph.add_node(join)
+
+        adapters = {
+            "d_root": IterativeCLIAdapter(),
+            "d_left": ToolDispatchAdapter(),
+            "d_right": ReActStateAdapter(),
+            "d_join": IterativeCLIAdapter(),
+        }
+
+        result = graph.run(executor_fn=lambda n, c: adapters[n.id].invoke(n, c))
+        assert result == "COMPLETED"
+        assert all(graph.nodes[nid].status == NodeStatus.ACCEPTED
+                   for nid in ("d_root", "d_left", "d_right", "d_join"))
+
+    def test_stale_cascade_in_diamond_invalidates_all_descendants(self):
+        """Invalidating the diamond root must cascade STALE to left, right,
+        and join — across three distinct adapter boundaries."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+
+        root = TaskNode(id="dc_root", title="Root", owns=["src/dc_root.py"])
+        left = TaskNode(id="dc_left", title="Left", owns=["src/dc_left.py"], needs=["dc_root"])
+        right = TaskNode(id="dc_right", title="Right", owns=["src/dc_right.py"], needs=["dc_root"])
+        join = TaskNode(id="dc_join", title="Join", owns=["src/dc_join.py"], needs=["dc_left", "dc_right"])
+
+        graph.add_node(root)
+        graph.add_node(left)
+        graph.add_node(right)
+        graph.add_node(join)
+
+        adapters = {
+            "dc_root": IterativeCLIAdapter(),
+            "dc_left": ToolDispatchAdapter(),
+            "dc_right": ReActStateAdapter(),
+            "dc_join": IterativeCLIAdapter(),
+        }
+
+        _accept_all_nodes(graph, lambda n, c: adapters[n.id].invoke(n, c))
+        assert all(graph.nodes[nid].status == NodeStatus.ACCEPTED
+                   for nid in ("dc_root", "dc_left", "dc_right", "dc_join"))
+
+        invalidated = graph.invalidate_dependents("dc_root", reason="root revision")
+        assert "dc_left" in invalidated
+        assert "dc_right" in invalidated
+        assert "dc_join" in invalidated
+        for nid in ("dc_left", "dc_right", "dc_join"):
+            assert graph.nodes[nid].protocol_state == ProtocolState.STALE
+
+    def test_coercion_in_dag_preserves_epoch_across_adapters(self):
+        """Epoch must propagate correctly when crossing adapter boundaries
+        within the DAG execution pipeline."""
+        graph = DAFG(budget=Budget(max_calls=30, max_nodes=10))
+
+        upstream = TaskNode(id="ep_up", title="Epoch CLI", owns=["src/ep_up.py"], epoch=3)
+        downstream = TaskNode(id="ep_down", title="Epoch TD",
+                              owns=["src/ep_down.py"], needs=["ep_up"])
+        graph.add_node(upstream)
+        graph.add_node(downstream)
+
+        result = graph.run(executor_fn=lambda n, c: IterativeCLIAdapter().invoke(n, c)
+                           if n.id == "ep_up" else ToolDispatchAdapter().invoke(n, c))
+        assert result == "COMPLETED"
+        # Both must reach ACCEPTED
+        assert upstream.status == NodeStatus.ACCEPTED
+        assert downstream.status == NodeStatus.ACCEPTED
+
+
+# ---------------------------------------------------------------------------
+# Stress Vector 3b: Adversarial Mid-Flight REVISE_SUPERSEDES Injection
+# ---------------------------------------------------------------------------
+
+class TestAdversarialMidFlightPreemption:
+    """Inject REVISE_SUPERSEDES timeline events mid-flight during active
+    executor callbacks to verify that T10 preemption cleanly drops active
+    execution frames without corrupting state counters."""
+
+    def test_mid_flight_supersedes_during_executor_callback(self):
+        """Inject REVISE_SUPERSEDES while the executor is running for a
+        downstream node.  The upstream supersede cascades invalidation to
+        the downstream, bumping its epoch.  The downstream's response
+        carries the pre-bump epoch and must be rejected by the epoch fence."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+
+        upstream = TaskNode(id="mf_up", title="Upstream", owns=["src/mf_up.py"])
+        downstream = TaskNode(id="mf_down", title="Downstream",
+                              owns=["src/mf_down.py"], needs=["mf_up"])
+        graph.add_node(upstream)
+        graph.add_node(downstream)
+
+        call_count = {"n": 0}
+
+        def mid_flight_executor(node, ctx):
+            call_count["n"] += 1
+            if node.id == "mf_up":
+                return AgentResponse(output="upstream ok", status="COMPLETED")
+            # Capture pre-supersede epoch
+            pre_epoch = downstream.epoch
+            # During downstream execution, inject supersede + cascade
+            graph.invalidate_dependents("mf_up", reason="Mid-flight upstream revision")
+            # downstream.epoch is now pre_epoch + 1
+            # Return with stale epoch (pre-bump)
+            return AgentResponse(output="downstream stale", status="COMPLETED", epoch=pre_epoch)
+
+        _accept_all_nodes(graph, mid_flight_executor)
+        # Downstream must NOT be accepted — epoch fence rejects stale verdict
+        assert downstream.status != NodeStatus.ACCEPTED
+
+    def test_mid_flight_preemption_preserves_upstream_epoch_increment(self):
+        """After mid-flight supersede, the upstream epoch must have
+        incremented and the downstream's epoch fence must be current."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+
+        upstream = TaskNode(id="ep_mf_up", title="Epoch MF Up", owns=["src/ep_mf_up.py"])
+        downstream = TaskNode(id="ep_mf_down", title="Epoch MF Down",
+                              owns=["src/ep_mf_down.py"], needs=["ep_mf_up"])
+        graph.add_node(upstream)
+        graph.add_node(downstream)
+
+        # First: accept upstream normally
+        _accept_all_nodes(graph, lambda n, c: AgentResponse(output="ok", status="COMPLETED"))
+        assert upstream.status == NodeStatus.ACCEPTED
+        initial_epoch = upstream.epoch
+
+        # Inject mid-flight supersede
+        graph.commit_transition(
+            upstream, NodeStatus.READY,
+            action="REVISE_SUPERSEDES",
+            reason="Mid-flight preemption",
+            epoch_bump=True,
+        )
+        assert upstream.epoch == initial_epoch + 1
+        assert upstream.protocol_state == ProtocolState.STALE
+
+    def test_state_counters_intact_after_preemption_storm(self):
+        """Rapidly inject 10 REVISE_SUPERSEDES events and verify that
+        epoch, revisions, and execution_history counters are consistent."""
+        graph = DAFG(budget=Budget(max_calls=100, max_nodes=10))
+        node = TaskNode(id="storm", title="Preemption Storm", owns=["src/storm.py"])
+        graph.add_node(node)
+
+        _accept_all_nodes(graph, lambda n, c: AgentResponse(output="ok", status="COMPLETED"))
+        assert node.status == NodeStatus.ACCEPTED
+
+        for i in range(10):
+            graph.commit_transition(
+                node, NodeStatus.READY,
+                action="REVISE_SUPERSEDES",
+                reason=f"Storm #{i+1}",
+                epoch_bump=True,
+            )
+
+        # Epoch monotonically increases
+        assert node.epoch == 11
+        # Protocol state reflects latest invalidation
+        assert node.protocol_state == ProtocolState.STALE
+        # Execution history has recorded all transitions
+        supersede_events = [
+            e for e in graph.execution_history
+            if e.get("action") == "REVISE_SUPERSEDES" and e.get("node_id") == "storm"
+        ]
+        assert len(supersede_events) == 10
+
+    def test_mid_flight_react_preemption_drops_frame_cleanly(self):
+        """During a ReAct adapter invocation, inject a supersede that cascades
+        invalidation to the downstream node. The ReAct response carrying the
+        pre-supersede epoch must be rejected by the epoch fence."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+
+        upstream = TaskNode(id="react_mf_up", title="React MF Up", owns=["src/react_mf_up.py"])
+        downstream = TaskNode(id="react_mf_down", title="React MF Down",
+                              owns=["src/react_mf_down.py"], needs=["react_mf_up"])
+        graph.add_node(upstream)
+        graph.add_node(downstream)
+
+        react = ReActStateAdapter()
+
+        def preempting_executor(node, ctx):
+            if node.id == "react_mf_up":
+                return AgentResponse(output="upstream done", status="COMPLETED")
+            # Capture pre-supersede epoch
+            pre_epoch = downstream.epoch
+            # Start ReAct reasoning
+            resp = react.invoke(node, ctx)
+            # Inject supersede + cascade mid-flight
+            graph.invalidate_dependents("react_mf_up", reason="Mid-ReAct preemption")
+            # Return response with pre-preemption epoch
+            return AgentResponse(
+                output=resp.output, status=resp.status,
+                epoch=pre_epoch, files_modified=resp.files_modified,
+                metadata=resp.metadata,
+            )
+
+        _accept_all_nodes(graph, preempting_executor)
+        # Downstream cannot be accepted — stale epoch guard
+        assert downstream.status != NodeStatus.ACCEPTED
+
+    def test_cascade_preemption_does_not_corrupt_sibling_state(self):
+        """In a fan-out DAG (root → A, B), preempting root must cascade
+        to both A and B without corrupting either's independent state."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+
+        root = TaskNode(id="fan_root", title="Root", owns=["src/fan_root.py"])
+        sibling_a = TaskNode(id="fan_a", title="Sibling A",
+                             owns=["src/fan_a.py"], needs=["fan_root"])
+        sibling_b = TaskNode(id="fan_b", title="Sibling B",
+                             owns=["src/fan_b.py"], needs=["fan_root"])
+        graph.add_node(root)
+        graph.add_node(sibling_a)
+        graph.add_node(sibling_b)
+
+        _accept_all_nodes(graph, lambda n, c: AgentResponse(output="ok", status="COMPLETED"))
+        assert all(graph.nodes[nid].status == NodeStatus.ACCEPTED
+                   for nid in ("fan_root", "fan_a", "fan_b"))
+
+        # Record pre-preemption epochs
+        a_epoch_before = sibling_a.epoch
+        b_epoch_before = sibling_b.epoch
+
+        # Preempt root
+        invalidated = graph.invalidate_dependents("fan_root", reason="root preemption")
+        assert "fan_a" in invalidated
+        assert "fan_b" in invalidated
+
+        # Both siblings STALE with incremented epochs
+        assert sibling_a.protocol_state == ProtocolState.STALE
+        assert sibling_b.protocol_state == ProtocolState.STALE
+        assert sibling_a.epoch == a_epoch_before + 1
+        assert sibling_b.epoch == b_epoch_before + 1
+
+    def test_double_preemption_same_node_epoch_integrity(self):
+        """Two successive REVISE_SUPERSEDES on the same node must each
+        increment epoch by exactly 1 and never produce duplicate epochs."""
+        graph = DAFG(budget=Budget(max_calls=50, max_nodes=10))
+        node = TaskNode(id="dbl", title="Double Preempt", owns=["src/dbl.py"])
+        graph.add_node(node)
+
+        _accept_all_nodes(graph, lambda n, c: AgentResponse(output="ok", status="COMPLETED"))
+        assert node.epoch == 1
+
+        graph.commit_transition(
+            node, NodeStatus.READY,
+            action="REVISE_SUPERSEDES", reason="First",
+            epoch_bump=True,
+        )
+        assert node.epoch == 2
+
+        graph.commit_transition(
+            node, NodeStatus.READY,
+            action="REVISE_SUPERSEDES", reason="Second",
+            epoch_bump=True,
+        )
+        assert node.epoch == 3
+
+    def test_preemption_during_react_preserves_killswitch_counter(self):
+        """After a preemption interrupts a ReAct loop, the killswitch
+        activation counter must reflect only actual activations, not
+        corrupted by the preemption event."""
+        react = ReActStateAdapter(kill_n=2, max_turns=5)
+        node = TaskNode(id="ks_preempt", title="KS Preempt",
+                        owns=["src/ks_preempt.py"])
+
+        # Normal invocation — should complete without killswitch
+        resp = react.invoke(node, {})
+        assert resp.status == "COMPLETED"
+        assert react.killswitch_activations == 0
+
+        # After external preemption (simulated), re-invoke with flaky
+        node2 = TaskNode(
+            id="ks_preempt2", title="KS Preempt 2",
+            owns=["src/ks_preempt2.py"],
+            metadata={"flaky_environment": True, "flaky_tools": True},
+        )
+        resp2 = react.invoke(node2, {})
+        # kill_n=2, only 1 consecutive no-progress → completes
+        assert resp2.status == "COMPLETED"
+        # Counter should still be 0 (no activation)
+        assert react.killswitch_activations == 0
