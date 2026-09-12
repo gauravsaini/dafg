@@ -9,6 +9,7 @@ versioned interface contracts, and layered verification.
 
 from __future__ import annotations
 
+import concurrent.futures
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -307,6 +308,34 @@ class WaitMetrics:
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> WaitMetrics:
+        return cls(**data)
+
+
+@dataclass
+class WaveDiagnostics:
+    """Per-step wave concurrency diagnostics.
+
+    Records the shape of each scheduler step: how many nodes were ready,
+    how many could actually run in wave-0, which ``OWNS:`` paths forced
+    nodes into deferred waves, and the resulting concurrency ratio.
+    """
+    step_index: int = 0
+    timestamp: float = field(default_factory=time.time)
+    total_ready: int = 0
+    wave_widths: List[int] = field(default_factory=list)
+    wave_0_width: int = 0
+    concurrency_ratio: float = 0.0  # wave_0_width / total_ready
+    conflict_reasons: List[Dict[str, Any]] = field(default_factory=list)
+    parallel_dispatch: bool = False
+    wall_time_seconds: float = 0.0
+    serial_estimate_seconds: float = 0.0
+    speedup_ratio: float = 1.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'WaveDiagnostics':
         return cls(**data)
 
 
@@ -824,6 +853,11 @@ class DAFG:
         self.outcome_status: OutcomeStatus = OutcomeStatus.INCOMPLETE_RUN
         self.intermediate_false_acceptances: int = 0
         self._last_step_time: float = time.time()
+        self._step_counter: int = 0
+
+        # Wave concurrency diagnostics
+        self.wave_diagnostics: List[WaveDiagnostics] = []
+        self.max_parallel_workers: int = 4  # 0 = serial (legacy), >0 = ThreadPoolExecutor
 
         # v0.3 Bypass Subsystem
         self.bypass_policy: BypassPolicy = bypass_policy or BypassPolicy()
@@ -1619,6 +1653,7 @@ class DAFG:
         sorted_ready = sorted(ready_nodes, key=_score, reverse=True)
 
         waves: List[List[TaskNode]] = []
+        conflict_reasons: List[Dict[str, Any]] = []
         for candidate in sorted_ready:
             placed = False
             for wave in waves:
@@ -1628,7 +1663,34 @@ class DAFG:
                     placed = True
                     break
             if not placed:
+                # Record why this node couldn't join any existing wave
+                if waves:
+                    for member in waves[-1]:
+                        if nodes_conflict(candidate, member, ledger=self.ledger):
+                            conflict_reasons.append({
+                                "deferred_node": candidate.id,
+                                "conflicting_node": member.id,
+                                "deferred_owns": list(candidate.owns),
+                                "conflicting_owns": list(member.owns),
+                            })
+                            break
                 waves.append([candidate])
+
+        # Record wave diagnostics
+        self._step_counter += 1
+        total_ready = len(ready_nodes)
+        wave_0_width = len(waves[0]) if waves else 0
+        diag = WaveDiagnostics(
+            step_index=self._step_counter,
+            timestamp=now,
+            total_ready=total_ready,
+            wave_widths=[len(w) for w in waves],
+            wave_0_width=wave_0_width,
+            concurrency_ratio=wave_0_width / total_ready if total_ready > 0 else 0.0,
+            conflict_reasons=conflict_reasons,
+            parallel_dispatch=self.max_parallel_workers > 0,
+        )
+        self.wave_diagnostics.append(diag)
 
         # Track wait metrics for deferred waves
         dt = max(0.0, now - self._last_step_time)
@@ -2208,11 +2270,28 @@ class DAFG:
         )
         return True
 
+    def _execute_single_node(
+        self,
+        node: TaskNode,
+        executor_fn: Optional[Callable[[TaskNode, Dict[str, Any]], AgentResponse]] = None,
+    ) -> TaskNode:
+        """Execute one node (fastpath or full protocol). Returns the node."""
+        if self.enable_bypass and self.is_eligible_for_bypass(node):
+            self.execute_node_fastpath(node, executor_fn=executor_fn)
+        else:
+            self.execute_node(node, executor_fn=executor_fn)
+        return node
+
     def step(
         self,
         executor_fn: Optional[Callable[[TaskNode, Dict[str, Any]], AgentResponse]] = None,
     ) -> List[TaskNode]:
-        """Execute one wave of ready nodes."""
+        """Execute one wave of ready nodes.
+
+        When ``max_parallel_workers > 0`` and the wave contains multiple
+        nodes, dispatch them concurrently via ``ThreadPoolExecutor``.
+        Otherwise fall back to sequential execution (safe default).
+        """
         now = time.time()
         ready = self.get_ready_nodes()
         if not ready:
@@ -2223,12 +2302,43 @@ class DAFG:
         current_wave = waves[0]
 
         executed: List[TaskNode] = []
-        for node in current_wave:
-            if self.enable_bypass and self.is_eligible_for_bypass(node):
-                self.execute_node_fastpath(node, executor_fn=executor_fn)
-            else:
-                self.execute_node(node, executor_fn=executor_fn)
-            executed.append(node)
+        use_parallel = (
+            self.max_parallel_workers > 0
+            and len(current_wave) > 1
+            and executor_fn is not None
+        )
+
+        step_start = time.time()
+
+        if use_parallel:
+            workers = min(self.max_parallel_workers, len(current_wave))
+            with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(self._execute_single_node, node, executor_fn): node
+                    for node in current_wave
+                }
+                for future in concurrent.futures.as_completed(futures):
+                    executed.append(future.result())
+        else:
+            for node in current_wave:
+                self._execute_single_node(node, executor_fn=executor_fn)
+                executed.append(node)
+
+        step_elapsed = time.time() - step_start
+
+        # Update the diagnostics entry created by compute_waves
+        if self.wave_diagnostics:
+            diag = self.wave_diagnostics[-1]
+            diag.wall_time_seconds = step_elapsed
+            # Estimate serial time from individual node durations
+            serial_est = sum(
+                (n.wait_metrics.time_finished or 0.0) - (n.wait_metrics.time_dispatched or 0.0)
+                for n in executed
+                if n.wait_metrics.time_dispatched and n.wait_metrics.time_finished
+            )
+            diag.serial_estimate_seconds = serial_est
+            diag.speedup_ratio = serial_est / step_elapsed if step_elapsed > 0 else 1.0
+            diag.parallel_dispatch = use_parallel
 
         self._last_step_time = now
         return executed
@@ -2290,6 +2400,65 @@ class DAFG:
     def has_failed(self) -> bool:
         """True if any node in graph is FAILED."""
         return any(n.status == NodeStatus.FAILED for n in self.nodes.values())
+
+    def concurrency_report(self) -> Dict[str, Any]:
+        """Aggregate wave diagnostics into a concurrency health report.
+
+        Returns a dict with:
+        - avg/min/max wave-0 width
+        - overall concurrency ratio
+        - top OWNS: conflict pairs causing serialization
+        - parallel dispatch stats (wall time vs serial estimate)
+        """
+        if not self.wave_diagnostics:
+            return {"status": "no_data", "steps_recorded": 0}
+
+        widths = [d.wave_0_width for d in self.wave_diagnostics]
+        ratios = [d.concurrency_ratio for d in self.wave_diagnostics]
+        speedups = [d.speedup_ratio for d in self.wave_diagnostics if d.speedup_ratio > 0]
+
+        # Aggregate conflict reasons across all steps
+        conflict_pairs: Dict[str, int] = {}
+        for d in self.wave_diagnostics:
+            for cr in d.conflict_reasons:
+                key = f"{cr['deferred_node']} ↔ {cr['conflicting_node']}"
+                conflict_pairs[key] = conflict_pairs.get(key, 0) + 1
+        top_conflicts = sorted(conflict_pairs.items(), key=lambda x: x[1], reverse=True)[:5]
+
+        total_wall = sum(d.wall_time_seconds for d in self.wave_diagnostics)
+        total_serial = sum(d.serial_estimate_seconds for d in self.wave_diagnostics)
+        parallel_steps = sum(1 for d in self.wave_diagnostics if d.parallel_dispatch)
+
+        return {
+            "steps_recorded": len(self.wave_diagnostics),
+            "wave_0_width": {
+                "avg": round(sum(widths) / len(widths), 2),
+                "min": min(widths),
+                "max": max(widths),
+                "histogram": {w: widths.count(w) for w in sorted(set(widths))},
+            },
+            "concurrency_ratio": {
+                "avg": round(sum(ratios) / len(ratios), 3),
+                "min": round(min(ratios), 3),
+                "max": round(max(ratios), 3),
+            },
+            "speedup": {
+                "avg": round(sum(speedups) / len(speedups), 2) if speedups else 1.0,
+                "total_wall_seconds": round(total_wall, 3),
+                "total_serial_estimate_seconds": round(total_serial, 3),
+                "effective_speedup": round(total_serial / total_wall, 2) if total_wall > 0 else 1.0,
+            },
+            "parallel_dispatch": {
+                "enabled": self.max_parallel_workers > 0,
+                "max_workers": self.max_parallel_workers,
+                "steps_dispatched_parallel": parallel_steps,
+                "steps_dispatched_serial": len(self.wave_diagnostics) - parallel_steps,
+            },
+            "top_serialization_conflicts": [
+                {"pair": pair, "occurrences": count} for pair, count in top_conflicts
+            ],
+        }
+
 
     def _record_event(self, node: TaskNode, action: str, details: str) -> None:
         self.execution_history.append({

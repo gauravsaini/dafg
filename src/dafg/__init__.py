@@ -72,6 +72,7 @@ from dafg.runtime import (
     StateStore,
     TaskNode,
     WaitMetrics,
+    WaveDiagnostics,
     nodes_conflict,
     paths_overlap,
 )
@@ -205,6 +206,7 @@ __all__ = [
     "StateStore",
     "TaskNode",
     "WaitMetrics",
+    "WaveDiagnostics",
     "nodes_conflict",
     "paths_overlap",
     "CompletionGuard",
