@@ -187,7 +187,6 @@ class ProtocolEngine:
         (ProtocolState.PROVING, Action.CHALLENGE): ProtocolState.CHALLENGING,
         (ProtocolState.PROVING, Action.REJECT): ProtocolState.REJECTED,
         (ProtocolState.PROVING, Action.REVISE): ProtocolState.REVISING,
-        (ProtocolState.PROVING, Action.ACCEPT_VERDICT): ProtocolState.ACCEPTED,
         (ProtocolState.PROVING, Action.BLOCK): ProtocolState.IDLE,
         (ProtocolState.PROVING, Action.FAIL): ProtocolState.REJECTED,
         (ProtocolState.PROVING, Action.HALT): ProtocolState.IDLE,
@@ -199,6 +198,7 @@ class ProtocolEngine:
         (ProtocolState.VERIFYING, Action.ACCEPT_VERDICT): ProtocolState.ACCEPTED,
         (ProtocolState.VERIFYING, Action.REVISE): ProtocolState.REVISING,
         (ProtocolState.VERIFYING, Action.REJECT): ProtocolState.REJECTED,
+        (ProtocolState.VERIFYING, Action.FAIL): ProtocolState.REJECTED,
         (ProtocolState.VERIFYING, Action.BLOCK): ProtocolState.IDLE,
         (ProtocolState.REVISING, Action.LOAD_CONTEXT): ProtocolState.CONTEXT_LOADED,
         (ProtocolState.REVISING, Action.DISPATCH_PROVE): ProtocolState.PROVING,
@@ -207,11 +207,15 @@ class ProtocolEngine:
         (ProtocolState.STALE, Action.DISPATCH_PROVE): ProtocolState.PROVING,
 
         # --- Gap #1: Active-state invalidation (upstream cascade) ---
+        (ProtocolState.IDLE, Action.INVALIDATE): ProtocolState.STALE,
+        (ProtocolState.CONTEXT_LOADED, Action.INVALIDATE): ProtocolState.STALE,
+        (ProtocolState.REVISING, Action.INVALIDATE): ProtocolState.STALE,
         (ProtocolState.ACCEPTED, Action.INVALIDATE): ProtocolState.STALE,
         (ProtocolState.DEGRADED, Action.INVALIDATE): ProtocolState.STALE,
         (ProtocolState.PROVING, Action.INVALIDATE): ProtocolState.STALE,
         (ProtocolState.CHALLENGING, Action.INVALIDATE): ProtocolState.STALE,
         (ProtocolState.VERIFYING, Action.INVALIDATE): ProtocolState.STALE,
+        (ProtocolState.STALE, Action.INVALIDATE): ProtocolState.STALE,
 
         # --- ACCEPTED repair transitions (epoch bump required) ---
         (ProtocolState.ACCEPTED, Action.REJECT): ProtocolState.REJECTED,
@@ -222,6 +226,7 @@ class ProtocolEngine:
         (ProtocolState.REJECTED, Action.REOPEN): ProtocolState.IDLE,
         (ProtocolState.REJECTED, Action.LOAD_CONTEXT): ProtocolState.CONTEXT_LOADED,
         (ProtocolState.REJECTED, Action.DISPATCH_PROVE): ProtocolState.PROVING,
+        (ProtocolState.REJECTED, Action.DISPATCH_FASTPATH): ProtocolState.PROVING,
         (ProtocolState.REJECTED, Action.FAIL): ProtocolState.REJECTED,
         (ProtocolState.REJECTED, Action.REVISE): ProtocolState.REVISING,
     }
@@ -337,6 +342,19 @@ class ProtocolEngine:
 
         # 5. Guard evaluation for ACCEPT_VERDICT
         if cmd.action == Action.ACCEPT_VERDICT:
+            # Check for stale response epoch
+            result_payload = cmd.payload.get("result", {})
+            resp_epoch = result_payload.get("epoch") if isinstance(result_payload, dict) else None
+            if resp_epoch is not None and resp_epoch < node.epoch:
+                record = AuditRecord(
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    idempotency_key=cmd.idempotency_key,
+                    action=cmd.action.value,
+                    node_id=cmd.node_id,
+                    reason=f"Stale epoch verdict: response epoch {resp_epoch} < current node epoch {node.epoch}",
+                )
+                return [], record
+
             # Check gate evidence
             if node.assigned_gates and getattr(graph_snapshot, "ledger", None):
                 for gid in node.assigned_gates:
@@ -429,7 +447,10 @@ class ProtocolReducer:
         if event.action == Action.INVALIDATE.value:
             # Preserve history, mark stale
             node.epoch = event.epoch
-            node.revisions += 1
+            if "revisions" in event.payload:
+                node.revisions = event.payload["revisions"]
+            else:
+                node.revisions += 1
             node.active_dispatch = None
 
         elif event.action in (Action.DISPATCH_PROVE.value, Action.DISPATCH_FASTPATH.value):
@@ -446,21 +467,30 @@ class ProtocolReducer:
                 node.result = event.payload["result"]
 
         elif event.action in (Action.REVISE.value, Action.REJECT.value):
-            node.revisions += 1
+            if "revisions" in event.payload:
+                node.revisions = event.payload["revisions"]
+            else:
+                node.revisions += 1
             node.active_dispatch = None
 
         elif event.action == Action.BLOCK.value:
             node.active_dispatch = None
 
         elif event.action == Action.FAIL.value:
-            node.revisions += 1
+            if "revisions" in event.payload:
+                node.revisions = event.payload["revisions"]
+            else:
+                node.revisions += 1
             node.active_dispatch = None
 
         elif event.action == Action.HALT.value:
             node.active_dispatch = None
 
         elif event.action == Action.REOPEN.value:
-            node.revisions += 1
+            if "revisions" in event.payload:
+                node.revisions = event.payload["revisions"]
+            else:
+                node.revisions += 1
             node.active_dispatch = None
 
         # Synchronize legacy NodeStatus if the node carries it

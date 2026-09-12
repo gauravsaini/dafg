@@ -1022,14 +1022,53 @@ class DAFG:
 
         if protocol_action is not None:
             # Route through ProtocolEngine (the unified authority)
+            dispatch_ident = (
+                getattr(response, "dispatch_identity", None)
+                or getattr(node, "active_dispatch", None)
+                or kwargs.get("dispatch_identity")
+            )
+            cmd_payload = dict(payload or {})
+            if response and "result" not in cmd_payload:
+                cmd_payload["result"] = response.to_dict()
+            if dispatch_ident and "dispatch_identity" not in cmd_payload:
+                cmd_payload["dispatch_identity"] = (
+                    dispatch_ident.to_dict() if hasattr(dispatch_ident, "to_dict") else dispatch_ident
+                )
+            if "revisions" not in cmd_payload:
+                cmd_payload["revisions"] = node.revisions
+
+            # If accepting from PROVING, transition to VERIFYING first via SUBMIT_PROPOSAL
+            current_p_state = getattr(node, "protocol_state", ProtocolState.IDLE)
+            if isinstance(current_p_state, str):
+                current_p_state = ProtocolState(current_p_state)
+            if protocol_action == Action.ACCEPT_VERDICT and current_p_state == ProtocolState.PROVING:
+                prop_cmd = ProtocolCommand(
+                    idempotency_key=f"prop_{node.id}_{self.next_seq()}",
+                    action=Action.SUBMIT_PROPOSAL,
+                    node_id=node.id,
+                    run_id=self.run_id,
+                    dispatch_identity=dispatch_ident,
+                    reason="Submitting proposal for objective verification",
+                    payload=cmd_payload,
+                )
+                try:
+                    self.submit_command(prop_cmd)
+                except IllegalTransitionError as e:
+                    self._record_event(
+                        node,
+                        "ILLEGAL_TRANSITION_ATTEMPT",
+                        f"Prohibited transition {from_status.value} -> VERIFYING: {e}",
+                    )
+                    raise
+
             cmd = ProtocolCommand(
                 idempotency_key=f"ct_{node.id}_{self.next_seq()}",
                 action=protocol_action,
                 node_id=node.id,
                 run_id=self.run_id,
-                dispatch_identity=getattr(response, "dispatch_identity", None) or node.active_dispatch if protocol_action == Action.ACCEPT_VERDICT else None,
+                dispatch_identity=dispatch_ident,
                 reason=reason,
-                payload=payload or {},
+                payload=cmd_payload,
             )
             if epoch_bump:
                 cmd.payload["epoch_bump"] = True
@@ -1153,7 +1192,7 @@ class DAFG:
             return Action.REJECT
 
         # Invalidation
-        if action_str in ("INVALIDATED", "INVALIDATE") and epoch_bump:
+        if action_str in ("INVALIDATED", "INVALIDATE", "REVISE_SUPERSEDES") and epoch_bump:
             return Action.INVALIDATE
 
         # Blocking actions
@@ -1357,7 +1396,7 @@ class DAFG:
             node = self.nodes.get(nid)
             if not node:
                 continue
-            if node.status == NodeStatus.ACCEPTED:
+            if node.status in (NodeStatus.ACCEPTED, NodeStatus.RUNNING, NodeStatus.BLOCKED, NodeStatus.PENDING):
                 # Mandatory invalidation bookkeeping is unconstrained by budget
                 node.revisions += 1
                 # Demote assigned gates in ledger
@@ -1383,7 +1422,7 @@ class DAFG:
         invalidated: List[str] = []
         for nid, node in self.nodes.items():
             if contract_id in node.consumed_contracts:
-                if node.status == NodeStatus.ACCEPTED:
+                if node.status in (NodeStatus.ACCEPTED, NodeStatus.RUNNING, NodeStatus.BLOCKED):
                     # Mandatory invalidation bookkeeping is unconstrained by budget
                     node.consumed_contracts[contract_id] = new_version
                     if self.ledger:
@@ -1705,20 +1744,13 @@ class DAFG:
         )
         node.active_dispatch = dispatch_identity
 
-        cmd = ProtocolCommand(
-            idempotency_key=f"disp_{node.id}_{node.epoch}_{node.revisions}_{self.next_seq()}",
-            action=Action.DISPATCH_PROVE,
-            node_id=node.id,
-            run_id=self.run_id,
-            dispatch_identity=dispatch_identity,
+        self.commit_transition(
+            node,
+            NodeStatus.RUNNING,
+            action="DISPATCHED",
+            reason="Node dispatched for execution",
             payload={"dispatch_identity": dispatch_identity.to_dict()},
         )
-        try:
-            self.submit_command(cmd)
-        except IllegalTransitionError:
-            pass
-
-        self.commit_transition(node, NodeStatus.RUNNING, action="DISPATCHED", reason="Node dispatched for execution")
 
         # Run agent executor
         context = {
@@ -1995,26 +2027,13 @@ class DAFG:
             node.result = response.to_dict()
             node.wait_metrics.time_finished = time.time()
 
-            # Submit protocol command ACCEPT_VERDICT
-            cmd = ProtocolCommand(
-                idempotency_key=f"accept_{node.id}_{node.epoch}_{node.revisions}_{self.next_seq()}",
-                action=Action.ACCEPT_VERDICT,
-                node_id=node.id,
-                run_id=self.run_id,
-                dispatch_identity=getattr(response, "dispatch_identity", None) or node.active_dispatch,
-                payload={"result": response.to_dict()},
-            )
-            try:
-                self.submit_command(cmd)
-            except IllegalTransitionError:
-                pass
-
             self.commit_transition(
                 node,
                 NodeStatus.ACCEPTED,
                 action="ACCEPTED",
                 reason="Objective gate checks and layered verifications passed",
                 response=response,
+                payload={"result": response.to_dict()},
             )
             return True
         except BudgetExceededError:
@@ -2085,20 +2104,13 @@ class DAFG:
         )
         node.active_dispatch = dispatch_identity
 
-        cmd = ProtocolCommand(
-            idempotency_key=f"disp_fast_{node.id}_{node.epoch}_{self.next_seq()}",
-            action=Action.DISPATCH_FASTPATH,
-            node_id=node.id,
-            run_id=self.run_id,
-            dispatch_identity=dispatch_identity,
+        self.commit_transition(
+            node,
+            NodeStatus.RUNNING,
+            action="DISPATCH_FASTPATH",
+            reason="Dispatched via fastpath branch",
             payload={"dispatch_identity": dispatch_identity.to_dict()},
         )
-        try:
-            self.submit_command(cmd)
-        except IllegalTransitionError:
-            pass
-
-        self.commit_transition(node, NodeStatus.RUNNING, action="DISPATCH_FASTPATH", reason="Dispatched via fastpath branch")
 
         context = {
             "graph": self,
@@ -2178,25 +2190,13 @@ class DAFG:
         node.result = response.to_dict()
         node.wait_metrics.time_finished = time.time()
 
-        cmd = ProtocolCommand(
-            idempotency_key=f"accept_fast_{node.id}_{node.epoch}_{self.next_seq()}",
-            action=Action.ACCEPT_VERDICT,
-            node_id=node.id,
-            run_id=self.run_id,
-            dispatch_identity=getattr(response, "dispatch_identity", None) or node.active_dispatch,
-            payload={"result": response.to_dict()},
-        )
-        try:
-            self.submit_command(cmd)
-        except IllegalTransitionError:
-            pass
-
         self.commit_transition(
             node,
             NodeStatus.ACCEPTED,
             action="ACCEPTED_FASTPATH",
             reason="Adaptive protocol fastpath verified and committed",
             response=response,
+            payload={"result": response.to_dict()},
         )
         return True
 
