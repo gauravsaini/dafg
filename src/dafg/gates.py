@@ -67,11 +67,22 @@ TAUTOLOGICAL_PATTERNS = {
 TAUTOLOGICAL_COMMANDS = {"true", ":", "exit 0", "pass"}
 
 
+from enum import Enum
+
+class EvidenceStrength(str, Enum):
+    NONE = "NONE"
+    PENDING = "PENDING"
+    MODEL_JUDGMENT = "MODEL_JUDGMENT"
+    STRING_MATCH = "STRING_MATCH"
+    EXECUTABLE_PROOF = "EXECUTABLE_PROOF"
+
+
 @dataclass
 class Gate:
     id: str
     title: str
     status: str = "UNMET"  # UNMET, MET, ABANDONED
+    mutation_tested: bool = False
     check: Optional[str] = None
     expect: Optional[str] = None
     cwd: Optional[str] = None
@@ -92,6 +103,23 @@ class LintIssue:
     gate_id: Optional[str]
     message: str
     line_number: int = 0
+
+
+def classify_evidence(gate: Gate) -> EvidenceStrength:
+    if gate.status == "ABANDONED":
+        return EvidenceStrength.NONE
+    if not gate.evidence or gate.evidence.strip().lower() == "pending":
+        if not gate.evidence:
+            return EvidenceStrength.NONE
+        return EvidenceStrength.PENDING
+    if not gate.check:
+        # Manual gate with evidence but no CHECK command
+        return EvidenceStrength.MODEL_JUDGMENT
+    if "exit_code=0" in gate.evidence:
+        if getattr(gate, 'mutation_tested', False):
+            return EvidenceStrength.EXECUTABLE_PROOF
+        return EvidenceStrength.STRING_MATCH
+    return EvidenceStrength.PENDING
 
 
 @dataclass
@@ -600,8 +628,125 @@ class GateLinter:
                     )
                 )
 
+        # --- Structural dependency analysis ---
+        graph = GateLinter.build_dependency_graph(ledger)
+
+        # Self-reference deadlock detection
+        for gid, gate in ledger.gates.items():
+            if gate.status == "ABANDONED" or not gate.check:
+                continue
+            if GateLinter.detect_self_reference(gate, ledger):
+                issues.append(LintIssue(
+                    severity="ERROR",
+                    gate_id=gid,
+                    message=f"Gate '{gid}' CHECK depends on its own evidence (self-reference deadlock)",
+                    line_number=gate.line_number,
+                ))
+
+        # Cycle detection
+        cycles = GateLinter.detect_cycles(graph)
+        for cycle in cycles:
+            cycle_str = " → ".join(cycle + [cycle[0]])
+            issues.append(LintIssue(
+                severity="ERROR",
+                gate_id=cycle[0],
+                message=f"Circular dependency detected: {cycle_str}",
+                line_number=ledger.gates[cycle[0]].line_number if cycle[0] in ledger.gates else 0,
+            ))
+
+        # Ledger-state coupling warnings
+        for gid, gate in ledger.gates.items():
+            if gate.status == "ABANDONED" or not gate.check:
+                continue
+            if any(ref in gate.check for ref in ["GATES.md", "gates.md", str(getattr(ledger, 'filepath', ''))]) and not GateLinter.detect_self_reference(gate, ledger):
+                issues.append(LintIssue(
+                    severity="WARNING",
+                    gate_id=gid,
+                    message=f"Gate '{gid}' CHECK reads the ledger file — potential ledger-state coupling",
+                    line_number=gate.line_number,
+                ))
+
         return issues
 
+    @staticmethod
+    def build_dependency_graph(ledger: GateLedger) -> Dict[str, Set[str]]:
+        graph = {gid: set() for gid in ledger.gates}
+        valid_gids = [g for g in ledger.gates.keys() if g]
+        if not valid_gids:
+            return graph
+            
+        gate_id_pattern = r'\b(' + '|'.join(re.escape(gid) for gid in valid_gids) + r')\b'
+        
+        ledger_names = ["GATES.md", "gates.md", "state.json"]
+        if hasattr(ledger, 'filepath') and ledger.filepath:
+            ledger_names.append(str(ledger.filepath))
+            ledger_names.append(ledger.filepath.name)
+            
+        for gid, gate in ledger.gates.items():
+            if not gate.check:
+                continue
+                
+            matches = re.findall(gate_id_pattern, gate.check)
+            for m in matches:
+                if m != gid:
+                    graph[gid].add(m)
+                    
+            has_ledger_ref = any(name in gate.check if name else False for name in ledger_names)
+            if has_ledger_ref and re.search(rf'\b{re.escape(gid)}\b', gate.check):
+                graph[gid].add(gid)
+                
+        return graph
+
+    @staticmethod
+    def detect_cycles(graph: Dict[str, Set[str]]) -> List[List[str]]:
+        cycles = []
+        visited = set()
+        stack = []
+        in_stack = set()
+        
+        def dfs(node: str) -> None:
+            visited.add(node)
+            stack.append(node)
+            in_stack.add(node)
+            
+            # Sort neighbors to ensure deterministic order for cycles
+            for neighbor in sorted(graph.get(node, [])):
+                if neighbor in in_stack:
+                    idx = stack.index(neighbor)
+                    cycles.append(stack[idx:].copy())
+                elif neighbor not in visited:
+                    dfs(neighbor)
+                    
+            stack.pop()
+            in_stack.remove(node)
+            
+        # Sort nodes to ensure deterministic behavior
+        for node in sorted(graph.keys()):
+            if node not in visited:
+                dfs(node)
+                
+        return cycles
+
+    @staticmethod
+    def detect_self_reference(gate: Gate, ledger: GateLedger) -> bool:
+        if not gate.check:
+            return False
+            
+        ledger_names = ["GATES.md", "gates.md"]
+        if hasattr(ledger, 'filepath') and ledger.filepath:
+            ledger_names.append(str(ledger.filepath))
+            ledger_names.append(ledger.filepath.name)
+            
+        has_ledger = any(name in gate.check if name else False for name in ledger_names)
+        has_status = "gates --status" in gate.check
+        has_evidence = "EVIDENCE" in gate.check
+        
+        has_own_id = bool(re.search(rf'\b{re.escape(gate.id)}\b', gate.check))
+        
+        if has_own_id and (has_ledger or has_status or has_evidence):
+            return True
+            
+        return False
 
 class GateEngine:
     """Executes gate checks, verifying exit codes and expected pattern output."""
@@ -772,13 +917,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--approve", action="store_true", help="Approve all check commands in ledger")
     parser.add_argument("--run", action="store_true", help="Execute runnable gates")
     parser.add_argument("--reverify", action="store_true", help="Reverify previously met gates")
+    parser.add_argument("--trends", action="store_true", help="Show trend briefing from recent runs")
     parser.add_argument("--approvals-file", default=".approved_gates.json", help="Path to approvals file")
+    parser.add_argument("--mutate", action="store_true", help="Run mutation adequacy tests on gates")
     args = parser.parse_args(argv)
 
     ledger_path = Path(args.file)
     if not ledger_path.exists():
         print(f"Error: Ledger file '{ledger_path}' not found.", file=sys.stderr)
         return 1
+        
+    if args.trends:
+        from dafg.trends import TrendStore, TrendAnalyzer
+        store = TrendStore(filepath=ledger_path.parent / "eval_results" / "trends.jsonl")
+        analyzer = TrendAnalyzer(store)
+        print(analyzer.generate_briefing())
+        return 0
 
     ledger = GateLedger.load(ledger_path)
 
@@ -816,14 +970,73 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 print(f"✗ {gid}: FAILED ({res.error})")
                 all_met = False
+
+        # Record trend data
+        try:
+            from dafg.trends import TrendStore, RunSummary, GateRunRecord
+            import uuid
+            store = TrendStore(filepath=ledger_path.parent / "eval_results" / "trends.jsonl")
+            gate_records = {}
+            for gid, gate in ledger.gates.items():
+                gate_records[gid] = GateRunRecord(
+                    gate_id=gid,
+                    status=gate.status,
+                )
+            met_count = sum(1 for g in ledger.gates.values() if g.status == "MET")
+            failed_count = sum(1 for g in ledger.gates.values() if g.status not in ("MET", "ABANDONED"))
+            summary = RunSummary(
+                run_id=str(uuid.uuid4())[:8],
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                gate_results=gate_records,
+                gates_met=met_count,
+                gates_failed=failed_count,
+                gates_total=len(ledger.gates),
+                outcome="COMPLETE" if failed_count == 0 else "PARTIAL",
+            )
+            store.append_run(summary)
+        except Exception:
+            pass  # Trend recording is best-effort
+
         return 0 if all_met else 1
+
+    if args.mutate:
+        from dafg.mutation import GateMutator
+        mutator = GateMutator()
+        weak_gates = []
+        for gid, gate in ledger.gates.items():
+            if not gate.check or gate.status == "ABANDONED":
+                continue
+            report = mutator.test_adequacy(gate, cwd=ledger_path.parent)
+            strength = "STRONG" if not report.weak else "WEAK"
+            print(f"{gid:10} kill_rate={report.kill_rate:.0%} {strength}")
+            for r in report.results:
+                status = "killed" if r.killed else "SURVIVED"
+                print(f"           {r.strategy.value}: {status}")
+            if report.weak:
+                weak_gates.append(gid)
+        if weak_gates:
+            print(f"\n⚠ {len(weak_gates)} weak gate(s): {', '.join(weak_gates)}")
+            return 1
+        print(f"\n✓ All gates have adequate mutation kill rates")
+        return 0
 
     # Default: --status
     print(f"Gate Ledger: {ledger_path}")
     print("=" * 40)
+    
+    star_map = {
+        EvidenceStrength.NONE: "☆☆☆☆",
+        EvidenceStrength.PENDING: "★☆☆☆",
+        EvidenceStrength.MODEL_JUDGMENT: "★★☆☆",
+        EvidenceStrength.STRING_MATCH: "★★★☆",
+        EvidenceStrength.EXECUTABLE_PROOF: "★★★★",
+    }
+    
     for gid, gate in ledger.gates.items():
-        st = f"[{gate.status}]"
-        print(f"{gid:10} {st:12} {gate.title}")
+        strength = classify_evidence(gate)
+        stars = star_map[strength]
+        st = f"[{gate.status} {stars}]"
+        print(f"{gid:10} {st:15} {gate.title:40} {strength.value}")
         if gate.check:
             appr = "approved" if approval_store.is_approved(gate) else "UNAPPROVED"
             print(f"           CHECK: {gate.check} ({appr})")

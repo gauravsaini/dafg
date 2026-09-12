@@ -45,6 +45,19 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--auto-approve", action="store_true", help="Auto approve check commands")
         args = parser.parse_args(sub_args)
 
+        # Print trend briefing if available
+        try:
+            from dafg.trends import TrendStore, TrendAnalyzer
+            store = TrendStore(filepath=Path("eval_results/trends.jsonl"))
+            if store.filepath.exists():
+                analyzer = TrendAnalyzer(store)
+                briefing = analyzer.generate_briefing()
+                if briefing and "No previous runs" not in briefing:
+                    print(briefing)
+                    print()  # blank line separator
+        except Exception:
+            pass  # Trend briefing is best-effort
+
         gates_fp = Path(args.gates)
         ledger = GateLedger.load(gates_fp) if gates_fp.exists() else None
         appr_store = ApprovalStore(filepath=args.approvals_file)
