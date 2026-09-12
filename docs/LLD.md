@@ -340,7 +340,7 @@ sequenceDiagram
 
 ## 6. TaskNode State Machine & Dual-Dimensional Protocol Architecture
 
-> For the comprehensive specification and interactive diagrams, see [`docs/STATE_MACHINE.md`](docs/STATE_MACHINE.md).
+> For the comprehensive specification and interactive diagrams, see [`docs/STATE_MACHINE.md`](STATE_MACHINE.md).
 
 DAFG separates node lifecycle management into two orthogonal, synchronized planes:
 1. **Authoritative Protocol FSM (`ProtocolState`)**: pure decision logic (`ProtocolEngine.decide`) and deterministic reducer replay (`ProtocolReducer.apply`).
