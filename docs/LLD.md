@@ -1,4 +1,4 @@
-# Low-Level Design (LLD): DAFG Framework (v0.2)
+# Low-Level Design (LLD): DAFG Framework
 
 This document details the Low-Level Design (LLD), object models, subsystem interactions, security boundaries, and execution flows of **DAFG (Dynamic Autonomous Flow Graph)**.
 
@@ -604,12 +604,13 @@ When `task.persona_switches >= max_persona_switches` (default: 2), adaptation fr
 dafg/
 ├── AGENTS.md                    # Agent instructions (Antigravity, Codex)
 ├── CLAUDE.md                    # Agent instructions (Claude Code)
+├── CONTEXT.md                   # Project domain glossary & canonical terminology
 ├── GATES.md                     # Active acceptance gate ledger
-├── GATES_SCHEMA.md              # Schema validation gate ledger
-├── pyproject.toml               # Packaging & scripts (dafg, gates, stop-hook)
+├── pyproject.toml               # Packaging & script definitions (Hatchling + uv)
 ├── README.md                    # Installation & usage guide
-├── dfag.py                      # Root compatibility shim
-├── state_schema.json            # Sample persisted graph state
+├── dfag.py                      # Root compatibility shim & quick runner
+├── state.json                   # DAFG graph execution state (atomic checkpoint)
+├── .approved_gates.json         # Cryptographic approval store for gate checks
 │
 ├── .claude/
 │   └── settings.json            # Claude Code stop hook registration
@@ -620,6 +621,9 @@ dafg/
 ├── .cursor/rules/
 │   └── dafg.mdc                 # Cursor always-on project rules
 │
+├── .github/
+│   └── copilot-instructions.md  # GitHub Copilot workspace instructions
+│
 ├── benchmarks/
 │   ├── v02_regression/          # Frozen 40-task regression gate
 │   └── v03/                     # v0.3 Difficulty Benchmark
@@ -628,33 +632,52 @@ dafg/
 │       └── held_out_set/        # Frozen held-out tier (adversarial injections)
 │
 ├── docs/
-│   └── LLD.md                   # This Low-Level Design document
+│   ├── LLD.md                   # This Low-Level Design document
+│   └── STATE_MACHINE.md         # Formal state transition architecture spec
 │
 ├── src/dafg/
-│   ├── __init__.py              # Public module exports
+│   ├── __init__.py              # Public API exports
 │   ├── adapters.py              # Decoupled agent execution adapters (CLI, Dispatch, ReAct)
-│   ├── cli.py                   # CLI argument parser & subcommands (dafg, gates, stop-hook, eval)
+│   ├── adversarial.py           # Adversarial stress vectors and refusal dispatch
+│   ├── cli.py                   # Unified CLI dispatcher (dafg, gates, stop-hook, eval, init)
 │   ├── eval.py                  # Evaluation engine, metrics, and benchmark runner
-│   ├── gates.py                 # GateLedger, GateEngine, ApprovalStore, GateLinter
+│   ├── gates.py                 # GateLedger, ApprovalStore, GateEngine, GateLinter
 │   ├── hook.py                  # CompletionGuard & stop hook evaluation logic
-│   ├── persona.py               # PersonaCompiler, AgentRouter, BackendRegistry, PolicyEngine
-│   ├── runtime.py               # DAFG graph engine, TaskNode, Budget, wave scheduler, bypass
-│   └── schema.py                # Schema, Field validators, robust JSON recovery
+│   ├── init.py                  # Project scaffolding & agent interlock generator
+│   ├── mutation.py              # Gate mutation testing & ledger adequacy verification
+│   ├── persona.py               # PersonaCompiler, AgentRouter, PolicyEngine
+│   ├── protocol.py              # 7-pillar protocol conformance auditor
+│   ├── repair.py                # Failure-directed repair loop & self-healing
+│   ├── runtime.py               # DAFG task graph, TaskNode, Budget, rolling waves, bypass
+│   ├── schema.py                # Typed Schema, Field validators, robust JSON repair
+│   ├── trends.py                # Benchmark regression & trend analysis engine
+│   └── visual.py                # Automated visual verification & perceptual diff gates
 │
 └── tests/
     ├── test_adaptive_bypass.py          # Adaptive protocol bypass & safety guard tests
+    ├── test_adversarial.py              # Adversarial injection & schema shift tests
+    ├── test_boeing747.py                # Boeing 747 CAD validation test suite
     ├── test_dafg_budgets.py             # Budget caps and deadline tests
     ├── test_dafg_persistence.py         # State persistence and resume tests
     ├── test_dafg_runtime.py             # Dynamic graph scheduling and execution tests
     ├── test_dependency_correctness.py   # Pre-dispatch manifest gating & targeted repair tests
+    ├── test_dependency_linter.py        # Dependency graph linter tests
     ├── test_depth_tree_waves.py         # Depth tree and wave scheduling tests
     ├── test_eval_and_adapters.py        # Evaluation engine & decoupled adapter tests
     ├── test_gates_execution.py          # Gate execution and reverification tests
     ├── test_gates_linter.py             # Ledger linter tests
     ├── test_gates_parser.py             # Markdown ledger parser tests
     ├── test_gates_security.py           # Approval store and security boundary tests
+    ├── test_init.py                     # Project scaffolding & CLI init tests
     ├── test_layered_verification.py     # Layered verification & typed evidence tests
-    ├── test_persona.py                  # Persona compilation, routing, and adaptation tests
-    ├── test_schema.py                   # Schema validation & JSON repair tests
-    └── test_stop_hook.py                # Stop hook completion guard tests
+    ├── test_persona.py                  # Persona compilation and routing tests
+    ├── test_protocol_conformance.py     # 7-pillar protocol audit tests
+    ├── test_refusal_dispatch.py         # 5-class refusal dispatch tests
+    ├── test_repair_loop.py              # Failure-directed repair loop tests
+    ├── test_schema.py                   # Typed schemas and JSON repair tests
+    ├── test_stop_hook.py                # Stop hook completion guard tests
+    ├── test_stress_vectors.py           # Multi-vector stress and adversarial injection tests
+    ├── test_trends.py                   # Benchmark regression trend tests
+    └── test_visual_gates.py             # Visual gates & perceptual diff tests
 ```
+

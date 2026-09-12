@@ -2,7 +2,7 @@
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Package Manager: uv](https://img.shields.io/badge/package%20manager-uv-blueviolet)](https://github.com/astral-sh/uv)
-[![Tests](https://img.shields.io/badge/tests-149%20passed-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-348%20passed-brightgreen.svg)]()
 [![Zero Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime%20deps-success.svg)]()
 
 **DAFG** is a Python-native agent coordination framework that enforces **grounded completion discipline**. It combines a dynamic task graph runtime with runnable acceptance gate ledgers (`GATES.md`), cryptographic approval security, evidence verification, and agent stop hook enforcement.
@@ -23,12 +23,13 @@
   - [`gates` (Ledger Runner & Linter)](#gates-ledger-runner--linter)
   - [`dafg run` (Task Graph Runtime)](#dafg-run-task-graph-runtime)
   - [`dafg eval` (Benchmark Suite Runner)](#dafg-eval-benchmark-suite-runner)
+  - [`dafg init` (Agent Interlock Scaffolder)](#dafg-init-agent-interlock-scaffolder)
   - [`stop-hook` (Agent Completion Guard)](#stop-hook-agent-completion-guard)
 - [Python API Usage](#python-api-usage)
   - [1. Programmatic Gate Execution](#1-programmatic-gate-execution)
   - [2. Dynamic Task Graph & Dependency Injection](#2-dynamic-task-graph--dependency-injection)
   - [3. Typed Schemas & Robust JSON Recovery](#3-typed-schemas--robust-json-recovery)
-- [Integrating with AI Agents (Antigravity, Claude Code, Codex, Cursor)](#integrating-with-ai-agents)
+- [Integrating with AI Agents (Antigravity, Claude Code, Codex, Cursor, Copilot)](#integrating-with-ai-agents)
 - [Testing & Quality Assurance](#testing--quality-assurance)
 - [Architecture & File Structure](#architecture--file-structure)
 
@@ -291,6 +292,21 @@ uv run dafg eval --suite v03 --tier dev --adapter react     # ReAct state machin
 uv run dafg eval --suite v03 --tier held_out --json
 ```
 
+### `dafg init` (Agent Interlock Scaffolder)
+
+Scaffolds the DAFG `GATES.md` acceptance ledger and AI agent stop-hooks across Claude Code, OpenAI Codex, Google Antigravity, Cursor, and GitHub Copilot:
+
+```bash
+# Scaffold all platforms into current repo
+uv run dafg init --agents all
+
+# Scaffold specific platforms
+uv run dafg init --agents claude,copilot
+
+# Overwrite existing files
+uv run dafg init --agents all --force
+```
+
 ### `stop-hook` (Agent Completion Guard)
 
 ```bash
@@ -406,14 +422,92 @@ print(validated)
 
 ## Integrating with AI Agents
 
-DAFG ships with **drop-in configuration files** for four major AI coding platforms. Each platform automatically discovers and uses the gate workflow — no manual setup required.
+DAFG provides **zero-friction interlocks** for major AI coding platforms. Each platform automatically discovers the gate workflow and enforces completion discipline — preventing the agent from terminating until all acceptance gates are objectively proven.
 
-| Platform | Instructions | Stop Hook | Discovery |
+| Platform | Configuration Files | Stop Hook Mechanism | Discovery |
 |---|---|---|---|
-| **Antigravity** (`agy`) | `AGENTS.md` | Prompt-based | Auto-read at session start |
-| **Claude Code** | `CLAUDE.md` | `.claude/settings.json` | Blocks completion on unmet gates |
-| **OpenAI Codex** | `AGENTS.md` | `.codex/hooks.json` | Blocks completion on unmet gates |
-| **Cursor** | `.cursor/rules/dafg.mdc` | Rule-based | Always-on for `*.py` and `*.md` |
+| **Antigravity** (`agy`) | `AGENTS.md` | Session prompt / guard | Auto-read at session start |
+| **Claude Code** | `CLAUDE.md`, `.claude/settings.json` | `Stop` hook (blocks exit) | Native settings hook |
+| **OpenAI Codex** | `AGENTS.md`, `.codex/hooks.json` | `Stop` hook (blocks exit) | Native hooks feature |
+| **Cursor** | `.cursor/rules/dafg.mdc` | Always-on rule | Glob matches `*` |
+| **GitHub Copilot** | `.github/copilot-instructions.md` | Workspace instructions | Auto-loaded by Copilot |
+
+---
+
+### One-Shot Autonomous LLM Execution Prompt ("Do Everything")
+
+Copy and paste this prompt directly into **Claude Code**, **OpenAI Codex**, **Google Antigravity**, **Cursor**, or **GitHub Copilot** alongside your task or feature description. When given this prompt, the LLM will autonomously bootstrap DAFG, scaffold interlocks, translate requirements into verifiable acceptance gates, sign commands, implement the solution, and remain in a self-healing verification loop until all gates pass and delivery is proven:
+
+```text
+Execute the following task end-to-end under DAFG Completion Discipline:
+
+<TASK>
+[Insert your feature request, bug description, or task specification here]
+</TASK>
+
+Autonomous Execution Protocol (Do NOT stop until Step 5 verifies delivery):
+
+1. BOOTSTRAP ENVIRONMENT & INTERLOCKS:
+   - Ensure DAFG is available:
+     command -v dafg >/dev/null 2>&1 || uv tool install git+https://github.com/your-org/dafg
+   - If GATES.md or agent hooks (.claude/settings.json, AGENTS.md, etc.) are missing, scaffold them:
+     dafg init --agents all
+
+2. AUTHOR ACCEPTANCE GATES:
+   - Inspect GATES.md and define concrete, machine-runnable acceptance gates for every requirement:
+     - Format: - [ ] G<n>: <verifiable requirement description>
+     - CHECK: <runnable shell command, e.g., uv run pytest tests/test_feature.py -q>
+     - EXPECT: <exact regex or substring expected in stdout/stderr>
+     - OWNS: <precise path or directory modified by this gate>
+   - Rule: Gates MUST verify runnable outcomes, exit codes, or behavior—NEVER check comments or text existence in code.
+   - Lint the ledger syntax: uv run gates --lint GATES.md
+
+3. CRYPTOGRAPHIC APPROVAL:
+   - Sign and approve the gate commands:
+     uv run gates --approve GATES.md
+
+4. IMPLEMENTATION & SELF-HEALING LOOP:
+   - Implement the solution respecting declared OWNS: boundaries.
+   - Execute verification:
+     uv run gates --reverify GATES.md
+   - If any gate fails, inspect the failure evidence, diagnose the root cause, repair the code, and re-run.
+   - Repeat until all gates are MET with verified machine evidence.
+
+5. STOP-HOOK INTERLOCK VERIFICATION:
+   - Check exit readiness:
+     uv run stop-hook GATES.md --json
+   - STOPPING RULE: You are strictly prohibited from declaring completion, saying "I'm done", or ending your turn while StopHook returns {"decision": "block"}. Only conclude after StopHook returns {"decision": "allow"}.
+```
+
+---
+
+### One-Shot Repository Adoption Prompt
+
+For existing repositories that just need immediate DAFG setup and stop-hook registration without an immediate task:
+
+```text
+Adopt DAFG completion discipline in this repository:
+
+1. Ensure the DAFG runtime is installed:
+   command -v dafg >/dev/null 2>&1 || uv tool install git+https://github.com/your-org/dafg
+
+2. Scaffold all agent stop-hook configurations and project ledgers:
+   dafg init --agents all
+
+3. Inspect GATES.md and define the project's verifiable acceptance criteria:
+   - Every gate must have a runnable CHECK: command and EXPECT: regex pattern.
+   - Declare precise file boundaries with OWNS:.
+
+4. Cryptographically approve the gate commands:
+   uv run gates --approve GATES.md
+
+5. Verify the StopHook interlock is active and blocking:
+   uv run stop-hook GATES.md --json
+
+6. Begin implementation. Remember: You cannot complete this task until every gate in GATES.md passes with machine-verified proof.
+```
+
+---
 
 ### Google Antigravity (`agy` CLI)
 
@@ -468,6 +562,10 @@ The `AGENTS.md` file provides project instructions that Codex reads automaticall
 
 The `.cursor/rules/dafg.mdc` file is an always-on rule that provides the DAFG workflow instructions to Cursor. It activates automatically for all Python files and markdown files in the project.
 
+### GitHub Copilot
+
+The `.github/copilot-instructions.md` file defines completion discipline rules that are automatically loaded by GitHub Copilot Chat and Copilot Workspace, instructing the model to declare acceptance gates in `GATES.md` and check completion via `stop-hook`.
+
 ---
 
 ## Testing & Quality Assurance
@@ -478,7 +576,7 @@ Run the comprehensive offline test suite with `pytest`:
 uv run pytest -v
 ```
 
-- **137/137 tests passing in ~1s**
+- **348/348 tests passing in ~5s**
 - 100% offline (no external APIs or network calls required)
 - Covers:
   - Markdown gate parsing, formatting preservation, and error recovery
@@ -490,6 +588,8 @@ uv run pytest -v
   - Failure-directed repair and targeted transitive invalidation with version fencing
   - Versioned interface contracts and backward compatibility checking
   - Layered verification (structural, executable, invariant, and semantic)
+  - Gate mutation testing & ledger adequacy verification
+  - Automated visual perceptual diff assertions and determinism hooks
   - Adaptive protocol bypass with conservative safety guards and staged rollback
   - Standardized 5-outcome evaluation taxonomy with separate completion claims
   - Decoupled execution adapters (CLI, Tool-Dispatch, ReAct) and multi-tier benchmark suite
@@ -502,6 +602,7 @@ uv run pytest -v
 dafg/
 ├── AGENTS.md                    # Agent instructions (Antigravity, Codex)
 ├── CLAUDE.md                    # Agent instructions (Claude Code)
+├── CONTEXT.md                   # Project domain glossary & canonical terminology
 ├── GATES.md                     # Active acceptance gate ledger
 ├── pyproject.toml               # Packaging & script definitions (Hatchling + uv)
 ├── state.json                   # DAFG graph execution state (atomic checkpoint)
@@ -517,6 +618,9 @@ dafg/
 ├── .cursor/rules/
 │   └── dafg.mdc                 # Cursor always-on project rules
 │
+├── .github/
+│   └── copilot-instructions.md  # GitHub Copilot workspace instructions
+│
 ├── benchmarks/
 │   ├── v02_regression/          # Frozen 40-task regression gate
 │   └── v03/                     # v0.3 Difficulty Benchmark
@@ -527,30 +631,47 @@ dafg/
 ├── src/dafg/
 │   ├── __init__.py              # Public API exports
 │   ├── adapters.py              # Decoupled agent execution adapters (CLI, Dispatch, ReAct)
-│   ├── cli.py                   # Unified CLI dispatcher (dafg, gates, stop-hook, eval)
+│   ├── adversarial.py           # Adversarial stress vectors and refusal dispatch
+│   ├── cli.py                   # Unified CLI dispatcher (dafg, gates, stop-hook, eval, init)
 │   ├── eval.py                  # Evaluation engine, metrics, and benchmark runner
 │   ├── gates.py                 # GateLedger, ApprovalStore, GateEngine, GateLinter
 │   ├── hook.py                  # CompletionGuard & stop hook evaluation logic
+│   ├── init.py                  # Project scaffolding & agent interlock generator
+│   ├── mutation.py              # Gate mutation testing & ledger adequacy verification
 │   ├── persona.py               # PersonaCompiler, AgentRouter, PolicyEngine
+│   ├── protocol.py              # 7-pillar protocol conformance auditor
+│   ├── repair.py                # Failure-directed repair loop & self-healing
 │   ├── runtime.py               # DAFG task graph, TaskNode, Budget, rolling waves, bypass
-│   └── schema.py                # Typed Schema, Field validators, robust JSON repair
+│   ├── schema.py                # Typed Schema, Field validators, robust JSON repair
+│   ├── trends.py                # Benchmark regression & trend analysis engine
+│   └── visual.py                # Automated visual verification & perceptual diff gates
 │
 └── tests/
     ├── test_adaptive_bypass.py          # Adaptive protocol bypass & safety guard tests
+    ├── test_adversarial.py              # Adversarial injection & schema shift tests
+    ├── test_boeing747.py                # Boeing 747 CAD validation test suite
     ├── test_dafg_budgets.py             # Budget caps and deadline tests
     ├── test_dafg_persistence.py         # State persistence and resume tests
     ├── test_dafg_runtime.py             # Dynamic graph scheduling and execution tests
     ├── test_dependency_correctness.py   # Pre-dispatch manifest gating & targeted repair tests
+    ├── test_dependency_linter.py        # Dependency graph linter tests
     ├── test_depth_tree_waves.py         # Depth tree and wave scheduling tests
     ├── test_eval_and_adapters.py        # Evaluation engine & decoupled adapter tests
     ├── test_gates_execution.py          # Gate execution and reverification tests
     ├── test_gates_linter.py             # Ledger linter tests
     ├── test_gates_parser.py             # Markdown ledger parser tests
     ├── test_gates_security.py           # Approval store and security boundary tests
+    ├── test_init.py                     # Project scaffolding & CLI init tests
     ├── test_layered_verification.py     # Layered verification & typed evidence tests
     ├── test_persona.py                  # Persona compilation and routing tests
+    ├── test_protocol_conformance.py     # 7-pillar protocol audit tests
+    ├── test_refusal_dispatch.py         # 5-class refusal dispatch tests
+    ├── test_repair_loop.py              # Failure-directed repair loop tests
     ├── test_schema.py                   # Typed schemas and JSON repair tests
-    └── test_stop_hook.py                # Stop hook completion guard tests
+    ├── test_stop_hook.py                # Stop hook completion guard tests
+    ├── test_stress_vectors.py           # Multi-vector stress and adversarial injection tests
+    ├── test_trends.py                   # Benchmark regression trend tests
+    └── test_visual_gates.py             # Visual gates & perceptual diff tests
 ```
 
 ---

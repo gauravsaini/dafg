@@ -22,7 +22,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init"], help="Sub-commands")
         parser.print_help()
         return 0
 
@@ -215,17 +215,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("=" * 60)
         return 0 if report["passed"] else 1
 
+    elif cmd == "init":
+        parser = argparse.ArgumentParser(prog="dafg init", description="Initialize DAFG acceptance gates and AI agent stop-hooks")
+        parser.add_argument("--agents", default="all", help="Target agent platforms comma-separated: claude,codex,antigravity,cursor,copilot or 'all' (default: all)")
+        parser.add_argument("--force", action="store_true", help="Overwrite existing configuration files")
+        args = parser.parse_args(sub_args)
+        from dafg.init import scaffold_project
+        return scaffold_project(agents=args.agents, force=args.force)
+
     elif cmd in ("-h", "--help"):
         parser = argparse.ArgumentParser(
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init"], help="Sub-commands")
         parser.print_help()
         return 0
 
     else:
-        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit'.", file=sys.stderr)
+        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit', 'init'.", file=sys.stderr)
         return 1
 
 

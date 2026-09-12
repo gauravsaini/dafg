@@ -51,6 +51,7 @@ from dafg.adversarial import (
     ParameterSpace,
     SearchStrategy,
 )
+from dafg.init import scaffold_project
 from dafg.runtime import (
     DAFG,
     AgentResponse,
@@ -184,6 +185,7 @@ __all__ = [
     "Evaluation",
     "ParameterSpace",
     "SearchStrategy",
+    "scaffold_project",
     "DAFG",
     "AgentResponse",
     "Budget",
