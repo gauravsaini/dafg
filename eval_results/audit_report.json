@@ -1,8 +1,24 @@
 {
-  "passed": false,
-  "events_analyzed": 0,
-  "violations": [
-    "Trace file '/private/var/folders/fz/n16rnnt56w7b2ff5svkpqhgm0000gn/T/pytest-dafg/pytest-193/test_protocol_audit_cli_trace_0/nonexistent.json' does not exist (TRACE_FILE_NOT_FOUND)"
+  "passed": true,
+  "checks": {
+    "action_specific_transitions": true,
+    "rejection_of_prohibited_transitions": true,
+    "dispatch_identity_fencing": true,
+    "idempotency_deduplication": true,
+    "reducer_replay_parity": true,
+    "mandatory_invalidation_under_exhausted_budget": true,
+    "graph_sealing_invariance": true
+  },
+  "total_checks": 7,
+  "passed_checks": 7,
+  "details": [
+    "action_specific_transitions: verified full canonical lifecycle IDLE -> ACCEPTED (5 domain events)",
+    "rejection_of_prohibited_transitions: illegal jump rejected and audited (1 audit records)",
+    "dispatch_identity_fencing: stale epoch and run_id divergence successfully fenced",
+    "idempotency_deduplication: command deduplicated without event duplication (events=1)",
+    "reducer_replay_parity: pure deterministic replay reconstructed exact protocol state (6 events)",
+    "mandatory_invalidation_under_exhausted_budget: unconstrained invalidation marked 1 dependents STALE",
+    "graph_sealing_invariance: seal_run locked graph against post-seal mutations"
   ],
-  "timestamp": "2026-09-12T00:46:27.675631+00:00"
+  "timestamp": "2026-09-12T02:00:31.528393+00:00"
 }

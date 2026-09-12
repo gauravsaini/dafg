@@ -2077,6 +2077,14 @@ class DAFG:
         if len(node.needs) > 0 or len(node.children) > 0:
             return False
 
+        # 6. Safety Gate Check: contradictions or impossible requirements cannot bypass protocol guards
+        if (
+            node.metadata.get("has_contradiction")
+            or node.metadata.get("is_impossible")
+            or node.metadata.get("required_capabilities")
+        ):
+            return False
+
         return True
 
     def execute_node_fastpath(
