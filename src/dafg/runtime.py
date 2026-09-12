@@ -974,7 +974,13 @@ class DAFG:
             if node.assigned_gates and self.ledger:
                 for gid in node.assigned_gates:
                     gate = self.ledger.get_gate(gid)
-                    if not gate or gate.status != "MET":
+                    if not gate:
+                        return False, f"Assigned gate '{gid}' not found in ledger"
+                    if gate.status == "ABANDONED":
+                        if not getattr(gate, 'abandon_reason', None) or not gate.abandon_reason.strip():
+                            return False, f"Assigned gate '{gid}' is ABANDONED without justification"
+                        continue  # Valid abandonment — skip evidence check
+                    if gate.status != "MET":
                         return False, f"Assigned gate '{gid}' is not MET in ledger"
                     if not gate.evidence or "exit_code=0" not in gate.evidence:
                         return False, f"Assigned gate '{gid}' lacks valid execution evidence"
@@ -1003,13 +1009,72 @@ class DAFG:
         response: Optional[AgentResponse] = None,
         **kwargs,
     ) -> ProtocolEvent:
-        """Enforces protocol authority by validating guards and atomically committing transitions."""
+        """Bridge to ProtocolEngine: maps legacy (NodeStatus, action) to a ProtocolCommand
+        and delegates to submit_command() for unified state authority."""
         if self.is_sealed:
             raise RunSealedError(f"Cannot commit transition on sealed run '{self.run_id}'")
         if isinstance(target_status, str):
             target_status = NodeStatus(target_status)
         from_status = node.status if isinstance(node.status, NodeStatus) else NodeStatus(node.status)
 
+        # --- Map legacy action string to protocol Action ---
+        protocol_action = self._map_legacy_action(target_status, action, from_status, epoch_bump)
+
+        if protocol_action is not None:
+            # Route through ProtocolEngine (the unified authority)
+            cmd = ProtocolCommand(
+                idempotency_key=f"ct_{node.id}_{self.next_seq()}",
+                action=protocol_action,
+                node_id=node.id,
+                run_id=self.run_id,
+                dispatch_identity=getattr(response, "dispatch_identity", None) or node.active_dispatch if protocol_action == Action.ACCEPT_VERDICT else None,
+                reason=reason,
+                payload=payload or {},
+            )
+            if epoch_bump:
+                cmd.payload["epoch_bump"] = True
+
+            try:
+                events, audit = self.submit_command(cmd)
+            except IllegalTransitionError as e:
+                self._record_event(
+                    node,
+                    "ILLEGAL_TRANSITION_ATTEMPT",
+                    f"Prohibited transition {from_status.value} -> {target_status.value}: {e}",
+                )
+                raise
+
+            # Build legacy ProtocolEvent for callers that depend on the return value
+            event_id = len(self.execution_history) + 1
+            event = ProtocolEvent(
+                event_id=event_id,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                node_id=node.id,
+                role=node.role,
+                from_status=from_status.value,
+                to_status=target_status.value,
+                action=action,
+                epoch=node.epoch,
+                revisions=node.revisions,
+                details=reason,
+                reason=reason,
+                payload=payload or {},
+            )
+            self.execution_history.append(event.to_dict())
+
+            # Ensure NodeStatus is in sync (reducer sets it via ProtocolState mapping,
+            # but some transitions need exact NodeStatus like BLOCKED/FAILED/PENDING)
+            if node.status != target_status:
+                node.status = target_status
+            if target_status == NodeStatus.BLOCKED:
+                node.execution_status = ExecutionStatus.BLOCKED
+            elif target_status == NodeStatus.FAILED:
+                node.execution_status = ExecutionStatus.SETTLED
+
+            self.save_state()
+            return event
+
+        # --- Fallback: legacy path for unmapped transitions ---
         valid, err = self.validate_transition(
             node,
             target_status,
@@ -1064,6 +1129,56 @@ class DAFG:
         self.save_state()
         return event
 
+    @staticmethod
+    def _map_legacy_action(
+        target: NodeStatus,
+        action_str: str,
+        from_status: NodeStatus,
+        epoch_bump: bool,
+    ) -> Optional[Action]:
+        """Map a legacy (NodeStatus, action_string) pair to a protocol Action.
+        Returns None if no mapping exists (triggers fallback path)."""
+        # Dispatch actions
+        if action_str == "DISPATCHED":
+            return Action.DISPATCH_PROVE
+        if action_str == "DISPATCH_FASTPATH":
+            return Action.DISPATCH_FASTPATH
+
+        # Acceptance actions
+        if target == NodeStatus.ACCEPTED and action_str in ("ACCEPTED", "ACCEPTED_FASTPATH"):
+            return Action.ACCEPT_VERDICT
+
+        # Rejection actions
+        if target == NodeStatus.REJECTED and action_str == "REJECTED":
+            return Action.REJECT
+
+        # Invalidation
+        if action_str in ("INVALIDATED", "INVALIDATE") and epoch_bump:
+            return Action.INVALIDATE
+
+        # Blocking actions
+        if target == NodeStatus.BLOCKED:
+            return Action.BLOCK
+
+        # Ready (non-invalidation) — return to idle
+        if target == NodeStatus.READY and action_str in ("READY", "BYPASS_ESCALATED"):
+            return Action.REVISE  # Revise covers "go back and try differently"
+
+        # Failure (terminal)
+        if target == NodeStatus.FAILED:
+            return Action.FAIL
+
+        # Budget halt (back to pending/idle)
+        if action_str == "BUDGET_HALTED":
+            return Action.HALT
+
+        # Worker refused (blocked)
+        if action_str == "WORKER_REFUSED":
+            return Action.BLOCK
+
+        return None  # Unmapped: use fallback
+
+
     def verify_completion_integrity(self) -> Tuple[bool, List[str]]:
         """Verifies that graph completion is backed by current, contract-bound evidence."""
         if not self.nodes:
@@ -1080,6 +1195,9 @@ class DAFG:
                     gate = self.ledger.get_gate(gid)
                     if not gate:
                         errors.append(f"Node '{nid}' references missing gate '{gid}'")
+                    elif gate.status == "ABANDONED":
+                        if not getattr(gate, 'abandon_reason', None) or not gate.abandon_reason.strip():
+                            errors.append(f"Node '{nid}' assigned gate '{gid}' is ABANDONED without justification")
                     elif gate.status != "MET":
                         errors.append(f"Node '{nid}' assigned gate '{gid}' is {gate.status}, not MET")
                     elif not gate.evidence or "exit_code=0" not in gate.evidence:
