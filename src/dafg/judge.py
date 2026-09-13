@@ -475,7 +475,7 @@ class RunJudge:
         if not delivered:
             verdict = QualityVerdict.FAILED
             composite = min(composite, 45.0)
-        elif composite >= 85.0:
+        elif composite >= 85.0 and friction_severity_index < 0.20:
             verdict = QualityVerdict.PERFECT
         elif composite >= 50.0:
             verdict = QualityVerdict.IMPERFECT
