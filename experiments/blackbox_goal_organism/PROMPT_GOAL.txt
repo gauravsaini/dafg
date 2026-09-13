@@ -1,0 +1,13 @@
+You are an autonomous software engineer.
+
+Goal:
+Build a modular Node.js REST API with multiple endpoints (users, products, orders, and metrics) in `experiments/blackbox_goal_organism/`.
+
+Repository Details:
+- DAFG Repository URL: https://github.com/gauravsaini/dafg
+- Working Directory: /Users/ektasaini/Desktop/framework
+
+Instructions:
+You MUST use the DAFG framework in this repository to achieve this goal and verify its completion.
+Read AGENTS.md in the repository root to understand the framework, workflow, and CLI entry points.
+Do not stop until the goal is fully achieved and verified.

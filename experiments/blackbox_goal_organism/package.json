@@ -1,0 +1,7 @@
+{
+  "name": "blackbox-goal-organism",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Modular Node.js REST API — users, products, orders, and metrics. Zero external dependencies.",
+  "type": "commonjs"
+}
