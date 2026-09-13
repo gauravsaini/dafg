@@ -145,10 +145,10 @@ class ObservabilityFabric:
         self._fan_out("on_span_end", span)
 
     def emit_event(self, name: str, attributes: Optional[Dict[str, Any]] = None) -> None:
-        self._fan_out_kw("on_event", name=name, attributes=attributes or {})
+        self._fan_out("on_event", name, attributes or {})
 
     def emit_metric(self, name: str, value: float, tags: Optional[Dict[str, str]] = None) -> None:
-        self._fan_out_kw("on_metric", name=name, value=value, tags=tags)
+        self._fan_out("on_metric", name, value, tags)
 
     def _get_pool(self) -> concurrent.futures.ThreadPoolExecutor:
         if self._pool is None:
@@ -156,32 +156,18 @@ class ObservabilityFabric:
             self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=2)
         return self._pool
 
-    # ponytail: two fan-out helpers avoid repeating try/except per method
+    # ponytail: one fan-out helper handles all methods via positional args
     def _fan_out(self, method: str, *args: Any) -> None:
         for probe in self._probes:
             if self._async:
-                self._get_pool().submit(self._safe_call, probe, method, args, {})
+                self._get_pool().submit(self._safe_call, probe, method, args)
             else:
-                self._safe_call(probe, method, args, {})
-
-    def _fan_out_kw(self, method: str, **kwargs: Any) -> None:
-        for probe in self._probes:
-            if self._async:
-                self._get_pool().submit(self._safe_call_kw, probe, method, kwargs)
-            else:
-                self._safe_call_kw(probe, method, kwargs)
+                self._safe_call(probe, method, args)
 
     @staticmethod
-    def _safe_call(probe: Any, method: str, args: tuple, kwargs: dict) -> None:
+    def _safe_call(probe: Any, method: str, args: tuple) -> None:
         try:
-            getattr(probe, method)(*args, **kwargs)
-        except Exception as exc:
-            print(f"[DOF] probe {type(probe).__name__}.{method} failed: {exc}", file=sys.stderr)
-
-    @staticmethod
-    def _safe_call_kw(probe: Any, method: str, kwargs: dict) -> None:
-        try:
-            getattr(probe, method)(**kwargs)
+            getattr(probe, method)(*args)
         except Exception as exc:
             print(f"[DOF] probe {type(probe).__name__}.{method} failed: {exc}", file=sys.stderr)
 

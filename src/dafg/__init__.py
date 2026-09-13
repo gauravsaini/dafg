@@ -144,8 +144,19 @@ from dafg.eval import (
     StandardOutcome,
     validate_test_fixture_syntax,
 )
+from dafg.observe import (
+    InMemoryProbe,
+    JsonlProbe,
+    NullProbe,
+    ObservabilityFabric,
+    Probe,
+    Span,
+    SpanStatus,
+    StdoutProbe,
+    parse_observe_flag,
+)
 
-__version__ = "0.3.0"
+__version__ = "0.4.0"
 __all__ = [
     "ApprovalStore",
     "EvidenceStrength",
@@ -262,4 +273,13 @@ __all__ = [
     "RunSealedError",
     "StaleDispatchError",
     "state_projection",
+    "InMemoryProbe",
+    "JsonlProbe",
+    "NullProbe",
+    "ObservabilityFabric",
+    "Probe",
+    "Span",
+    "SpanStatus",
+    "StdoutProbe",
+    "parse_observe_flag",
 ]

@@ -187,25 +187,36 @@ class Budget:
 
     # ponytail: single coarse lock for all counters; split per-counter if profiling shows contention
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
+    fabric: Optional[Any] = field(default=None, repr=False, compare=False)
 
     def check_call(self) -> None:
         with self._lock:
             if self.calls_consumed >= self.max_calls:
+                if self.fabric:
+                    self.fabric.emit_event("budget.exceeded", {"type": "call", "consumed": self.calls_consumed, "max": self.max_calls})
                 raise BudgetExceededError(
                     f"Model call budget exceeded: {self.calls_consumed}/{self.max_calls}"
                 )
             self.calls_consumed += 1
+            if self.fabric:
+                self.fabric.emit_metric("budget.calls_consumed", float(self.calls_consumed))
 
     def check_node(self) -> None:
         with self._lock:
             if self.nodes_created >= self.max_nodes:
+                if self.fabric:
+                    self.fabric.emit_event("budget.exceeded", {"type": "node", "consumed": self.nodes_created, "max": self.max_nodes})
                 raise BudgetExceededError(
                     f"Node budget exceeded: {self.nodes_created}/{self.max_nodes}"
                 )
             self.nodes_created += 1
+            if self.fabric:
+                self.fabric.emit_metric("budget.nodes_created", float(self.nodes_created))
 
     def check_deadline(self) -> None:
         if self.deadline is not None and time.time() > self.deadline:
+            if self.fabric:
+                self.fabric.emit_event("budget.deadline_exceeded", {"current_time": time.time(), "deadline": self.deadline})
             raise BudgetExceededError(
                 f"Deadline exceeded: {time.time():.1f} > {self.deadline:.1f}"
             )
@@ -213,18 +224,26 @@ class Budget:
     def check_revision(self) -> None:
         with self._lock:
             if self.revisions_consumed >= self.max_revisions:
+                if self.fabric:
+                    self.fabric.emit_event("budget.exceeded", {"type": "revision", "consumed": self.revisions_consumed, "max": self.max_revisions})
                 raise BudgetExceededError(
                     f"Revision budget exceeded: {self.revisions_consumed}/{self.max_revisions}"
                 )
             self.revisions_consumed += 1
+            if self.fabric:
+                self.fabric.emit_metric("budget.revisions_consumed", float(self.revisions_consumed))
 
     def check_adaptation(self) -> None:
         with self._lock:
             if self.adaptations_consumed >= self.max_adaptations:
+                if self.fabric:
+                    self.fabric.emit_event("budget.exceeded", {"type": "adaptation", "consumed": self.adaptations_consumed, "max": self.max_adaptations})
                 raise BudgetExceededError(
                     f"Adaptation budget exceeded: {self.adaptations_consumed}/{self.max_adaptations}"
                 )
             self.adaptations_consumed += 1
+            if self.fabric:
+                self.fabric.emit_metric("budget.adaptations_consumed", float(self.adaptations_consumed))
 
 
 @dataclass
@@ -923,6 +942,10 @@ class DAFG:
 
         # v0.4 Distributed Observability Fabric (DOF)
         self._fabric = ObservabilityFabric(probes)
+        if self.budget and getattr(self.budget, "fabric", None) is None:
+            self.budget.fabric = self._fabric
+        if self.engine and getattr(self.engine, "_fabric", None) is None:
+            self.engine._fabric = self._fabric
 
         if nodes:
             for node in nodes.values():
@@ -2888,6 +2911,7 @@ class DAFG:
         state_path: Union[str, Path],
         ledger: Optional[GateLedger] = None,
         engine: Optional[GateEngine] = None,
+        probes: Optional[list] = None,
     ) -> DAFG:
         data = StateStore.load(state_path)
         b_data = data.get("budget", {})
@@ -2916,6 +2940,7 @@ class DAFG:
             ledger=ledger,
             engine=engine,
             state_path=state_path,
+            probes=probes,
         )
         dafg.run_id = data.get("run_id", dafg.run_id)
         dafg.run_epoch = data.get("run_epoch", 1)

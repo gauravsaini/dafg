@@ -45,6 +45,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--auto-approve", action="store_true", help="Auto approve check commands")
         parser.add_argument("--no-analytics", action="store_true", help="Suppress analytics report")
         parser.add_argument("--json-analytics", action="store_true", help="Print analytics as JSON")
+        parser.add_argument(
+            "--observe",
+            action="append",
+            default=[],
+            help="Observability probes (e.g. 'jsonl:path', 'stdout', 'memory', 'all', 'none')",
+        )
         args = parser.parse_args(sub_args)
 
         # Print trend briefing if available
@@ -60,19 +66,22 @@ def main(argv: Optional[List[str]] = None) -> int:
         except Exception:
             pass  # Trend briefing is best-effort
 
+        from dafg.observe import parse_observe_flag
+        probes = parse_observe_flag(args.observe) if args.observe else None
+
         gates_fp = Path(args.gates)
         ledger = GateLedger.load(gates_fp) if gates_fp.exists() else None
         appr_store = ApprovalStore(filepath=args.approvals_file)
         engine = GateEngine(approval_store=appr_store, auto_approve=args.auto_approve) if ledger else None
         state_fp = Path(args.state)
         if state_fp.exists():
-            graph = DAFG.load_state(state_fp, ledger=ledger, engine=engine)
+            graph = DAFG.load_state(state_fp, ledger=ledger, engine=engine, probes=probes)
             print(f"Resumed DAFG from {state_fp} with {len(graph.nodes)} nodes.")
             if ledger and not graph.nodes:
                 created = graph.init_from_ledger()
                 print(f"Initialized DAFG with {len(created)} tasks from {gates_fp}.")
         else:
-            graph = DAFG(ledger=ledger, engine=engine, state_path=state_fp)
+            graph = DAFG(ledger=ledger, engine=engine, state_path=state_fp, probes=probes)
             if ledger and not graph.nodes:
                 created = graph.init_from_ledger()
                 print(f"Initialized new DAFG with {len(created)} tasks from {gates_fp}.")

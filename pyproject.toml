@@ -1,6 +1,6 @@
 [project]
 name = "dafg"
-version = "0.3.0"
+version = "0.4.0"
 description = "DAFG: Dynamic Autonomous Flow Graph — agent coordination and completion-discipline framework"
 readme = "README.md"
 requires-python = ">=3.10"
