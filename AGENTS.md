@@ -89,7 +89,7 @@ uv run dafg organism --goal "<goal>" --workdir <dir> --auto-approve
 uv run pytest -q
 ```
 
-All 429 tests pass in ~7s, 100% offline.
+All 431 tests pass in ~7s, 100% offline.
 
 ## CLI Entry Points
 
@@ -97,6 +97,7 @@ All 429 tests pass in ~7s, 100% offline.
 |---|---|
 | `uv run dafg run` | Run DAFG task graph |
 | `uv run dafg organism --goal "<goal>"` | Autonomous reactive & self-improving execution organism |
+| `uv run dafg compare <dir1> <dir2> ...` | Programmatic comparison of experiment runs & artifacts |
 | `uv run gates --status GATES.md` | Show gate status |
 | `uv run gates --lint GATES.md` | Lint gate ledger |
 | `uv run gates --approve GATES.md` | Approve gate commands |

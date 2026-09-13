@@ -1,0 +1,523 @@
+{
+  "timestamp": "2026-09-13T13:43:57Z",
+  "groups": {
+    "raw_llm_agent_sessions": {
+      "sample_size": 3,
+      "avg_concurrency_ratio": {
+        "mean": 0.478,
+        "median": 0.489,
+        "std_dev": 0.111,
+        "variance": 0.012,
+        "min_val": 0.362,
+        "max_val": 0.583
+      },
+      "domain_deferrals": {
+        "mean": 13.667,
+        "median": 10.0,
+        "std_dev": 12.897,
+        "variance": 166.333,
+        "min_val": 3.0,
+        "max_val": 28.0
+      },
+      "barrier_deferrals": {
+        "mean": 2.667,
+        "median": 3.0,
+        "std_dev": 2.517,
+        "variance": 6.333,
+        "min_val": 0.0,
+        "max_val": 5.0
+      },
+      "total_deferrals": {
+        "mean": 16.333,
+        "median": 15.0,
+        "std_dev": 11.06,
+        "variance": 122.333,
+        "min_val": 6.0,
+        "max_val": 28.0
+      },
+      "concurrency_health": {
+        "mean": 21.1,
+        "median": 10.0,
+        "std_dev": 19.226,
+        "variance": 369.63,
+        "min_val": 10.0,
+        "max_val": 43.3
+      },
+      "score": {
+        "mean": 81.167,
+        "median": 79.0,
+        "std_dev": 5.107,
+        "variance": 26.083,
+        "min_val": 77.5,
+        "max_val": 87.0
+      },
+      "overlapping_files_count": {
+        "mean": 7.333,
+        "median": 7.0,
+        "std_dev": 0.577,
+        "variance": 0.333,
+        "min_val": 7.0,
+        "max_val": 8.0
+      }
+    },
+    "autonomous_organism_runs": {
+      "sample_size": 2,
+      "avg_concurrency_ratio": {
+        "mean": 0.917,
+        "median": 0.917,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 0.917,
+        "max_val": 0.917
+      },
+      "domain_deferrals": {
+        "mean": 0.0,
+        "median": 0.0,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 0.0,
+        "max_val": 0.0
+      },
+      "barrier_deferrals": {
+        "mean": 1.0,
+        "median": 1.0,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 1.0,
+        "max_val": 1.0
+      },
+      "total_deferrals": {
+        "mean": 1.0,
+        "median": 1.0,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 1.0,
+        "max_val": 1.0
+      },
+      "concurrency_health": {
+        "mean": 91.7,
+        "median": 91.7,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 91.7,
+        "max_val": 91.7
+      },
+      "score": {
+        "mean": 94.3,
+        "median": 94.3,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 94.3,
+        "max_val": 94.3
+      },
+      "overlapping_files_count": {
+        "mean": 5.0,
+        "median": 5.0,
+        "std_dev": 0.0,
+        "variance": 0.0,
+        "min_val": 5.0,
+        "max_val": 5.0
+      }
+    }
+  },
+  "llm_trials": [
+    {
+      "name": "blackbox_goal_organism",
+      "dir_path": "/Users/ektasaini/Desktop/framework/experiments/blackbox_goal_organism",
+      "run_id": "run_1789307035719_34022",
+      "gates_total": 10,
+      "gates_met": 10,
+      "stop_hook_decision": "allow",
+      "stop_hook_status": "VERIFIED_DELIVERY",
+      "overlapping_files": [
+        {
+          "file": "experiments/blackbox_goal_organism/test_service.js",
+          "count": 8,
+          "gates": [
+            "G3",
+            "G4",
+            "G5",
+            "G6",
+            "G7",
+            "G8",
+            "G9",
+            "G10"
+          ]
+        },
+        {
+          "file": "experiments/blackbox_goal_organism/src/server.js",
+          "count": 2,
+          "gates": [
+            "G1",
+            "G4"
+          ]
+        },
+        {
+          "file": "experiments/blackbox_goal_organism/src/routes/users.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G5"
+          ]
+        },
+        {
+          "file": "experiments/blackbox_goal_organism/src/routes/products.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G6"
+          ]
+        },
+        {
+          "file": "experiments/blackbox_goal_organism/src/routes/orders.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G7"
+          ]
+        },
+        {
+          "file": "experiments/blackbox_goal_organism/src/routes/metrics.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G8"
+          ]
+        },
+        {
+          "file": "experiments/blackbox_goal_organism/src/routes/index.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G9"
+          ]
+        }
+      ],
+      "avg_concurrency_ratio": 0.362,
+      "wave_count": 8,
+      "domain_deferrals": 28,
+      "barrier_deferrals": 0,
+      "total_task_deferrals": 28,
+      "concurrency_health_score": 10.0,
+      "friction_severity_index": 0.735,
+      "gate_flakiness_index": 0.1,
+      "composite_score": 79.0,
+      "verdict": "IMPERFECT",
+      "provenance": "fresh_execution",
+      "artifacts_found": [
+        "GATES.md"
+      ]
+    },
+    {
+      "name": "node_service_blackbox",
+      "dir_path": "/Users/ektasaini/Desktop/framework/experiments/node_service_blackbox",
+      "run_id": "run_1789307036117_34022",
+      "gates_total": 6,
+      "gates_met": 6,
+      "stop_hook_decision": "allow",
+      "stop_hook_status": "VERIFIED_DELIVERY",
+      "overlapping_files": [
+        {
+          "file": "src/data/store.js",
+          "count": 4,
+          "gates": [
+            "G2",
+            "G3",
+            "G4",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/server.js",
+          "count": 2,
+          "gates": [
+            "G1",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/routes/health.js",
+          "count": 2,
+          "gates": [
+            "G1",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/routes/users.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/routes/products.js",
+          "count": 2,
+          "gates": [
+            "G3",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/routes/orders.js",
+          "count": 2,
+          "gates": [
+            "G4",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/middleware/error.js",
+          "count": 2,
+          "gates": [
+            "G5",
+            "G6"
+          ]
+        }
+      ],
+      "avg_concurrency_ratio": 0.583,
+      "wave_count": 4,
+      "domain_deferrals": 3,
+      "barrier_deferrals": 3,
+      "total_task_deferrals": 6,
+      "concurrency_health_score": 43.3,
+      "friction_severity_index": 0.823,
+      "gate_flakiness_index": 0.167,
+      "composite_score": 87.0,
+      "verdict": "IMPERFECT",
+      "provenance": "fresh_execution",
+      "artifacts_found": [
+        "GATES.md"
+      ]
+    },
+    {
+      "name": "staged_scaling",
+      "dir_path": "/Users/ektasaini/Desktop/framework/experiments/staged_scaling",
+      "run_id": "run_1789307036639_34022",
+      "gates_total": 12,
+      "gates_met": 12,
+      "stop_hook_decision": "allow",
+      "stop_hook_status": "VERIFIED_DELIVERY",
+      "overlapping_files": [
+        {
+          "file": "src/server.js",
+          "count": 6,
+          "gates": [
+            "G1",
+            "G2",
+            "G5",
+            "G6",
+            "G7",
+            "G12"
+          ]
+        },
+        {
+          "file": "src/data/store.js",
+          "count": 4,
+          "gates": [
+            "G1",
+            "G3",
+            "G4",
+            "G7"
+          ]
+        },
+        {
+          "file": "src/data/repository.js",
+          "count": 3,
+          "gates": [
+            "G3",
+            "G4",
+            "G7"
+          ]
+        },
+        {
+          "file": "test_service.js",
+          "count": 2,
+          "gates": [
+            "G1",
+            "G12"
+          ]
+        },
+        {
+          "file": "src/routes/users.js",
+          "count": 2,
+          "gates": [
+            "G8",
+            "G12"
+          ]
+        },
+        {
+          "file": "src/routes/products.js",
+          "count": 2,
+          "gates": [
+            "G9",
+            "G12"
+          ]
+        },
+        {
+          "file": "src/routes/orders.js",
+          "count": 2,
+          "gates": [
+            "G10",
+            "G12"
+          ]
+        },
+        {
+          "file": "src/routes/metrics.js",
+          "count": 2,
+          "gates": [
+            "G11",
+            "G12"
+          ]
+        }
+      ],
+      "avg_concurrency_ratio": 0.489,
+      "wave_count": 6,
+      "domain_deferrals": 10,
+      "barrier_deferrals": 5,
+      "total_task_deferrals": 15,
+      "concurrency_health_score": 10.0,
+      "friction_severity_index": 0.933,
+      "gate_flakiness_index": 0.083,
+      "composite_score": 77.5,
+      "verdict": "IMPERFECT",
+      "provenance": "fresh_execution",
+      "artifacts_found": [
+        "GATES.md"
+      ]
+    }
+  ],
+  "organism_trials": [
+    {
+      "name": "node_organism_eval",
+      "dir_path": "/Users/ektasaini/Desktop/framework/experiments/node_organism_eval",
+      "run_id": "run_1789307037163_34022",
+      "gates_total": 6,
+      "gates_met": 6,
+      "stop_hook_decision": "allow",
+      "stop_hook_status": "VERIFIED_DELIVERY",
+      "overlapping_files": [
+        {
+          "file": "src/core.js",
+          "count": 2,
+          "gates": [
+            "G1",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/storage.js",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/protocol.js",
+          "count": 2,
+          "gates": [
+            "G3",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/metrics.js",
+          "count": 2,
+          "gates": [
+            "G4",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/security.js",
+          "count": 2,
+          "gates": [
+            "G5",
+            "G6"
+          ]
+        }
+      ],
+      "avg_concurrency_ratio": 0.917,
+      "wave_count": 2,
+      "domain_deferrals": 0,
+      "barrier_deferrals": 1,
+      "total_task_deferrals": 1,
+      "concurrency_health_score": 91.7,
+      "friction_severity_index": 0.298,
+      "gate_flakiness_index": 0.167,
+      "composite_score": 94.3,
+      "verdict": "IMPERFECT",
+      "provenance": "fresh_execution",
+      "artifacts_found": [
+        "GATES.md"
+      ]
+    },
+    {
+      "name": "redis_organism_eval",
+      "dir_path": "/Users/ektasaini/Desktop/framework/experiments/redis_organism_eval",
+      "run_id": "run_1789307037428_34022",
+      "gates_total": 6,
+      "gates_met": 6,
+      "stop_hook_decision": "allow",
+      "stop_hook_status": "VERIFIED_DELIVERY",
+      "overlapping_files": [
+        {
+          "file": "src/core.py",
+          "count": 2,
+          "gates": [
+            "G1",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/storage.py",
+          "count": 2,
+          "gates": [
+            "G2",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/protocol.py",
+          "count": 2,
+          "gates": [
+            "G3",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/metrics.py",
+          "count": 2,
+          "gates": [
+            "G4",
+            "G6"
+          ]
+        },
+        {
+          "file": "src/security.py",
+          "count": 2,
+          "gates": [
+            "G5",
+            "G6"
+          ]
+        }
+      ],
+      "avg_concurrency_ratio": 0.917,
+      "wave_count": 2,
+      "domain_deferrals": 0,
+      "barrier_deferrals": 1,
+      "total_task_deferrals": 1,
+      "concurrency_health_score": 91.7,
+      "friction_severity_index": 0.298,
+      "gate_flakiness_index": 0.167,
+      "composite_score": 94.3,
+      "verdict": "IMPERFECT",
+      "provenance": "fresh_execution",
+      "artifacts_found": [
+        "GATES.md"
+      ]
+    }
+  ]
+}

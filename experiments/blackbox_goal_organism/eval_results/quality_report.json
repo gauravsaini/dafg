@@ -1,0 +1,193 @@
+{
+  "run_id": "run_1789305161029_28510",
+  "verdict": "IMPERFECT",
+  "score": 79.0,
+  "outcome_status": "VERIFIED_DELIVERY",
+  "friction_severity_index": 0.735,
+  "gate_flakiness_index": 0.1,
+  "dimensions": {
+    "convergence_discipline": {
+      "name": "Convergence Discipline",
+      "score": 100.0,
+      "weight": 0.25,
+      "summary": "0 revisions across 10 nodes (0.00/node)"
+    },
+    "verification_integrity": {
+      "name": "Verification Integrity",
+      "score": 100.0,
+      "weight": 0.25,
+      "summary": "10/10 gates met (100.0%)"
+    },
+    "concurrency_health": {
+      "name": "Concurrency Health",
+      "score": 10.0,
+      "weight": 0.15,
+      "summary": "Avg concurrency ratio: 0.36 (domain deferrals: 28, barrier: 0)"
+    },
+    "resource_economy": {
+      "name": "Resource Economy",
+      "score": 50.0,
+      "weight": 0.15,
+      "summary": "Max burn: 50.0% (calls: 20.0%, nodes: 50.0%)"
+    },
+    "persona_effectiveness": {
+      "name": "Persona Effectiveness",
+      "score": 100.0,
+      "weight": 0.1,
+      "summary": "Zero persona drift; clean first-try specialization"
+    },
+    "repair_stability": {
+      "name": "Repair Stability",
+      "score": 100.0,
+      "weight": 0.1,
+      "summary": "Zero repairs required; first-pass adequacy"
+    }
+  },
+  "friction_points": [
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/test_service.js' forced 55 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/test_service.js",
+        "deferrals": 55
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/routes/index.js' forced 13 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/routes/index.js",
+        "deferrals": 13
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/routes/metrics.js' forced 11 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/routes/metrics.js",
+        "deferrals": 11
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/routes/orders.js' forced 9 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/routes/orders.js",
+        "deferrals": 9
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/routes/products.js' forced 7 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/routes/products.js",
+        "deferrals": 7
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/routes/users.js' forced 5 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/routes/users.js",
+        "deferrals": 5
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/server.js' forced 4 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/server.js",
+        "deferrals": 4
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/package.json' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/package.json",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/data/store.js' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/data/store.js",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'experiments/blackbox_goal_organism/src/data/repository.js' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "experiments/blackbox_goal_organism/src/data/repository.js",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "GATE_FLAKINESS",
+      "message": "Gate 'G1' has historical status flip rate (1 flips, confidence 0.67).",
+      "severity": "MEDIUM",
+      "impact": 0.333,
+      "node_id": null,
+      "gate_id": "G1",
+      "details": {
+        "flip_count": 1,
+        "confidence": 0.667
+      }
+    }
+  ],
+  "recommendations": [
+    "Split 'experiments/blackbox_goal_organism/test_service.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/routes/index.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/routes/metrics.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/routes/orders.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/routes/products.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/routes/users.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/server.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/package.json' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/data/store.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'experiments/blackbox_goal_organism/src/data/repository.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Stabilize flaky gate 'G1' by isolating environmental dependencies or tightening determinism."
+  ]
+}

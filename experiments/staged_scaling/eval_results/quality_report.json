@@ -1,0 +1,180 @@
+{
+  "run_id": "run_1789305162490_28510",
+  "verdict": "IMPERFECT",
+  "score": 77.5,
+  "outcome_status": "VERIFIED_DELIVERY",
+  "friction_severity_index": 0.933,
+  "gate_flakiness_index": 0.083,
+  "dimensions": {
+    "convergence_discipline": {
+      "name": "Convergence Discipline",
+      "score": 100.0,
+      "weight": 0.25,
+      "summary": "0 revisions across 12 nodes (0.00/node)"
+    },
+    "verification_integrity": {
+      "name": "Verification Integrity",
+      "score": 100.0,
+      "weight": 0.25,
+      "summary": "12/12 gates met (100.0%)"
+    },
+    "concurrency_health": {
+      "name": "Concurrency Health",
+      "score": 10.0,
+      "weight": 0.15,
+      "summary": "Avg concurrency ratio: 0.49 (domain deferrals: 10, barrier: 5)"
+    },
+    "resource_economy": {
+      "name": "Resource Economy",
+      "score": 40.0,
+      "weight": 0.15,
+      "summary": "Max burn: 60.0% (calls: 24.0%, nodes: 60.0%)"
+    },
+    "persona_effectiveness": {
+      "name": "Persona Effectiveness",
+      "score": 100.0,
+      "weight": 0.1,
+      "summary": "Zero persona drift; clean first-try specialization"
+    },
+    "repair_stability": {
+      "name": "Repair Stability",
+      "score": 100.0,
+      "weight": 0.1,
+      "summary": "Zero repairs required; first-pass adequacy"
+    }
+  },
+  "friction_points": [
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/server.js' forced 26 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/server.js",
+        "deferrals": 26
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/data/store.js' forced 14 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/data/store.js",
+        "deferrals": 14
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/data/repository.js' forced 13 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/data/repository.js",
+        "deferrals": 13
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'test_service.js' forced 6 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "test_service.js",
+        "deferrals": 6
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/routes/users.js' forced 5 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/routes/users.js",
+        "deferrals": 5
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/routes/products.js' forced 5 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/routes/products.js",
+        "deferrals": 5
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/routes/orders.js' forced 5 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/routes/orders.js",
+        "deferrals": 5
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/routes/metrics.js' forced 5 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/routes/metrics.js",
+        "deferrals": 5
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/routes/index.js' forced 5 task deferral(s) into serial waves.",
+      "severity": "HIGH",
+      "impact": 1.0,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/routes/index.js",
+        "deferrals": 5
+      }
+    },
+    {
+      "category": "GATE_FLAKINESS",
+      "message": "Gate 'G1' has historical status flip rate (1 flips, confidence 0.67).",
+      "severity": "MEDIUM",
+      "impact": 0.333,
+      "node_id": null,
+      "gate_id": "G1",
+      "details": {
+        "flip_count": 1,
+        "confidence": 0.667
+      }
+    }
+  ],
+  "recommendations": [
+    "Split 'src/server.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/data/store.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/data/repository.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'test_service.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/routes/users.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/routes/products.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/routes/orders.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/routes/metrics.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/routes/index.js' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Stabilize flaky gate 'G1' by isolating environmental dependencies or tightening determinism."
+  ]
+}

@@ -1,0 +1,141 @@
+{
+  "run_id": "run_1789305162292_28510",
+  "verdict": "IMPERFECT",
+  "score": 94.3,
+  "outcome_status": "VERIFIED_DELIVERY",
+  "friction_severity_index": 0.298,
+  "gate_flakiness_index": 0.167,
+  "dimensions": {
+    "convergence_discipline": {
+      "name": "Convergence Discipline",
+      "score": 100.0,
+      "weight": 0.25,
+      "summary": "0 revisions across 6 nodes (0.00/node)"
+    },
+    "verification_integrity": {
+      "name": "Verification Integrity",
+      "score": 100.0,
+      "weight": 0.25,
+      "summary": "6/6 gates met (100.0%)"
+    },
+    "concurrency_health": {
+      "name": "Concurrency Health",
+      "score": 91.7,
+      "weight": 0.15,
+      "summary": "Avg concurrency ratio: 0.92 (domain deferrals: 0, barrier: 1)"
+    },
+    "resource_economy": {
+      "name": "Resource Economy",
+      "score": 70.0,
+      "weight": 0.15,
+      "summary": "Max burn: 30.0% (calls: 12.0%, nodes: 30.0%)"
+    },
+    "persona_effectiveness": {
+      "name": "Persona Effectiveness",
+      "score": 100.0,
+      "weight": 0.1,
+      "summary": "Zero persona drift; clean first-try specialization"
+    },
+    "repair_stability": {
+      "name": "Repair Stability",
+      "score": 100.0,
+      "weight": 0.1,
+      "summary": "Zero repairs required; first-pass adequacy"
+    }
+  },
+  "friction_points": [
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/core.py' forced 2 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.5,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/core.py",
+        "deferrals": 2
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/storage.py' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/storage.py",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/protocol.py' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/protocol.py",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/metrics.py' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/metrics.py",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'src/security.py' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "src/security.py",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "SERIAL_CONFLICT",
+      "message": "OWNS: conflict on 'test_system.py' forced 1 task deferral(s) into serial waves.",
+      "severity": "MEDIUM",
+      "impact": 0.25,
+      "node_id": null,
+      "gate_id": null,
+      "details": {
+        "path": "test_system.py",
+        "deferrals": 1
+      }
+    },
+    {
+      "category": "GATE_FLAKINESS",
+      "message": "Gate 'G1' has historical status flip rate (1 flips, confidence 0.67).",
+      "severity": "MEDIUM",
+      "impact": 0.333,
+      "node_id": null,
+      "gate_id": "G1",
+      "details": {
+        "flip_count": 1,
+        "confidence": 0.667
+      }
+    }
+  ],
+  "recommendations": [
+    "Split 'src/core.py' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/storage.py' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/protocol.py' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/metrics.py' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'src/security.py' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Split 'test_system.py' ownership into finer subpaths or decouple via InterfaceContract.",
+    "Stabilize flaky gate 'G1' by isolating environmental dependencies or tightening determinism."
+  ]
+}

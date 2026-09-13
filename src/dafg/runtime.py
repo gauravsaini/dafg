@@ -2599,17 +2599,31 @@ class DAFG:
 
         # Top conflicting OWNS: paths across all steps
         path_counts: Dict[str, int] = {}
+        all_owns = set(f for node in self.nodes.values() for f in node.owns)
+        barrier_threshold = max(3, int(len(all_owns) * 0.6))
+
+        domain_deferrals = 0
+        barrier_deferrals = 0
+
         for d in self.wave_diagnostics:
             for cr in d.conflict_reasons:
                 for p in cr.get("deferred_owns", []) + cr.get("conflicting_owns", []):
                     path_counts[p] = path_counts.get(p, 0) + 1
+                def_node = self.nodes.get(cr.get("deferred_node"))
+                if def_node and len(def_node.owns) >= barrier_threshold:
+                    barrier_deferrals += 1
+                else:
+                    domain_deferrals += 1
+
         top_paths = sorted(path_counts.items(), key=lambda x: x[1], reverse=True)[:10]
 
         return {
             "steps": n,
             "avg_concurrency_ratio": round(avg_cr, 3),
             "wave_width_histogram": histogram,
-            "total_conflict_deferrals": sum(len(d.conflict_reasons) for d in self.wave_diagnostics),
+            "total_conflict_deferrals": domain_deferrals + barrier_deferrals,
+            "domain_deferrals": domain_deferrals,
+            "barrier_deferrals": barrier_deferrals,
             "top_conflict_paths": top_paths,
             "avg_speedup_ratio": round(avg_sr, 3),
         }
@@ -2709,6 +2723,8 @@ class DAFG:
             "avg_speedup_ratio": wave_rpt.get("avg_speedup_ratio", 1.0),
             "wave_width_histogram": wave_rpt.get("wave_width_histogram", {}),
             "total_conflict_deferrals": wave_rpt.get("total_conflict_deferrals", 0),
+            "domain_deferrals": wave_rpt.get("domain_deferrals", 0),
+            "barrier_deferrals": wave_rpt.get("barrier_deferrals", 0),
             "top_conflict_paths": wave_rpt.get("top_conflict_paths", []),
             "parallel_dispatch_enabled": self.max_parallel_workers > 0,
             "max_workers": self.max_parallel_workers,

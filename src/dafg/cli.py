@@ -22,7 +22,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init", "organism"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init", "organism", "compare"], help="Sub-commands")
         parser.print_help()
         return 0
 
@@ -297,17 +297,35 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(organism.format_lineage_dashboard())
         return 0 if lineage.converged else 1
 
+    elif cmd == "compare":
+        parser = argparse.ArgumentParser(prog="dafg compare", description="Compare experiment runs programmatically")
+        parser.add_argument("experiments", nargs="+", help="Paths to experiment directories")
+        parser.add_argument("--json", action="store_true", help="Output comparison matrix as JSON")
+        parser.add_argument("--fresh", action="store_true", help="Execute a fresh, unified run across all experiment directories")
+        args = parser.parse_args(sub_args)
+
+        from dafg.compare import ExperimentComparator
+        dirs = [Path(p) for p in args.experiments]
+        records = [ExperimentComparator.analyze_dir(d, fresh=args.fresh) for d in dirs]
+        if args.json:
+            import json
+            print(json.dumps([r.to_dict() for r in records], indent=2))
+        else:
+            md = ExperimentComparator.generate_markdown_table(records)
+            print(md)
+        return 0
+
     elif cmd in ("-h", "--help"):
         parser = argparse.ArgumentParser(
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init", "organism"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init", "organism", "compare"], help="Sub-commands")
         parser.print_help()
         return 0
 
     else:
-        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit', 'init', 'organism'.", file=sys.stderr)
+        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit', 'init', 'organism', 'compare'.", file=sys.stderr)
         return 1
 
 

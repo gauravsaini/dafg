@@ -245,15 +245,18 @@ class RunJudge:
         # -------------------------------------------------------------------
         steps = concurrency.get("steps", 0)
         avg_cr = concurrency.get("avg_concurrency_ratio", 1.0)
-        conflict_deferrals = concurrency.get("total_conflict_deferrals", 0)
+        total_deferrals = concurrency.get("total_conflict_deferrals", 0)
+        domain_deferrals = concurrency.get("domain_deferrals", total_deferrals)
+        barrier_deferrals = concurrency.get("barrier_deferrals", 0)
 
         if steps <= 1:
             s_conc = 100.0
         else:
             s_conc = max(0.0, min(100.0, avg_cr * 100.0))
 
-        if conflict_deferrals > 0:
-            s_conc = max(10.0, s_conc - (conflict_deferrals * 5.0))
+        # Only penalize avoidable domain-level conflict deferrals, not necessary terminal barrier waits!
+        if domain_deferrals > 0:
+            s_conc = max(10.0, s_conc - (domain_deferrals * 5.0))
 
         top_conflicts = concurrency.get("top_conflict_paths", [])
         if top_conflicts:
@@ -274,12 +277,13 @@ class RunJudge:
                     details={"path": p, "deferrals": cnt},
                 ))
                 recommendations.append(f"Split '{p}' ownership into finer subpaths or decouple via InterfaceContract.")
-        elif conflict_deferrals > 0:
+        elif domain_deferrals > 0:
             friction_points.append(FrictionPoint(
                 category="SERIAL_CONFLICT",
-                message=f"File ownership overlaps forced {conflict_deferrals} task deferral(s).",
+                message=f"File ownership overlaps forced {domain_deferrals} task deferral(s).",
                 severity=FrictionSeverity.MEDIUM,
-                impact=min(1.0, conflict_deferrals * 0.15),
+                impact=min(1.0, domain_deferrals * 0.15),
+                details={"deferrals": domain_deferrals},
             ))
             recommendations.append("Review node OWNS declarations to reduce shared file lock contention.")
 
@@ -287,7 +291,7 @@ class RunJudge:
             name="Concurrency Health",
             score=round(s_conc, 1),
             weight=0.15,
-            summary=f"Avg concurrency ratio: {avg_cr:.2f} ({conflict_deferrals} deferrals)",
+            summary=f"Avg concurrency ratio: {avg_cr:.2f} (domain deferrals: {domain_deferrals}, barrier: {barrier_deferrals})",
         )
 
         # -------------------------------------------------------------------

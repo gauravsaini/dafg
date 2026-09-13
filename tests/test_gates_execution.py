@@ -176,3 +176,42 @@ def test_execute_demotes_on_failure_when_reverify_false(tmp_path):
     content = fp.read_text(encoding="utf-8")
     assert "- [ ] G1: Failing gate with pending evidence" in content
 
+
+def test_allow_regression_false_preserves_evidence(tmp_path):
+    text = """
+- [x] G1: Historical gate
+  CHECK: python -c "import sys; sys.exit(1)"
+  EXPECT: ok
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T12:00:00Z match=''
+"""
+    fp = tmp_path / "GATES.md"
+    fp.write_text(text, encoding="utf-8")
+    ledger = GateLedger.load(fp)
+
+    engine = GateEngine(auto_approve=True, allow_regression=False)
+    res = engine.execute_gate(ledger.gates["G1"], ledger=ledger, reverify=True)
+
+    assert res.status == "FAILED"
+    # Evidence must NOT be stripped when allow_regression=False
+    assert ledger.gates["G1"].status == "MET"
+    assert ledger.gates["G1"].evidence is not None
+    content = fp.read_text(encoding="utf-8")
+    assert "- [x] G1: Historical gate" in content
+
+
+def test_environment_dependency_error_returns_blocked(tmp_path):
+    text = """
+- [ ] G1: Missing module gate
+  CHECK: python -c "raise ModuleNotFoundError('No module named foo_bar_baz')"
+  EXPECT: ok
+"""
+    fp = tmp_path / "GATES.md"
+    fp.write_text(text, encoding="utf-8")
+    ledger = GateLedger.load(fp)
+
+    engine = GateEngine(auto_approve=True)
+    res = engine.execute_gate(ledger.gates["G1"], ledger=ledger, reverify=True)
+
+    assert res.status == "BLOCKED"
+    assert "Environment dependency error" in res.error
+

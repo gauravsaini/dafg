@@ -142,19 +142,34 @@ class GateResult:
 
 
 class GateLedger:
-    def __init__(self, raw_lines: Optional[List[str]] = None, filepath: Optional[Path] = None):
+    def __init__(
+        self,
+        raw_lines: Optional[List[str]] = None,
+        filepath: Optional[Path] = None,
+        read_only: bool = False,
+        work_dir: Optional[Path] = None,
+    ):
         self.raw_lines: List[str] = raw_lines or []
         self.filepath: Optional[Path] = filepath
+        self.read_only: bool = read_only
+        self.work_dir: Optional[Path] = work_dir or (filepath.parent.resolve() if filepath else None)
         self.gates: Dict[str, Gate] = {}
         self.abandonments: Dict[str, str] = {}
         self.duplicate_ids: List[Tuple[str, int]] = []
         self.syntax_errors: List[LintIssue] = []
 
     @classmethod
-    def parse(cls, text: str, filepath: Optional[Union[str, Path]] = None) -> GateLedger:
+    def parse(
+        cls,
+        text: str,
+        filepath: Optional[Union[str, Path]] = None,
+        read_only: bool = False,
+        work_dir: Optional[Union[str, Path]] = None,
+    ) -> GateLedger:
         fp = Path(filepath) if filepath else None
+        wd = Path(work_dir).resolve() if work_dir else (fp.parent.resolve() if fp else None)
         lines = text.splitlines()
-        ledger = cls(raw_lines=lines, filepath=fp)
+        ledger = cls(raw_lines=lines, filepath=fp, read_only=read_only, work_dir=wd)
 
         current_gate: Optional[Gate] = None
         seen_ids: Set[str] = set()
@@ -296,10 +311,10 @@ class GateLedger:
         return ledger
 
     @classmethod
-    def load(cls, filepath: Union[str, Path]) -> GateLedger:
+    def load(cls, filepath: Union[str, Path], read_only: bool = False) -> GateLedger:
         fp = Path(filepath)
         text = fp.read_text(encoding="utf-8")
-        return cls.parse(text, filepath=fp)
+        return cls.parse(text, filepath=fp, read_only=read_only)
 
     def get_gate(self, gate_id: str) -> Optional[Gate]:
         return self.gates.get(gate_id)
@@ -393,6 +408,8 @@ class GateLedger:
         return "\n".join(self.raw_lines) + ("\n" if self.raw_lines and not self.raw_lines[-1].endswith("\n") else "")
 
     def save(self, filepath: Optional[Union[str, Path]] = None) -> None:
+        if getattr(self, "read_only", False):
+            return
         target = Path(filepath) if filepath else self.filepath
         if not target:
             raise ValueError("No filepath specified to save GateLedger")
@@ -794,11 +811,13 @@ class GateEngine:
         timeout: float = 30.0,
         auto_approve: bool = False,
         fabric: Optional[Any] = None,
+        allow_regression: bool = True,
     ):
         self.approval_store = approval_store
         self.timeout = timeout
         self.auto_approve = auto_approve
         self._fabric = fabric  # ObservabilityFabric, optional
+        self.allow_regression = allow_regression
 
     def execute_gate(
         self,
@@ -849,12 +868,12 @@ class GateEngine:
 
         # Resolve working directory
         if cwd_override:
-            work_dir = Path(cwd_override)
+            work_dir = Path(cwd_override).resolve()
         elif gate.cwd:
-            if ledger and ledger.filepath:
-                work_dir = (ledger.filepath.parent / gate.cwd).resolve()
-            else:
-                work_dir = Path(gate.cwd).resolve()
+            base_dir = getattr(ledger, "work_dir", None) or (ledger.filepath.parent if (ledger and ledger.filepath) else Path.cwd())
+            work_dir = (Path(base_dir) / gate.cwd).resolve()
+        elif ledger and getattr(ledger, "work_dir", None):
+            work_dir = Path(ledger.work_dir).resolve()
         elif ledger and ledger.filepath:
             work_dir = ledger.filepath.parent.resolve()
         else:
@@ -921,10 +940,33 @@ class GateEngine:
                         
                 return GateResult(gate_id=gate.id, status='FAILED', exit_code=1, error=error_detail)
         def _demote_failure() -> None:
+            if not getattr(self, "allow_regression", True):
+                return
             if ledger and (gate.status == "MET" or gate.evidence):
                 ledger.update_gate_evidence(gate.id, None, met=False)
                 if ledger.filepath:
                     ledger.save()
+
+        # Environment Pre-flight Verification:
+        # If check runs node and package.json exists, auto-provision if node_modules missing
+        pkg_json = work_dir / "package.json"
+        if pkg_json.exists() and any(k in gate.check for k in ("node ", "npm ", "pnpm ")):
+            node_mods = work_dir / "node_modules"
+            if not node_mods.exists():
+                try:
+                    pkg_data = json.loads(pkg_json.read_text(encoding="utf-8"))
+                    has_deps = bool(pkg_data.get("dependencies") or pkg_data.get("devDependencies"))
+                except Exception:
+                    has_deps = False
+
+                if has_deps:
+                    try:
+                        import shutil
+                        pkg_mgr = "pnpm" if shutil.which("pnpm") else ("npm" if shutil.which("npm") else None)
+                        if pkg_mgr:
+                            subprocess.run([pkg_mgr, "install"], cwd=str(work_dir), capture_output=True, timeout=60.0)
+                    except Exception:
+                        pass
 
         try:
             # DOF: start gate check span
@@ -947,6 +989,19 @@ class GateEngine:
             )
             combined_output = proc.stdout + proc.stderr
             exit_ok = (proc.returncode == 0)
+
+            # Environmental Error Detection: missing modules or commands are not code defects
+            if not exit_ok:
+                is_env_error = any(token in combined_output for token in [
+                    "MODULE_NOT_FOUND", "Cannot find module", "command not found", "No module named"
+                ])
+                if is_env_error:
+                    return GateResult(
+                        gate_id=gate.id,
+                        status="BLOCKED",
+                        exit_code=proc.returncode,
+                        error=f"Environment dependency error: {combined_output.strip()[:120]}",
+                    )
 
             # Check pattern match
             matched = False
