@@ -1,0 +1,7 @@
+{
+  "name": "staged-scaling",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Phase 1 baseline Node.js service — stdlib HTTP, modular data repositories",
+  "type": "commonjs"
+}

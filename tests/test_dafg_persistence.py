@@ -175,3 +175,51 @@ def test_state_file_preserves_history_and_gate_states_on_disk_across_loads(tmp_p
     assert on_disk["gate_states"]["G1"]["status"] == "MET"
 
 
+def test_resumed_state_does_not_downgrade_met_ledger_and_syncs_new_gates(tmp_path):
+    from dafg.gates import GateLedger
+
+    state_file = tmp_path / "state.json"
+    ledger_file = tmp_path / "GATES.md"
+
+    # Initial ledger with G1 (MET)
+    ledger_file.write_text(
+        "- [x] G1: Gate 1\n  CHECK: echo 1\n  EXPECT: 1\n  EVIDENCE: exit_code=0 match='1'\n",
+        encoding="utf-8",
+    )
+    ledger = GateLedger.load(ledger_file)
+    assert ledger.gates["G1"].status == "MET"
+
+    # Save state with older UNMET status for G2
+    state_data = {
+        "version": "1.0",
+        "nodes": {"task_G1": TaskNode("task_G1", "Task G1", assigned_gates=["G1"]).to_dict()},
+        "gate_states": {
+            "G1": {"status": "MET", "evidence": "old_evidence", "abandon_reason": None},
+            "G2": {"status": "UNMET", "evidence": None, "abandon_reason": None},
+        },
+    }
+    state_file.write_text(json.dumps(state_data), encoding="utf-8")
+
+    # Now ledger is updated with G2 being MET
+    ledger_file.write_text(
+        "- [x] G1: Gate 1\n  CHECK: echo 1\n  EXPECT: 1\n  EVIDENCE: exit_code=0 match='1'\n\n"
+        "- [x] G2: Gate 2\n  CHECK: echo 2\n  EXPECT: 2\n  EVIDENCE: exit_code=0 match='2'\n",
+        encoding="utf-8",
+    )
+    ledger = GateLedger.load(ledger_file)
+    assert ledger.gates["G1"].status == "MET"
+    assert ledger.gates["G2"].status == "MET"
+
+    # Load state with ledger: G2 must NOT be downgraded to UNMET
+    graph = DAFG.load_state(state_file, ledger=ledger)
+    assert graph.ledger.gates["G1"].status == "MET"
+    assert graph.ledger.gates["G2"].status == "MET"
+
+    # Sync new tasks from ledger
+    new_tasks = graph.init_from_ledger()
+    assert len(new_tasks) == 1
+    assert new_tasks[0].id == "task_G2"
+    assert "task_G2" in graph.nodes
+
+
+

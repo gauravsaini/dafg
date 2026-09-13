@@ -78,9 +78,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         if state_fp.exists():
             graph = DAFG.load_state(state_fp, ledger=ledger, engine=engine, probes=probes)
             print(f"Resumed DAFG from {state_fp} with {len(graph.nodes)} nodes.")
-            if ledger and not graph.nodes:
+            if ledger:
                 created = graph.init_from_ledger()
-                print(f"Initialized DAFG with {len(created)} tasks from {gates_fp}.")
+                if created:
+                    print(f"Synchronized {len(created)} new tasks from {gates_fp}.")
         else:
             graph = DAFG(ledger=ledger, engine=engine, state_path=state_fp, probes=probes)
             if ledger and not graph.nodes:

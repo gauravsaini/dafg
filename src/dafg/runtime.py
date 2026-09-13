@@ -2982,9 +2982,12 @@ class DAFG:
             for gid, gst in dafg.gate_states.items():
                 if gid in ledger.gates:
                     g = ledger.gates[gid]
-                    g.status = gst.get("status", g.status)
-                    g.evidence = gst.get("evidence", g.evidence)
-                    g.abandon_reason = gst.get("abandon_reason", g.abandon_reason)
+                    if g.status not in ("MET", "ABANDONED"):
+                        g.status = gst.get("status", g.status)
+                    if not g.evidence and gst.get("evidence"):
+                        g.evidence = gst.get("evidence")
+                    if not g.abandon_reason and gst.get("abandon_reason"):
+                        g.abandon_reason = gst.get("abandon_reason")
 
         for nid, node in nodes.items():
             dafg.nodes[nid] = node

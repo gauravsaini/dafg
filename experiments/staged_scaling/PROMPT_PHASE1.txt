@@ -1,0 +1,19 @@
+You are an autonomous software engineer executing Phase 1 of a staged project.
+
+Goal for Phase 1:
+Build a minimal, clean, and extensible foundational Node.js HTTP service inside `experiments/staged_scaling/`.
+This baseline service must include:
+1. Base HTTP server and routing core (`src/server.js`)
+2. Health check endpoint (`/health`) returning status, timestamp, and uptime
+3. A modular data storage / repository architecture (`src/data/`) that will be easily extensible for new domains in Phase 2
+4. A test runner or test suite verifying the baseline
+
+Framework Requirements:
+- You MUST use the DAFG (Dynamic Autonomous Flow Graph) framework in this repository (URL: https://github.com/gauravsaini/dafg) to coordinate, execute, and verify your implementation like a black box.
+- Read `AGENTS.md` in the repo root to understand the gate-driven workflow, file ownership (`OWNS:`), and completion discipline.
+- Author your baseline acceptance gates in `experiments/staged_scaling/GATES.md`.
+- Run DAFG with observability and judge enabled:
+  `uv run dafg run --gates experiments/staged_scaling/GATES.md --state experiments/staged_scaling/state.json --auto-approve --observe jsonl:experiments/staged_scaling/traces.jsonl --judge`
+- Verify stop-hook completion:
+  `uv run stop-hook experiments/staged_scaling/GATES.md`
+- Ensure all baseline gates are MET with verified evidence.

@@ -1,0 +1,22 @@
+You are an autonomous software engineer executing Phase 2 of a staged project.
+
+Context:
+In Phase 1, the foundational baseline Node.js service was created in `experiments/staged_scaling/`.
+Now in Phase 2, your goal is to scale this service to handle multiple domain endpoints.
+
+Goal for Phase 2:
+Scale the existing service in `experiments/staged_scaling/` by implementing 4 domain endpoints:
+1. User Management API (`/api/users`): CRUD operations (create, list, get by ID, delete).
+2. Product Catalog API (`/api/products`): Catalog operations (create, list, get by ID).
+3. Order Processing API (`/api/orders`): Order operations (create order, list orders, get by ID).
+4. Service Metrics API (`/api/metrics`): Service metrics endpoint returning request count, uptime, memory usage, and timestamp.
+
+Framework Requirements:
+- You MUST use the DAFG (Dynamic Autonomous Flow Graph) framework in this repository (URL: https://github.com/gauravsaini/dafg) to coordinate, execute, and verify your implementation like a black box.
+- Read `AGENTS.md` in the repo root to understand the gate-driven workflow, file ownership (`OWNS:`), and completion discipline.
+- Per DAFG rules, NEVER delete existing baseline gates (G1–G7) in `experiments/staged_scaling/GATES.md`. Append your new acceptance gates for Phase 2.
+- Run DAFG with observability and judge enabled:
+  `uv run dafg run --gates experiments/staged_scaling/GATES.md --state experiments/staged_scaling/state.json --auto-approve --observe jsonl:experiments/staged_scaling/traces.jsonl --judge`
+- Verify stop-hook completion:
+  `uv run stop-hook experiments/staged_scaling/GATES.md`
+- Ensure all gates (baseline and new) are MET with verified evidence and tests pass.
