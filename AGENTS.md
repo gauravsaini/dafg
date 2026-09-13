@@ -62,6 +62,14 @@ The stop hook returns `{"decision": "block"}` while any gate is pending,
 unverified, or unapproved. Only when all gates are `MET` with recorded evidence
 (or validly `ABANDON`ed) does it return `{"decision": "allow"}`.
 
+### Autonomous Organism Mode
+
+For automated goal decomposition, gate synthesis, reactive execution, and generational self-evolution from a single goal:
+
+```bash
+uv run dafg organism --goal "<goal>" --workdir <dir> --auto-approve
+```
+
 ## Rules
 
 1. **Always use `uv`** to run Python, pytest, and CLI commands.
