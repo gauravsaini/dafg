@@ -793,10 +793,12 @@ class GateEngine:
         approval_store: Optional[ApprovalStore] = None,
         timeout: float = 30.0,
         auto_approve: bool = False,
+        fabric: Optional[Any] = None,
     ):
         self.approval_store = approval_store
         self.timeout = timeout
         self.auto_approve = auto_approve
+        self._fabric = fabric  # ObservabilityFabric, optional
 
     def execute_gate(
         self,
@@ -925,6 +927,16 @@ class GateEngine:
                     ledger.save()
 
         try:
+            # DOF: start gate check span
+            _span = None
+            if self._fabric:
+                _span = self._fabric.start_span(
+                    name="gate.check",
+                    trace_id="gate_engine",
+                    span_id=f"gate_{gate.id}",
+                    attributes={"gate_id": gate.id, "check": gate.check, "expect": gate.expect or ""},
+                )
+
             proc = subprocess.run(
                 gate.check,
                 shell=True,
@@ -953,6 +965,12 @@ class GateEngine:
                     if ledger.filepath:
                         ledger.save()
 
+                # DOF: close span OK
+                if _span and self._fabric:
+                    _span.attributes.update({"exit_code": 0, "evidence_strength": "STRING_MATCH"})
+                    from dafg.observe import SpanStatus
+                    self._fabric.end_span(_span, SpanStatus.OK)
+
                 return GateResult(
                     gate_id=gate.id,
                     status="MET",
@@ -969,6 +987,12 @@ class GateEngine:
 
                 _demote_failure()
 
+                # DOF: close span ERROR
+                if _span and self._fabric:
+                    _span.attributes.update({"exit_code": proc.returncode})
+                    from dafg.observe import SpanStatus
+                    self._fabric.end_span(_span, SpanStatus.ERROR)
+
                 return GateResult(
                     gate_id=gate.id,
                     status="FAILED",
@@ -979,6 +1003,10 @@ class GateEngine:
 
         except subprocess.TimeoutExpired:
             _demote_failure()
+            if _span and self._fabric:
+                from dafg.observe import SpanStatus
+                _span.attributes["error"] = f"timeout_{timeout_val}s"
+                self._fabric.end_span(_span, SpanStatus.ERROR)
             return GateResult(
                 gate_id=gate.id,
                 status="FAILED",
@@ -986,6 +1014,10 @@ class GateEngine:
             )
         except Exception as e:
             _demote_failure()
+            if _span and self._fabric:
+                from dafg.observe import SpanStatus
+                _span.attributes["error"] = str(e)
+                self._fabric.end_span(_span, SpanStatus.ERROR)
             return GateResult(
                 gate_id=gate.id,
                 status="FAILED",

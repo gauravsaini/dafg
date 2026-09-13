@@ -97,11 +97,13 @@ class RepairLoop:
         repair_fn: Optional[Callable[[str, str, str], str]] = None,  # (gate_id, diagnosis, gate_check) -> patch_description
         budget: Optional[RepairBudget] = None,
         max_attempts: int = 3,
+        fabric: Optional[Any] = None,
     ):
         self.ledger = ledger
         self.engine = engine
         self.repair_fn = repair_fn
         self.budget = budget or RepairBudget(max_repair_attempts=max_attempts)
+        self._fabric = fabric  # ObservabilityFabric, optional
 
     def repair_gate(self, gate_id: str) -> RepairResult:
         """Run the full repair loop on a failing gate."""
@@ -134,6 +136,15 @@ class RepairLoop:
             attempt_num = len(attempts) + 1
             start_time = time.monotonic()
 
+            span = None
+            if self._fabric:
+                span = self._fabric.start_span(
+                    name="repair.attempt",
+                    trace_id="repair_loop",
+                    span_id=f"repair_{gate_id}_{attempt_num}",
+                    attributes={"gate_id": gate_id, "attempt_num": attempt_num},
+                )
+
             # Step 1: Verify (confirm the gate fails)
             verify_result = self.engine.execute_gate(gate, self.ledger, reverify=True)
             pre_status = verify_result.status
@@ -149,6 +160,10 @@ class RepairLoop:
                     post_status="MET",
                     duration_ms=duration,
                 ))
+                if span and self._fabric:
+                    from dafg.observe import SpanStatus
+                    span.attributes.update({"diagnosis": "NO_FAILURE", "post_status": "MET"})
+                    self._fabric.end_span(span, SpanStatus.OK)
                 return RepairResult(
                     gate_id=gate_id,
                     final_status=RepairStatus.REPAIRED,
@@ -183,6 +198,19 @@ class RepairLoop:
                 post_status=post_status,
                 duration_ms=duration,
             ))
+
+            if span and self._fabric:
+                from dafg.observe import SpanStatus
+                span.attributes.update({
+                    "diagnosis": diagnosis,
+                    "patch": patch_desc,
+                    "pre_status": pre_status,
+                    "post_status": post_status,
+                })
+                self._fabric.end_span(
+                    span,
+                    SpanStatus.OK if post_status == "MET" else SpanStatus.ERROR,
+                )
 
             if post_status == "MET":
                 return RepairResult(

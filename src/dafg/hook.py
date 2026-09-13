@@ -49,6 +49,7 @@ class CompletionGuard:
         approval_store: Optional[ApprovalStore] = None,
         state_file: Optional[Union[str, Path]] = None,
         max_stagnant_blocks: int = 6,
+        fabric: Optional[Any] = None,
     ):
         self.ledger_path = Path(ledger_path) if ledger_path else None
         if ledger:
@@ -61,6 +62,7 @@ class CompletionGuard:
         self.approval_store = approval_store
         self.state_file = Path(state_file) if state_file else None
         self.max_stagnant_blocks = max_stagnant_blocks
+        self._fabric = fabric  # ObservabilityFabric, optional
 
     def evaluate(self) -> StopDecision:
         if not self.ledger:
@@ -142,13 +144,15 @@ class CompletionGuard:
         if not has_blocks:
             # All satisfied
             self._reset_progress_state()
-            return StopDecision(
+            decision = StopDecision(
                 allowed=True,
                 decision="allow",
                 reason="All acceptance gates are met with evidence or validly abandoned.",
                 abandoned_gates=abandoned_gates,
                 outcome_status="VERIFIED_DELIVERY",
             )
+            self._emit_stop_decision(decision)
+            return decision
 
         # Build detailed blocking reason
         reasons: List[str] = list(structural_errors)
@@ -170,7 +174,7 @@ class CompletionGuard:
 
         stagnant_count = self._update_progress_state(state_sig)
         if self.max_stagnant_blocks > 0 and stagnant_count >= self.max_stagnant_blocks:
-            return StopDecision(
+            decision = StopDecision(
                 allowed=True,
                 decision="allow",
                 reason=f"Progress guard released after {stagnant_count} consecutive stagnant blocks: {block_reason}",
@@ -181,8 +185,10 @@ class CompletionGuard:
                 progress_guard_released=True,
                 outcome_status="INCOMPLETE_RUN",
             )
+            self._emit_stop_decision(decision)
+            return decision
 
-        return StopDecision(
+        decision = StopDecision(
             allowed=False,
             decision="block",
             reason=block_reason,
@@ -192,6 +198,21 @@ class CompletionGuard:
             abandoned_gates=abandoned_gates,
             outcome_status="INCOMPLETE_RUN",
         )
+        self._emit_stop_decision(decision)
+        return decision
+
+    def _emit_stop_decision(self, decision: StopDecision) -> None:
+        """DOF: emit stop_hook.evaluated event if fabric is attached."""
+        if self._fabric:
+            self._fabric.emit_event("stop_hook.evaluated", {
+                "decision": decision.decision,
+                "allowed": decision.allowed,
+                "pending_count": len(decision.pending_gates),
+                "unverified_count": len(decision.unverified_gates),
+                "unapproved_count": len(decision.unapproved_gates),
+                "abandoned_count": len(decision.abandoned_gates),
+                "outcome_status": decision.outcome_status,
+            })
 
     def _update_progress_state(self, current_sig: str) -> int:
         if not self.state_file:

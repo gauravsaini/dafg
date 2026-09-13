@@ -22,6 +22,8 @@ from pathlib import Path
 import time
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
+from dafg.observe import ObservabilityFabric
+
 from dafg.gates import Gate, GateEngine, GateLedger, GateResult
 from dafg.protocol import (
     Action,
@@ -874,6 +876,7 @@ class DAFG:
         bypass_policy: Optional[BypassPolicy] = None,
         bypass_telemetry: Optional[BypassTelemetry] = None,
         enable_bypass: bool = True,
+        probes: Optional[list] = None,
     ):
         self.nodes: Dict[str, TaskNode] = {}
         self.budget: Budget = budget or Budget()
@@ -918,6 +921,9 @@ class DAFG:
         self.audit_log: List[Dict[str, Any]] = []
         self.seq_counter: int = 0
 
+        # v0.4 Distributed Observability Fabric (DOF)
+        self._fabric = ObservabilityFabric(probes)
+
         if nodes:
             for node in nodes.values():
                 self.add_node(node, track_budget=False)
@@ -946,6 +952,7 @@ class DAFG:
         events, audit = ProtocolEngine.decide(self, cmd, self.next_seq)
         if audit:
             self.audit_log.append(audit.to_dict())
+            self._fabric.emit_event("audit.rejected", audit.to_dict())
             self.save_state()
             if "sealed" in audit.reason.lower():
                 raise RunSealedError(audit.reason)
@@ -955,6 +962,7 @@ class DAFG:
             ProtocolReducer.apply(self, ev)
             self.domain_events.append(ev.to_dict())
             self.processed_idempotency_keys.add(ev.idempotency_key)
+            self._fabric.emit_event(ev.event_type, ev.to_dict())
 
         self.save_state()
         return events, None
@@ -2346,11 +2354,21 @@ class DAFG:
         nodes, dispatch them concurrently via ``ThreadPoolExecutor``.
         Otherwise fall back to sequential execution (safe default).
         """
+        from dafg.observe import SpanStatus
+
         now = time.time()
         ready = self.get_ready_nodes()
         if not ready:
             self._last_step_time = now
             return []
+
+        # DOF: emit ready-set signal for parallelization debugging
+        self._step_counter += 1
+        self._fabric.emit_event("graph.ready_nodes", {
+            "count": len(ready),
+            "node_ids": [n.id for n in ready],
+            "step_index": self._step_counter,
+        })
 
         waves = self.compute_waves(ready)
         current_wave = waves[0]
@@ -2360,6 +2378,18 @@ class DAFG:
             self.max_parallel_workers > 0
             and len(current_wave) > 1
             and executor_fn is not None
+        )
+
+        # DOF: span around entire wave dispatch
+        wave_span = self._fabric.start_span(
+            name="wave.dispatch",
+            trace_id=self.run_id,
+            attributes={
+                "step_index": self._step_counter,
+                "wave_width": len(current_wave),
+                "parallel": use_parallel,
+                "node_ids": [n.id for n in current_wave],
+            },
         )
 
         step_start = time.time()
@@ -2393,6 +2423,11 @@ class DAFG:
             diag.serial_estimate_seconds = serial_est
             diag.speedup_ratio = serial_est / step_elapsed if step_elapsed > 0 else 1.0
             diag.parallel_dispatch = use_parallel
+
+        # DOF: close wave span + emit concurrency metric
+        self._fabric.end_span(wave_span, SpanStatus.OK)
+        self._fabric.emit_metric("wave.concurrency_ratio", diag.concurrency_ratio if self.wave_diagnostics else 0.0,
+                                  tags={"step": str(self._step_counter)})
 
         self._last_step_time = now
         return executed
@@ -2515,14 +2550,16 @@ class DAFG:
 
 
     def _record_event(self, node: TaskNode, action: str, details: str) -> None:
-        self.execution_history.append({
+        event_dict = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "node_id": node.id,
             "role": node.role,
             "action": action,
             "details": details,
             "revisions": node.revisions,
-        })
+        }
+        self.execution_history.append(event_dict)
+        self._fabric.emit_event(f"node.{action.lower()}", event_dict)
 
     def get_wave_report(self) -> Dict[str, Any]:
         """Aggregated wave concurrency report for the current run."""
@@ -2843,6 +2880,7 @@ class DAFG:
             "processed_idempotency_keys": list(self.processed_idempotency_keys),
         }
         StateStore.save(state, self.state_path)
+        self._fabric.emit_metric("state.persisted", 1.0)
 
     @classmethod
     def load_state(
