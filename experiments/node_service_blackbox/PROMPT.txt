@@ -1,0 +1,23 @@
+You are an autonomous software engineer. Your goal is to build a complete, production-ready Node.js REST service with multiple endpoints inside `experiments/node_service_blackbox/`.
+
+Repository Details for DAFG (Dynamic Autonomous Flow Graph):
+- GitHub Repository URL: https://github.com/gauravsaini/dafg
+- Local Clone / Working Directory: /Users/ektasaini/Desktop/framework
+
+Endpoints required:
+1. Health check (`/health`)
+2. Users resource (`/api/users`)
+3. Products catalog (`/api/products`)
+4. Orders processing (`/api/orders`)
+5. Main server / integration entry point
+
+You MUST use the DAFG framework (https://github.com/gauravsaini/dafg) to coordinate, execute, and verify your implementation like a true black box.
+Read the repository's AGENTS.md and documentation to understand how DAFG coordinates tasks, manages parallel execution, enforces completion discipline, and evaluates run quality.
+
+Requirements:
+- Structure your implementation and gates in `experiments/node_service_blackbox/GATES.md` so that DAFG can execute and verify your work effectively.
+- Run the DAFG workflow:
+  `uv run dafg run --gates experiments/node_service_blackbox/GATES.md --state experiments/node_service_blackbox/state.json --auto-approve --observe jsonl:experiments/node_service_blackbox/traces.jsonl --judge`
+- Verify stop-hook completion:
+  `uv run stop-hook experiments/node_service_blackbox/GATES.md`
+- Ensure all acceptance gates pass with recorded evidence.
