@@ -2,6 +2,7 @@
 
 from dafg.gates import (
     ApprovalStore,
+    EvidenceRecord,
     EvidenceStrength,
     Gate,
     GateEngine,
@@ -10,6 +11,10 @@ from dafg.gates import (
     GateResult,
     LintIssue,
     classify_evidence,
+)
+from dafg.sandbox import (
+    SandboxSecurityViolation,
+    SubprocessSandbox,
 )
 from dafg.mutation import (
     AdequacyReport,
@@ -65,6 +70,7 @@ from dafg.runtime import (
     InputManifest,
     InterfaceContract,
     NodeStatus,
+    OptimisticConcurrencyConflictError,
     OutcomeStatus,
     RefusalClass,
     RevisionDirective,
@@ -164,19 +170,24 @@ from dafg.judge import (
     RunQualityReport,
 )
 from dafg.organism import (
+    ArtifactConsistencyGuard,
     AutonomousOrganism,
     GenerationRecord,
+    GoalContract,
     GoalManifest,
+    IndependentContractChallenger,
     ModuleSpec,
     OrganismEvolver,
     OrganismGenesis,
     OrganismLineage,
     OrganismReactor,
+    SafeCommandPolicy,
 )
 
 __version__ = "0.4.0"
 __all__ = [
     "ApprovalStore",
+    "EvidenceRecord",
     "EvidenceStrength",
     "Gate",
     "GateEngine",
@@ -228,6 +239,7 @@ __all__ = [
     "InputManifest",
     "InterfaceContract",
     "NodeStatus",
+    "OptimisticConcurrencyConflictError",
     "OutcomeStatus",
     "RefusalClass",
     "RevisionDirective",
@@ -314,5 +326,9 @@ __all__ = [
     "OrganismEvolver",
     "OrganismLineage",
     "GenerationRecord",
+    "ArtifactConsistencyGuard",
+    "GoalContract",
+    "IndependentContractChallenger",
+    "SafeCommandPolicy",
 ]
 

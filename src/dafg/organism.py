@@ -48,42 +48,99 @@ class SecurityPolicyViolationError(Exception):
 
 class SafeCommandPolicy:
     """Enforces strict command sandboxing for autonomously synthesized checks."""
-    FORBIDDEN_OPERATORS: Set[str] = {"&&", "||", ";", "|", "`", "$(", ">", "<", "\n"}
+    FORBIDDEN_OPERATORS: Set[str] = {"&&", "||", ";", "|", "`", "$(", ">", "<", "\n", "$", "&"}
     FORBIDDEN_BINARIES: Set[str] = {
         "rm", "rmdir", "dd", "mkfs", "sudo", "su", "chmod", "chown",
         "curl", "wget", "nc", "netcat", "sh", "bash", "zsh", "exec", "eval",
+    }
+    FORBIDDEN_INTERPRETER_FLAGS: Set[str] = {
+        "-c", "-e", "--eval", "-i", "--require", "--import", "-r"
+    }
+    FORBIDDEN_DYNAMIC_CALLS: Set[str] = {
+        "execsync", "spawnsync", "child_process", "subprocess",
+        "os.system", "os.popen", "os.exec", "eval(", "exec("
     }
     ALLOWED_COMMAND_PREFIXES: Tuple[str, ...] = (
         "uv run python test_system.py",
         "node test_system.js",
         "python test_system.py",
         "python3 test_system.py",
+        "uv run python test_service.py",
+        "node test_service.js",
+        "python test_service.py",
+        "python3 test_service.py",
+        "pytest",
+        "uv run pytest",
+        "python -m pytest",
+        "python3 -m pytest",
     )
 
     @classmethod
     def validate_command(cls, check_command: str) -> None:
         """Verify check command is strictly constrained to safe test runner execution."""
+        import shlex
+
         cmd = check_command.strip()
         if not cmd:
             raise SecurityPolicyViolationError("Empty check command is invalid")
 
+        # 1. Shell metacharacters and redirection operators
         for op in cls.FORBIDDEN_OPERATORS:
             if op in cmd:
                 raise SecurityPolicyViolationError(
                     f"Security violation: check command contains forbidden operator '{op}': '{cmd}'"
                 )
 
-        tokens = [t.lower() for t in re.findall(r"\b[a-zA-Z0-9_\.\/-]+\b", cmd)]
+        # 2. Dynamic execution and process spawning patterns
+        cmd_lower = cmd.lower()
+        for call in cls.FORBIDDEN_DYNAMIC_CALLS:
+            if call in cmd_lower:
+                raise SecurityPolicyViolationError(
+                    f"Security violation: check command contains forbidden code execution pattern '{call}': '{cmd}'"
+                )
+
+        # 3. Parse command tokens safely
+        try:
+            tokens = shlex.split(cmd)
+        except Exception as e:
+            raise SecurityPolicyViolationError(f"Security violation: malformed command syntax: {e}")
+
+        # 4. Check for forbidden interpreter flags (-c, -e, --eval, etc.)
+        for tok in tokens:
+            if tok in cls.FORBIDDEN_INTERPRETER_FLAGS:
+                raise SecurityPolicyViolationError(
+                    f"Security violation: check command uses dangerous interpreter flag '{tok}': '{cmd}'"
+                )
+
+        # 5. Check for forbidden binaries
+        token_words = [t.lower() for t in re.findall(r"\b[a-zA-Z0-9_\.\/-]+\b", cmd)]
         for b in cls.FORBIDDEN_BINARIES:
-            if b in tokens:
+            if b in token_words:
                 raise SecurityPolicyViolationError(
                     f"Security violation: check command attempts to execute forbidden binary '{b}': '{cmd}'"
                 )
 
-        if not any(cmd.startswith(prefix) for prefix in cls.ALLOWED_COMMAND_PREFIXES):
+        # 6. Must match an authorized test runner prefix
+        matched_prefix = None
+        for prefix in cls.ALLOWED_COMMAND_PREFIXES:
+            if cmd.startswith(prefix):
+                matched_prefix = prefix
+                break
+
+        if not matched_prefix:
             raise SecurityPolicyViolationError(
                 f"Security violation: check command must invoke authorized test harness, got: '{cmd}'"
             )
+
+        # 7. Constrain trailing arguments to safe alphanumeric targets (e.g. CORE, STORAGE, E2E)
+        remainder = cmd[len(matched_prefix):].strip()
+        if remainder:
+            args = shlex.split(remainder)
+            for arg in args:
+                if not re.match(r"^[a-zA-Z0-9_\.\/-]+$", arg):
+                    raise SecurityPolicyViolationError(
+                        f"Security violation: unsafe target argument '{arg}' in command: '{cmd}'"
+                    )
 
 
 @dataclass
@@ -97,13 +154,33 @@ class GoalContract:
     system_name: str
     required_capabilities: List[str]
     invariant_gates: Dict[str, str]  # gate_id -> title
+    initial_checks: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> GoalContract:
+        return cls(
+            goal=data.get("goal", ""),
+            system_name=data.get("system_name", ""),
+            required_capabilities=data.get("required_capabilities", []),
+            invariant_gates=data.get("invariant_gates", {}),
+            initial_checks=data.get("initial_checks", {}),
+        )
+
     def validate_ledger(self, ledger: GateLedger) -> Tuple[bool, List[str]]:
-        """Validate that all invariant gates remain active, non-abandoned, and verified."""
+        """Validate that all invariant gates remain active, non-abandoned, and non-tautological."""
+        from dafg.gates import GateLinter
         violations: List[str] = []
+
+        # 0. Lint ledger for any syntax or structural errors
+        lint_issues = GateLinter.lint(ledger)
+        for issue in lint_issues:
+            if issue.severity == "ERROR":
+                violations.append(f"Anti-Goodhart violation: Ledger syntax/structural error: {issue.message}")
+
+        # 1. Check invariant gates
         for gid, title in self.invariant_gates.items():
             if gid not in ledger.gates:
                 violations.append(f"Anti-Goodhart violation: Missing mandatory goal gate '{gid}' ({title})")
@@ -113,7 +190,63 @@ class GoalContract:
                 violations.append(f"Anti-Goodhart violation: Mandatory goal gate '{gid}' was improperly abandoned")
             if not gate.check or not gate.expect:
                 violations.append(f"Anti-Goodhart violation: Mandatory gate '{gid}' has hollow check/expect verification")
+                continue
+
+            cmd = gate.check.strip()
+            exp = gate.expect.strip()
+
+            # 2. Check for vacuous/tautological commands
+            if cmd in {"true", ":", "exit 0", "exit 0;", "true;"}:
+                violations.append(f"Anti-Goodhart violation: Gate '{gid}' has vacuous check command '{cmd}'")
+            if re.match(r"^echo\s+['\"]?" + re.escape(exp) + r"['\"]?$", cmd):
+                violations.append(f"Anti-Goodhart violation: Gate '{gid}' has tautological echo check '{cmd}' matching expect")
+
+            # 3. Check for regex widening
+            if exp in {".*", ".+", "^.*$", "^.+$", ".*?", "^.*?$"}:
+                violations.append(f"Anti-Goodhart violation: Gate '{gid}' uses widened wildcard regex '{exp}'")
+
+            # 4. Check for OWNS shrinking
+            if gid in self.initial_checks:
+                init_owns = set(self.initial_checks[gid].get("owns") or [])
+                curr_owns = set([p.strip() for p in (gate.owns or "").split(",") if p.strip()])
+                if init_owns and not curr_owns:
+                    violations.append(f"Anti-Goodhart violation: Gate '{gid}' removed all file ownership (OWNS shrinking)")
+                elif init_owns - curr_owns:
+                    dropped = init_owns - curr_owns
+                    violations.append(f"Anti-Goodhart violation: Gate '{gid}' dropped ownership of {dropped} (OWNS shrinking)")
+
         return (len(violations) == 0, violations)
+
+
+class IndependentContractChallenger:
+    """Independent adversarial challenger that inspects Genesis contracts and candidate mutations."""
+
+    @classmethod
+    def validate_genesis_contract(cls, manifest: GoalManifest) -> Tuple[bool, List[str]]:
+        """Ensure Genesis does not produce a born-weak contract with hollow checks or wildcards."""
+        violations: List[str] = []
+        if not manifest.modules:
+            violations.append("Genesis contract invalid: No modules synthesized from goal")
+
+        for m in manifest.modules:
+            if not m.check_command or m.check_command.strip() in {"true", ":", "exit 0"}:
+                violations.append(f"Genesis contract weak: Module '{m.name}' has hollow check command '{m.check_command}'")
+            if not m.expect_pattern or m.expect_pattern.strip() in {".*", ".+", "^.*$", "^.+$", ".*?"}:
+                violations.append(f"Genesis contract weak: Module '{m.name}' has wildcard expect pattern '{m.expect_pattern}'")
+            if not m.owns:
+                violations.append(f"Genesis contract weak: Module '{m.name}' has empty file ownership")
+
+        if not manifest.integration_check or manifest.integration_check.strip() in {"true", ":", "exit 0"}:
+            violations.append("Genesis contract weak: Hollow integration check command")
+        if not manifest.integration_expect or manifest.integration_expect.strip() in {".*", ".+", "^.*$"}:
+            violations.append("Genesis contract weak: Wildcard integration expect pattern")
+
+        return (len(violations) == 0, violations)
+
+    @classmethod
+    def challenge_candidate_ledger(cls, contract: GoalContract, ledger: GateLedger) -> Tuple[bool, List[str]]:
+        """Adversarially challenge candidate ledger mutations against contract baseline."""
+        return contract.validate_ledger(ledger)
 
 
 class IndependentGoalEvaluator:
@@ -165,6 +298,87 @@ class IndependentGoalEvaluator:
                 return False, f"Independent verification output mismatch: expected '{manifest.integration_expect}'"
 
             return True, "Independent goal verification succeeded"
+
+
+class ArtifactConsistencyGuard:
+    """Validates canonical synchronization across state.json, GATES.md, and .approved_gates.json."""
+
+    @classmethod
+    def verify(
+        cls,
+        state_path: Union[str, Path],
+        gates_path: Union[str, Path],
+        approvals_path: Optional[Union[str, Path]] = None,
+    ) -> Tuple[bool, List[str]]:
+        violations: List[str] = []
+        state_file = Path(state_path)
+        gates_file = Path(gates_path)
+
+        if not state_file.exists():
+            violations.append(f"State file does not exist: {state_path}")
+        if not gates_file.exists():
+            violations.append(f"Gates file does not exist: {gates_path}")
+
+        if violations:
+            return False, violations
+
+        try:
+            state_data = json.loads(state_file.read_text(encoding="utf-8"))
+        except Exception as e:
+            return False, [f"Failed to parse state file {state_path}: {e}"]
+
+        try:
+            ledger = GateLedger.parse(gates_file.read_text(encoding="utf-8"), filepath=gates_file)
+        except Exception as e:
+            return False, [f"Failed to parse gates file {gates_path}: {e}"]
+
+        app_path = Path(approvals_path) if approvals_path else gates_file.parent / ".approved_gates.json"
+        approved_signatures: Set[str] = set()
+        if app_path.exists():
+            try:
+                approved_signatures = set(json.loads(app_path.read_text(encoding="utf-8")))
+            except Exception as e:
+                violations.append(f"Failed to parse approvals file {app_path}: {e}")
+
+        # 1. State vs Ledger gate status consistency
+        state_gate_states = state_data.get("gate_states", {})
+        for gid, gate in ledger.gates.items():
+            if gid not in state_gate_states:
+                violations.append(f"Gate '{gid}' defined in GATES.md is missing from state.json gate_states")
+            else:
+                sg_entry = state_gate_states[gid]
+                sg_status = sg_entry.get("status") if isinstance(sg_entry, dict) else sg_entry
+                if gate.status != sg_status:
+                    violations.append(
+                        f"Gate '{gid}' status mismatch: GATES.md has '{gate.status}' but state.json has '{sg_status}'"
+                    )
+
+        # 2. Approved gates consistency: Any gate marked MET in GATES.md must be approved
+        for gid, gate in ledger.gates.items():
+            if gate.status == "MET" and gate.check:
+                sig = ApprovalStore.signature(gate)
+                if sig not in approved_signatures:
+                    violations.append(
+                        f"Gate '{gid}' marked MET in GATES.md but its signature '{sig}' is not approved in {app_path.name}"
+                    )
+
+        # 3. Sealed state check: if state is sealed, no gate may remain UNMET or PENDING
+        if state_data.get("is_sealed", False):
+            for gid, gate in ledger.gates.items():
+                if gate.status not in ("MET", "ABANDONED"):
+                    violations.append(f"State is marked is_sealed=True but gate '{gid}' is still {gate.status} in GATES.md")
+
+        # 4. Abandoned gate rationale consistency
+        for gid, gate in ledger.gates.items():
+            if gate.status == "ABANDONED":
+                if not gate.abandon_reason:
+                    violations.append(f"Gate '{gid}' is ABANDONED in GATES.md but has no abandon reason")
+                sg_entry = state_gate_states.get(gid, {})
+                sg_reason = sg_entry.get("abandon_reason") if isinstance(sg_entry, dict) else None
+                if not sg_reason:
+                    violations.append(f"Gate '{gid}' is ABANDONED in state.json but has no abandon_reason recorded")
+
+        return len(violations) == 0, violations
 
 
 @dataclass
@@ -648,7 +862,7 @@ class OrganismEvolver:
         # -------------------------------------------------------------------
         for fp in report.friction_points:
             if fp.category == "SERIAL_CONFLICT":
-                conflicting_path = fp.details.get("file_path") or ""
+                conflicting_path = fp.details.get("file_path") or fp.details.get("path") or ""
                 # Search across friction message for the file path if missing from details
                 if not conflicting_path:
                     m = re.search(r"'(.*?)'", fp.message)
@@ -667,6 +881,15 @@ class OrganismEvolver:
                             mutations.append(
                                 f"GraphEvolution: Partitioned '{conflicting_path}' ownership from {n.id} to '{sub_path}'"
                             )
+                            if ledger and n.assigned_gates:
+                                for gid in n.assigned_gates:
+                                    g = ledger.get_gate(gid)
+                                    if g and g.owns and conflicting_path in g.owns:
+                                        g_owns = [x.strip() for x in g.owns.split(",") if x.strip()]
+                                        if conflicting_path in g_owns:
+                                            g_owns.remove(conflicting_path)
+                                            g_owns.append(sub_path)
+                                            g.owns = ", ".join(g_owns)
 
             elif fp.category == "REVISION_THRASH":
                 # Invert or decouple node by introducing prerequisite interface check
@@ -800,7 +1023,7 @@ class AutonomousOrganism:
                     SafeCommandPolicy.validate_command(g.check)
             appr_store.approve_all(ledger)
 
-        engine = GateEngine(approval_store=appr_store, auto_approve=self.auto_approve)
+        engine = GateEngine(approval_store=appr_store, auto_approve=self.auto_approve, enforce_safe_policy=True)
 
         # Instantiate DAFG graph
         state_path = self.workdir / "state.json"
@@ -883,6 +1106,7 @@ class AutonomousOrganism:
                     goal_contract=manifest.goal_contract,
                 )
                 self.lineage.total_mutations += len(mutations_applied)
+                graph.prepare_next_generation(gen + 1)
                 graph.save_state()
 
             gen_duration = (time.time() - gen_start) * 1000.0

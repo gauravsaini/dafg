@@ -112,7 +112,11 @@ class CompletionGuard:
                 unapproved_gates.append(gid)
 
             if gate.status == "ABANDONED":
-                if not gate.abandon_reason or not gate.abandon_reason.strip():
+                reason = (gate.abandon_reason or "").strip()
+                words = [w for w in reason.split() if w]
+                trivial_tokens = {"done", "skip", "skipped", "ok", "n/a", "na", "todo", "none", "test", "fixed", "ignore", "pass", "no"}
+                is_trivial = (len(words) < 4 or len(reason) < 20 or all(w.lower().strip(".,:;!-") in trivial_tokens for w in words))
+                if not reason or is_trivial:
                     invalid_abandonments.append(gid)
                 else:
                     abandoned_gates.append(gid)
@@ -144,12 +148,18 @@ class CompletionGuard:
         if not has_blocks:
             # All satisfied
             self._reset_progress_state()
+            outcome = "HANDOFF_REQUIRED" if abandoned_gates else "VERIFIED_DELIVERY"
+            reason_msg = (
+                f"Completed with {len(abandoned_gates)} abandoned gate(s); handoff required."
+                if abandoned_gates
+                else "All acceptance gates are met with evidence or validly abandoned."
+            )
             decision = StopDecision(
                 allowed=True,
                 decision="allow",
-                reason="All acceptance gates are met with evidence or validly abandoned.",
+                reason=reason_msg,
                 abandoned_gates=abandoned_gates,
-                outcome_status="VERIFIED_DELIVERY",
+                outcome_status=outcome,
             )
             self._emit_stop_decision(decision)
             return decision

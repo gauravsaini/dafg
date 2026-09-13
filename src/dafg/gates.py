@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import fcntl
 import hashlib
 import json
 import os
@@ -18,6 +19,7 @@ import re
 import shlex
 import subprocess
 import sys
+import time
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 GATE_HEADER_RE = re.compile(
@@ -129,6 +131,67 @@ def classify_evidence(gate: Gate) -> EvidenceStrength:
             return EvidenceStrength.EXECUTABLE_PROOF
         return EvidenceStrength.STRING_MATCH
     return EvidenceStrength.PENDING
+
+
+@dataclass
+class EvidenceRecord:
+    """Attributable execution evidence record binding run, epoch, and digests."""
+    run_id: str
+    run_epoch: int
+    gate_id: str
+    gate_signature: str
+    command_digest: str
+    environment_digest: str
+    timestamp: str
+    node_id: Optional[str] = None
+    attempt_id: Optional[int] = None
+    match_preview: Optional[str] = None
+
+    def serialize(self) -> str:
+        data = {
+            "run_id": self.run_id,
+            "run_epoch": self.run_epoch,
+            "gate_id": self.gate_id,
+            "gate_signature": self.gate_signature,
+            "command_digest": self.command_digest,
+            "environment_digest": self.environment_digest,
+            "timestamp": self.timestamp,
+        }
+        if self.node_id is not None:
+            data["node_id"] = self.node_id
+        if self.attempt_id is not None:
+            data["attempt_id"] = self.attempt_id
+        if self.match_preview is not None:
+            data["match_preview"] = self.match_preview
+        return json.dumps(data, sort_keys=True)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> EvidenceRecord:
+        return cls(
+            run_id=str(data.get("run_id", "unknown")),
+            run_epoch=int(data.get("run_epoch", 1)),
+            gate_id=str(data.get("gate_id", "")),
+            gate_signature=str(data.get("gate_signature", "")),
+            command_digest=str(data.get("command_digest", "")),
+            environment_digest=str(data.get("environment_digest", "")),
+            timestamp=str(data.get("timestamp", "")),
+            node_id=str(data["node_id"]) if data.get("node_id") is not None else None,
+            attempt_id=int(data["attempt_id"]) if data.get("attempt_id") is not None else None,
+            match_preview=str(data["match_preview"]) if data.get("match_preview") is not None else None,
+        )
+
+    @classmethod
+    def parse_evidence_string(cls, evidence_str: str) -> Optional[EvidenceRecord]:
+        if not evidence_str:
+            return None
+        m = re.search(r"record=(\{.*?\})", evidence_str)
+        if m:
+            try:
+                data = json.loads(m.group(1))
+                return cls.from_dict(data)
+            except Exception:
+                return None
+        return None
 
 
 @dataclass
@@ -328,22 +391,23 @@ class GateLedger:
         gate.evidence = evidence if met else None
 
         # 1. Update header checkbox
-        header_line = self.raw_lines[gate.header_index]
-        mark = "x" if met else " "
-        new_header = re.sub(r"-\s*\[[ xX\-]\]", f"- [{mark}]", header_line, count=1)
-        self.raw_lines[gate.header_index] = new_header
+        if 0 <= gate.header_index < len(self.raw_lines):
+            header_line = self.raw_lines[gate.header_index]
+            mark = "x" if met else " "
+            new_header = re.sub(r"-\s*\[[ xX\-]\]", f"- [{mark}]", header_line, count=1)
+            self.raw_lines[gate.header_index] = new_header
 
         # 2. Update or insert EVIDENCE line
-        if met and evidence:
+        if met and evidence and len(self.raw_lines) > 0:
             ev_line = f"  EVIDENCE: {evidence}"
-            if gate.evidence_index is not None and gate.evidence_index < len(self.raw_lines):
+            if gate.evidence_index is not None and 0 <= gate.evidence_index < len(self.raw_lines):
                 self.raw_lines[gate.evidence_index] = ev_line
             else:
                 # Insert immediately after the last property of this gate
-                insert_pos = gate.end_index + 1
+                insert_pos = min(max(0, gate.end_index + 1), len(self.raw_lines))
                 self.raw_lines.insert(insert_pos, ev_line)
                 gate.evidence_index = insert_pos
-                gate.end_index += 1
+                gate.end_index = max(gate.end_index, insert_pos)
                 # Adjust line indices for subsequent gates
                 for other in self.gates.values():
                     if other.header_index > gate.header_index:
@@ -353,12 +417,13 @@ class GateLedger:
                             other.evidence_index += 1
                         if other.abandon_index is not None:
                             other.abandon_index += 1
-        elif not met and gate.evidence_index is not None:
+        elif not met and gate.evidence_index is not None and len(self.raw_lines) > 0:
             # Clear or remove evidence line if demoted
-            if gate.evidence_index < len(self.raw_lines) and "EVIDENCE:" in self.raw_lines[gate.evidence_index]:
+            if 0 <= gate.evidence_index < len(self.raw_lines) and "EVIDENCE:" in self.raw_lines[gate.evidence_index]:
                 del self.raw_lines[gate.evidence_index]
                 gate.evidence_index = None
                 gate.end_index = max(gate.header_index, gate.end_index - 1)
+                # Adjust line indices for subsequent gates
                 for other in self.gates.values():
                     if other.header_index > gate.header_index:
                         other.header_index -= 1
@@ -414,7 +479,18 @@ class GateLedger:
         if not target:
             raise ValueError("No filepath specified to save GateLedger")
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(self.serialize(), encoding="utf-8")
+        lock_file = target.with_name(f"{target.name}.lock")
+        tmp_file = target.with_name(f"{target.name}.tmp.{os.getpid()}_{time.time_ns()}")
+        with open(lock_file, "w") as lf:
+            try:
+                fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                tmp_file.write_text(self.serialize(), encoding="utf-8")
+                os.replace(tmp_file, target)
+            finally:
+                try:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                except OSError:
+                    pass
 
 
 class ApprovalStore:
@@ -466,9 +542,18 @@ class ApprovalStore:
     def save(self) -> None:
         if self.filepath:
             self.filepath.parent.mkdir(parents=True, exist_ok=True)
-            tmp_file = self.filepath.with_name(f"{self.filepath.name}.tmp.{os.getpid()}")
-            tmp_file.write_text(json.dumps(sorted(list(self.approved_signatures)), indent=2), encoding="utf-8")
-            os.replace(tmp_file, self.filepath)
+            lock_file = self.filepath.with_name(f"{self.filepath.name}.lock")
+            tmp_file = self.filepath.with_name(f"{self.filepath.name}.tmp.{os.getpid()}_{time.time_ns()}")
+            with open(lock_file, "w") as lf:
+                try:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                    tmp_file.write_text(json.dumps(sorted(list(self.approved_signatures)), indent=2), encoding="utf-8")
+                    os.replace(tmp_file, self.filepath)
+                finally:
+                    try:
+                        fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                    except OSError:
+                        pass
 
     def load(self) -> None:
         if self.filepath and self.filepath.exists():
@@ -812,12 +897,14 @@ class GateEngine:
         auto_approve: bool = False,
         fabric: Optional[Any] = None,
         allow_regression: bool = True,
+        enforce_safe_policy: bool = False,
     ):
         self.approval_store = approval_store
         self.timeout = timeout
         self.auto_approve = auto_approve
         self._fabric = fabric  # ObservabilityFabric, optional
         self.allow_regression = allow_regression
+        self.enforce_safe_policy = enforce_safe_policy
 
     def execute_gate(
         self,
@@ -825,6 +912,7 @@ class GateEngine:
         ledger: Optional[GateLedger] = None,
         reverify: bool = False,
         cwd_override: Optional[Union[str, Path]] = None,
+        context: Optional[Dict[str, Any]] = None,
     ) -> GateResult:
         if gate.status == "ABANDONED":
             return GateResult(
@@ -839,6 +927,18 @@ class GateEngine:
                 status="FAILED",
                 error=f"Gate '{gate.id}' has no runnable CHECK command",
             )
+
+        # Security sandbox enforcement
+        if self.enforce_safe_policy and gate.check:
+            try:
+                from dafg.organism import SafeCommandPolicy
+                SafeCommandPolicy.validate_command(gate.check)
+            except Exception as e:
+                return GateResult(
+                    gate_id=gate.id,
+                    status="FAILED",
+                    error=f"Security violation: {e}",
+                )
 
         # Security boundary enforcement: unapproved checks are refused
         if self.approval_store and not self.auto_approve:
@@ -859,12 +959,27 @@ class GateEngine:
             and "exit_code=0" in gate.evidence
             and gate.evidence.strip().lower() != "pending"
         ):
-            return GateResult(
-                gate_id=gate.id,
-                status="MET",
-                exit_code=0,
-                evidence=gate.evidence,
-            )
+            # Evidence Integrity check: reject stale/altered cached evidence (Invariant I8)
+            is_valid_evidence = True
+            rec = EvidenceRecord.parse_evidence_string(gate.evidence)
+            if rec:
+                current_sig = ApprovalStore.signature(gate)
+                if rec.gate_signature and rec.gate_signature != current_sig:
+                    is_valid_evidence = False  # Gate was altered after evidence was recorded
+                if context and "run_epoch" in context:
+                    if rec.run_epoch < context["run_epoch"]:
+                        is_valid_evidence = False  # Evidence belongs to prior epoch
+
+            if is_valid_evidence:
+                return GateResult(
+                    gate_id=gate.id,
+                    status="MET",
+                    exit_code=0,
+                    evidence=gate.evidence,
+                )
+            else:
+                if ledger and self.allow_regression:
+                    ledger.update_gate_evidence(gate.id, None, met=False)
 
         # Resolve working directory
         if cwd_override:
@@ -979,14 +1094,17 @@ class GateEngine:
                     attributes={"gate_id": gate.id, "check": gate.check, "expect": gate.expect or ""},
                 )
 
-            proc = subprocess.run(
-                gate.check,
-                shell=True,
-                cwd=str(work_dir),
-                capture_output=True,
-                text=True,
-                timeout=timeout_val,
-            )
+            from dafg.sandbox import SubprocessSandbox, SandboxSecurityViolation
+            base_sandbox_root = getattr(ledger, "work_dir", None) or (ledger.filepath.parent if (ledger and ledger.filepath) else work_dir)
+            sandbox = SubprocessSandbox(workdir=base_sandbox_root, timeout=timeout_val)
+            try:
+                proc = sandbox.run(gate.check, cwd=work_dir)
+            except SandboxSecurityViolation as ssv:
+                return GateResult(
+                    gate_id=gate.id,
+                    status="FAILED",
+                    error=f"Sandbox containment violation: {ssv}",
+                )
             combined_output = proc.stdout + proc.stderr
             exit_ok = (proc.returncode == 0)
 
@@ -1014,7 +1132,28 @@ class GateEngine:
 
             if exit_ok and matched:
                 now_str = datetime.now(timezone.utc).isoformat()
-                evidence_str = f"exit_code=0 timestamp={now_str} match='{match_preview}'"
+                run_id = (context or {}).get("run_id", "local_run")
+                run_epoch = (context or {}).get("run_epoch", 1)
+                node_id = (context or {}).get("node_id")
+                attempt_id = (context or {}).get("attempt_id", 1)
+
+                gate_sig = ApprovalStore.signature(gate)
+                cmd_digest = hashlib.sha256((gate.check or "").encode("utf-8")).hexdigest()
+                env_digest = hashlib.sha256(f"{work_dir}|{sys.platform}|{sys.version.split()[0]}".encode("utf-8")).hexdigest()
+
+                rec = EvidenceRecord(
+                    run_id=str(run_id),
+                    run_epoch=int(run_epoch),
+                    gate_id=gate.id,
+                    gate_signature=gate_sig,
+                    command_digest=cmd_digest,
+                    environment_digest=env_digest,
+                    timestamp=now_str,
+                    node_id=str(node_id) if node_id else None,
+                    attempt_id=int(attempt_id) if attempt_id else None,
+                    match_preview=match_preview,
+                )
+                evidence_str = f"exit_code=0 timestamp={now_str} match='{match_preview}' epoch={run_epoch} sig={gate_sig[:12]} record={rec.serialize()}"
                 if ledger:
                     ledger.update_gate_evidence(gate.id, evidence_str, met=True)
                     if ledger.filepath:
@@ -1056,7 +1195,7 @@ class GateEngine:
                     error="; ".join(err_msg),
                 )
 
-        except subprocess.TimeoutExpired:
+        except (subprocess.TimeoutExpired, TimeoutError):
             _demote_failure()
             if _span and self._fabric:
                 from dafg.observe import SpanStatus

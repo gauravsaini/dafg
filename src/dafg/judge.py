@@ -21,6 +21,7 @@ class QualityVerdict(str, Enum):
     """Overall quality grade for a DAFG execution run."""
     PERFECT = "PERFECT"      # score >= 85.0 and VERIFIED_DELIVERY
     IMPERFECT = "IMPERFECT"  # 50.0 <= score < 85.0
+    HANDOFF_REQUIRED = "HANDOFF_REQUIRED"  # Deliberate refusal of automated signoff
     FAILED = "FAILED"        # score < 50.0 or non-delivery
 
 
@@ -476,7 +477,10 @@ class RunJudge:
 
         # Delivery check: Must be delivered to be PERFECT or IMPERFECT
         delivered = outcome_status == "VERIFIED_DELIVERY" and (is_sealed or funnel.get("accepted_nodes", 0) == total_nodes)
-        if not delivered:
+        if outcome_status == "HANDOFF_REQUIRED":
+            verdict = QualityVerdict.HANDOFF_REQUIRED
+            composite = min(composite, 75.0)  # Capped below PERFECT (85.0)
+        elif not delivered:
             verdict = QualityVerdict.FAILED
             composite = min(composite, 45.0)
         elif composite >= 85.0 and friction_severity_index < 0.20:

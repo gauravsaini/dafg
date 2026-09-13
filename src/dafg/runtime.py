@@ -10,6 +10,7 @@ versioned interface contracts, and layered verification.
 from __future__ import annotations
 
 import concurrent.futures
+import fcntl
 import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -85,6 +86,7 @@ class RefusalClass(str, Enum):
 class OutcomeStatus(str, Enum):
     """Outcome classification of a DAFG run or node execution."""
     VERIFIED_DELIVERY = "VERIFIED_DELIVERY"
+    HANDOFF_REQUIRED = "HANDOFF_REQUIRED"
     INTERMEDIATE_FALSE_ACCEPTANCE = "INTERMEDIATE_FALSE_ACCEPTANCE"
     FINAL_FALSE_SUCCESS = "FINAL_FALSE_SUCCESS"
     INCOMPLETE_RUN = "INCOMPLETE_RUN"
@@ -647,7 +649,8 @@ class TaskNode:
     parent_id: Optional[str] = None  # parent in depth tree
     children: List[str] = field(default_factory=list)  # child node IDs
     depth: int = 0
-    revisions: int = 0
+    attempts: int = 0  # physical execution count
+    revisions: int = 0  # semantic specification modifications
     max_revisions: int = 3
     result: Optional[Dict[str, Any]] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
@@ -856,24 +859,75 @@ def nodes_conflict(node1: TaskNode, node2: TaskNode, ledger: Optional[GateLedger
     return False
 
 
+class OptimisticConcurrencyConflictError(Exception):
+    """Raised when an atomic CAS state commit detects a version conflict."""
+    pass
+
+
 class StateStore:
     """Handles atomic persistence of DAFG runtime state."""
 
-    # ponytail: module-level lock prevents concurrent os.replace() races under ThreadPoolExecutor
     _save_lock = threading.Lock()
 
     @staticmethod
-    def save(state: Dict[str, Any], filepath: Union[str, Path]) -> None:
+    def commit(
+        filepath: Union[str, Path],
+        new_state: Dict[str, Any],
+        expected_version: Optional[int] = None,
+    ) -> int:
+        """Atomic Compare-And-Swap commit with advisory fcntl file locking."""
         with StateStore._save_lock:
             fp = Path(filepath)
             fp.parent.mkdir(parents=True, exist_ok=True)
-            tmp_file = fp.with_name(f"{fp.name}.tmp.{os.getpid()}")
-            tmp_file.write_text(json.dumps(state, indent=2), encoding="utf-8")
-            os.replace(tmp_file, fp)
+            lock_file = fp.with_name(f"{fp.name}.lock")
+            tmp_file = fp.with_name(f"{fp.name}.tmp.{os.getpid()}_{time.time_ns()}")
+            with open(lock_file, "w") as lf:
+                try:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
+                    current_version = 0
+                    if fp.exists():
+                        try:
+                            content = fp.read_text(encoding="utf-8")
+                            if content.strip():
+                                current_data = json.loads(content)
+                                current_version = int(current_data.get("state_version", 0))
+                        except Exception:
+                            current_version = 0
+
+                    if expected_version is not None and expected_version != current_version:
+                        raise OptimisticConcurrencyConflictError(
+                            f"CAS version mismatch: expected version {expected_version}, but on-disk state is at version {current_version}"
+                        )
+
+                    next_version = current_version + 1
+                    new_state["state_version"] = next_version
+                    tmp_file.write_text(json.dumps(new_state, indent=2), encoding="utf-8")
+                    os.replace(tmp_file, fp)
+                    return next_version
+                finally:
+                    try:
+                        fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                    except OSError:
+                        pass
+
+    @staticmethod
+    def save(state: Dict[str, Any], filepath: Union[str, Path]) -> None:
+        StateStore.commit(filepath, state, expected_version=None)
 
     @staticmethod
     def load(filepath: Union[str, Path]) -> Dict[str, Any]:
         fp = Path(filepath)
+        lock_file = fp.with_name(f"{fp.name}.lock")
+        if lock_file.exists():
+            with open(lock_file, "w") as lf:
+                try:
+                    fcntl.flock(lf.fileno(), fcntl.LOCK_SH)
+                    return json.loads(fp.read_text(encoding="utf-8"))
+                finally:
+                    try:
+                        fcntl.flock(lf.fileno(), fcntl.LOCK_UN)
+                    except OSError:
+                        pass
         return json.loads(fp.read_text(encoding="utf-8"))
 
 
@@ -933,6 +987,7 @@ class DAFG:
         # Protocol Engine Subsystem
         self.run_id: str = f"run_{int(time.time()*1000)}_{os.getpid()}"
         self.run_epoch: int = 1
+        self.state_version: int = 0
         self.is_sealed: bool = False
         self.sealed_at: Optional[str] = None
         self.processed_idempotency_keys: Set[str] = set()
@@ -979,6 +1034,8 @@ class DAFG:
             self.save_state()
             if "sealed" in audit.reason.lower():
                 raise RunSealedError(audit.reason)
+            if "stale" in audit.reason.lower() or "mismatch" in audit.reason.lower():
+                raise StaleDispatchError(audit.reason)
             raise IllegalTransitionError(audit.reason)
 
         for ev in events:
@@ -2075,7 +2132,17 @@ class DAFG:
                         gate_failures.append(f"Gate '{gid}' not found in ledger")
                         continue
 
-                    res = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
+                    res = self.engine.execute_gate(
+                        gate,
+                        ledger=self.ledger,
+                        reverify=True,
+                        context={
+                            "run_id": self.run_id,
+                            "run_epoch": self.run_epoch,
+                            "node_id": node.id,
+                            "attempt_id": node.attempts,
+                        },
+                    )
                     if res.status != "MET":
                         all_gates_pass = False
                         gate_failures.append(f"Gate '{gid}' status={res.status} ({res.error or 'failed'})")
@@ -2149,7 +2216,17 @@ class DAFG:
                         for gid in desc_node.assigned_gates:
                             gate = self.ledger.get_gate(gid)
                             if gate:
-                                res = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
+                                res = self.engine.execute_gate(
+                                    gate,
+                                    ledger=self.ledger,
+                                    reverify=True,
+                                    context={
+                                        "run_id": self.run_id,
+                                        "run_epoch": self.run_epoch,
+                                        "node_id": desc_node.id,
+                                        "attempt_id": desc_node.attempts,
+                                    },
+                                )
                                 if res.status != "MET":
                                     # Descendant reverification failed! Track intermediate false acceptance
                                     self.intermediate_false_acceptances += 1
@@ -2326,7 +2403,17 @@ class DAFG:
             for gid in node.assigned_gates:
                 gate = self.ledger.get_gate(gid)
                 if gate:
-                    res = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
+                    res = self.engine.execute_gate(
+                        gate,
+                        ledger=self.ledger,
+                        reverify=True,
+                        context={
+                            "run_id": self.run_id,
+                            "run_epoch": self.run_epoch,
+                            "node_id": node.id,
+                            "attempt_id": node.attempts,
+                        },
+                    )
                     if res.status != "MET":
                         self.bypass_telemetry.misrouted_runs += 1
                         self.commit_transition(node, NodeStatus.READY, action="BYPASS_ESCALATED", reason=f"Gate {gid} failed in fastpath ({res.error}). Escalating.")
@@ -2461,10 +2548,14 @@ class DAFG:
         max_steps: int = 100,
     ) -> str:
         """Run DAFG until completion, failure, or budget exhaustion."""
+        def _resolve_completed_status() -> OutcomeStatus:
+            has_abandoned = bool(self.ledger and any(g.status == "ABANDONED" for g in self.ledger.gates.values()))
+            return OutcomeStatus.HANDOFF_REQUIRED if has_abandoned else OutcomeStatus.VERIFIED_DELIVERY
+
         for _ in range(max_steps):
             if self.is_completed():
                 self.seal_run()
-                self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
+                self.outcome_status = _resolve_completed_status()
                 self.save_state()
                 return "COMPLETED"
             if self.has_failed():
@@ -2483,7 +2574,7 @@ class DAFG:
                 # No ready nodes can execute. Check if blocked or complete
                 if self.is_completed():
                     self.seal_run()
-                    self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
+                    self.outcome_status = _resolve_completed_status()
                     self.save_state()
                     return "COMPLETED"
                 self.outcome_status = OutcomeStatus.INCOMPLETE_RUN
@@ -2492,13 +2583,30 @@ class DAFG:
 
         if self.is_completed():
             self.seal_run()
-            self.outcome_status = OutcomeStatus.VERIFIED_DELIVERY
+            self.outcome_status = _resolve_completed_status()
             self.save_state()
             return "COMPLETED"
         else:
             self.outcome_status = OutcomeStatus.INCOMPLETE_RUN
             self.save_state()
             return "BLOCKED"
+
+    def prepare_next_generation(self, gen_number: int) -> None:
+        """Reset execution state for next evolutionary generation under evolved topology."""
+        from dafg.protocol import ProtocolState
+        self.run_id = f"run_gen_{gen_number}_{int(time.time()*1000)}"
+        self.is_sealed = False
+        self.sealed_at = None
+        self.run_epoch += 1
+        self.processed_idempotency_keys.clear()
+        self.wave_diagnostics.clear()
+        self.execution_history.clear()
+        for node in self.nodes.values():
+            node.status = NodeStatus.READY
+            node.protocol_state = ProtocolState.IDLE
+            node.active_dispatch = None
+            node.epoch = self.run_epoch
+            node.evidence_ledger.clear()
 
     def is_completed(self) -> bool:
         """True if all nodes in graph are ACCEPTED and completion integrity holds."""
@@ -2879,7 +2987,7 @@ class DAFG:
             lines.append(report.format_report())
         return "\n".join(lines)
 
-    def save_state(self) -> None:
+    def save_state(self, expected_version: Optional[int] = None) -> None:
         if not self.state_path:
             return
 
@@ -2896,6 +3004,7 @@ class DAFG:
 
         state = {
             "version": "1.0",
+            "state_version": self.state_version,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "run_id": self.run_id,
             "run_epoch": self.run_epoch,
@@ -2926,7 +3035,11 @@ class DAFG:
             "audit_log": self.audit_log,
             "processed_idempotency_keys": list(self.processed_idempotency_keys),
         }
-        StateStore.save(state, self.state_path)
+        self.state_version = StateStore.commit(
+            self.state_path,
+            state,
+            expected_version=expected_version,
+        )
         self._fabric.emit_metric("state.persisted", 1.0)
 
     @classmethod
@@ -2951,11 +3064,15 @@ class DAFG:
             adaptations_consumed=b_data.get("adaptations_consumed", 0),
         )
 
+        had_interrupted_nodes = False
         nodes: Dict[str, TaskNode] = {}
         for nid, ndict in data.get("nodes", {}).items():
             node = TaskNode.from_dict(ndict)
             if node.status == NodeStatus.RUNNING:
+                had_interrupted_nodes = True
                 node.status = NodeStatus.PENDING
+                node.active_dispatch = None
+                node.attempts += 1
             nodes[nid] = node
 
         dafg = cls(
@@ -2966,9 +3083,8 @@ class DAFG:
             state_path=state_path,
             probes=probes,
         )
-        dafg.run_id = data.get("run_id", dafg.run_id)
-        dafg.run_epoch = data.get("run_epoch", 1)
         dafg.is_sealed = data.get("is_sealed", False)
+        dafg.state_version = int(data.get("state_version", 0))
         dafg.sealed_at = data.get("sealed_at")
         dafg.processed_idempotency_keys = set(data.get("processed_idempotency_keys", []))
         dafg.domain_events = list(data.get("domain_events", []))
@@ -2978,6 +3094,21 @@ class DAFG:
         dafg.intermediate_false_acceptances = data.get("intermediate_false_acceptances", 0)
         ost = data.get("outcome_status", OutcomeStatus.INCOMPLETE_RUN.value)
         dafg.outcome_status = OutcomeStatus(ost) if ost in [e.value for e in OutcomeStatus] else OutcomeStatus.INCOMPLETE_RUN
+
+        saved_epoch = data.get("run_epoch", 1)
+        if had_interrupted_nodes:
+            dafg.run_epoch = saved_epoch + 1
+            for n in nodes.values():
+                if n.status == NodeStatus.PENDING and n.active_dispatch is None:
+                    n.epoch = dafg.run_epoch
+            dafg.domain_events.append({
+                "type": "RECOVERED_FROM_INTERRUPTION",
+                "previous_epoch": saved_epoch,
+                "new_epoch": dafg.run_epoch,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
+        else:
+            dafg.run_epoch = saved_epoch
 
         # Restore contracts
         for cid, cdata in data.get("contracts", {}).items():

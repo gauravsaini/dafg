@@ -317,10 +317,20 @@ class ProtocolEngine:
                 if isinstance(active_dispatch_raw, dict)
                 else active_dispatch_raw
             )
-            # If both sides carry dispatch identity, enforce exact fencing.
-            # If neither side has one (legacy path), skip fencing.
-            if active_dispatch and cmd.dispatch_identity:
-                if (
+            if cmd.dispatch_identity:
+                if active_dispatch is None:
+                    record = AuditRecord(
+                        timestamp=datetime.now(timezone.utc).isoformat(),
+                        idempotency_key=cmd.idempotency_key,
+                        action=cmd.action.value,
+                        node_id=cmd.node_id,
+                        reason=(
+                            f"Stale dispatch identity: proposal={cmd.dispatch_identity} "
+                            f"submitted when no dispatch is active on node (node epoch={getattr(node, 'epoch', 1)})"
+                        ),
+                    )
+                    return [], record
+                elif (
                     cmd.dispatch_identity.run_id != active_dispatch.run_id
                     or cmd.dispatch_identity.node_id != active_dispatch.node_id
                     or cmd.dispatch_identity.epoch != active_dispatch.epoch
