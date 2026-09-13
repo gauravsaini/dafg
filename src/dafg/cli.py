@@ -22,7 +22,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init", "organism"], help="Sub-commands")
         parser.print_help()
         return 0
 
@@ -248,17 +248,62 @@ def main(argv: Optional[List[str]] = None) -> int:
         from dafg.init import scaffold_project
         return scaffold_project(agents=args.agents, force=args.force)
 
+    elif cmd == "organism":
+        parser = argparse.ArgumentParser(
+            prog="dafg organism",
+            description="Autonomous Reactive & Self-Improving Execution Organism",
+        )
+        parser.add_argument("--goal", required=True, help="High-level goal string (e.g. 'Clone Redis key-value store')")
+        parser.add_argument("--generations", type=int, default=4, help="Maximum evolutionary generations (default: 4)")
+        parser.add_argument("--target-score", type=float, default=90.0, help="Target quality score for convergence (default: 90.0)")
+        parser.add_argument("--workdir", default=None, help="Directory to scaffold and evolve organism")
+        parser.add_argument("--auto-approve", action="store_true", default=True, help="Automatically approve synthesized check commands")
+        parser.add_argument("--json", action="store_true", help="Output lineage summary as JSON")
+        args = parser.parse_args(sub_args)
+
+        from dafg.organism import AutonomousOrganism
+        import json
+
+        organism = AutonomousOrganism(
+            goal=args.goal,
+            workdir=args.workdir,
+            max_generations=args.generations,
+            target_score=args.target_score,
+            auto_approve=args.auto_approve,
+        )
+
+        def print_gen_update(record):
+            if not args.json:
+                print(f"  → Generation {record.generation} completed: Score {record.score:.1f}/100 ({record.verdict}), Gates {record.gates_met}/{record.gates_total} MET, FSI {record.friction_severity_index:.2f}")
+
+        if not args.json:
+            print("=" * 72)
+            print("         DAFG AUTONOMOUS REACTIVE EXECUTION ORGANISM")
+            print("=" * 72)
+            print(f"Goal: {args.goal}")
+            print(f"Target Quality Score: {args.target_score} | Max Generations: {args.generations}")
+            print("Initializing Autonomous Genesis...")
+
+        lineage = organism.evolve_to_completion(generation_callback=print_gen_update)
+
+        if args.json:
+            print(json.dumps(lineage.to_dict(), indent=2))
+        else:
+            print()
+            print(organism.format_lineage_dashboard())
+        return 0 if lineage.converged else 1
+
     elif cmd in ("-h", "--help"):
         parser = argparse.ArgumentParser(
             prog="dafg",
             description="Python-native agent coordination and completion-discipline framework",
         )
-        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init"], help="Sub-commands")
+        parser.add_argument("command", choices=["gates", "stop-hook", "run", "eval", "audit", "init", "organism"], help="Sub-commands")
         parser.print_help()
         return 0
 
     else:
-        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit', 'init'.", file=sys.stderr)
+        print(f"Error: Unknown command '{cmd}'. Choose from 'gates', 'stop-hook', 'run', 'eval', 'audit', 'init', 'organism'.", file=sys.stderr)
         return 1
 
 

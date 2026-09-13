@@ -257,7 +257,10 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     ledger_path = Path(args.file)
     state_file = Path(args.state_file) if args.state_file else (ledger_path.parent / ".dafg_hook_state.json")
-    appr_store = ApprovalStore(filepath=args.approvals_file)
+    appr_path = Path(args.approvals_file)
+    if args.approvals_file == ".approved_gates.json" and (ledger_path.parent / ".approved_gates.json").exists():
+        appr_path = ledger_path.parent / ".approved_gates.json"
+    appr_store = ApprovalStore(filepath=appr_path)
 
     guard = CompletionGuard(
         ledger_path=ledger_path,

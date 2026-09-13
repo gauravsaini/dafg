@@ -163,6 +163,16 @@ from dafg.judge import (
     RunJudge,
     RunQualityReport,
 )
+from dafg.organism import (
+    AutonomousOrganism,
+    GenerationRecord,
+    GoalManifest,
+    ModuleSpec,
+    OrganismEvolver,
+    OrganismGenesis,
+    OrganismLineage,
+    OrganismReactor,
+)
 
 __version__ = "0.4.0"
 __all__ = [
@@ -296,4 +306,13 @@ __all__ = [
     "QualityVerdict",
     "RunJudge",
     "RunQualityReport",
+    "AutonomousOrganism",
+    "GoalManifest",
+    "ModuleSpec",
+    "OrganismGenesis",
+    "OrganismReactor",
+    "OrganismEvolver",
+    "OrganismLineage",
+    "GenerationRecord",
 ]
+

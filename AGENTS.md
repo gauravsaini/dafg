@@ -81,13 +81,14 @@ unverified, or unapproved. Only when all gates are `MET` with recorded evidence
 uv run pytest -q
 ```
 
-All 149 tests pass in ~1s, 100% offline.
+All 425 tests pass in ~7s, 100% offline.
 
 ## CLI Entry Points
 
 | Command | Description |
 |---|---|
 | `uv run dafg run` | Run DAFG task graph |
+| `uv run dafg organism --goal "<goal>"` | Autonomous reactive & self-improving execution organism |
 | `uv run gates --status GATES.md` | Show gate status |
 | `uv run gates --lint GATES.md` | Lint gate ledger |
 | `uv run gates --approve GATES.md` | Approve gate commands |

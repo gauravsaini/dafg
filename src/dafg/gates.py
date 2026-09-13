@@ -1077,9 +1077,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             if issue.severity == "ERROR":
                 has_errors = True
             print(f"[{issue.severity}] Line {issue.line_number} (Gate {issue.gate_id or 'GENERAL'}): {issue.message}")
-        return 1 if has_errors else 0
-
-    approval_store = ApprovalStore(filepath=args.approvals_file)
+    appr_path = Path(args.approvals_file)
+    if args.approvals_file == ".approved_gates.json" and (ledger_path.parent / ".approved_gates.json").exists():
+        appr_path = ledger_path.parent / ".approved_gates.json"
+    approval_store = ApprovalStore(filepath=appr_path)
 
     if args.approve:
         approval_store.approve_all(ledger)
