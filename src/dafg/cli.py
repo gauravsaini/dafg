@@ -45,6 +45,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--auto-approve", action="store_true", help="Auto approve check commands")
         parser.add_argument("--no-analytics", action="store_true", help="Suppress analytics report")
         parser.add_argument("--json-analytics", action="store_true", help="Print analytics as JSON")
+        parser.add_argument("--judge", action="store_true", help="Print standalone Run Quality Report from Analytics Judge")
         parser.add_argument(
             "--observe",
             action="append",
@@ -89,7 +90,12 @@ def main(argv: Optional[List[str]] = None) -> int:
                 print(f"Initialized new DAFG with state file {state_fp}.")
         result = graph.run()
         print(f"DAFG run status: {result}")
-        if not args.no_analytics:
+        if args.judge:
+            from dafg.judge import RunJudge
+            report = RunJudge.evaluate(graph)
+            print()
+            print(report.format_report())
+        elif not args.no_analytics:
             if args.json_analytics:
                 import json
                 print(json.dumps(graph.get_run_analytics(), indent=2))

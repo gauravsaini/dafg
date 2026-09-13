@@ -2785,7 +2785,7 @@ class DAFG:
                 "pass_rate": round(g_met / g_total, 4) if g_total > 0 else 0.0,
             }
 
-        return {
+        base_analytics = {
             "run_id": self.run_id,
             "funnel": funnel,
             "concurrency": concurrency,
@@ -2794,6 +2794,9 @@ class DAFG:
             "budget": budget,
             "gates": gates_info,
         }
+        from dafg.judge import RunJudge
+        base_analytics["quality"] = RunJudge.evaluate_from_analytics(base_analytics, raw_graph=self).to_dict()
+        return base_analytics
 
     def format_analytics_report(self) -> str:
         """Render a clean, human-readable terminal report of run analytics."""
@@ -2853,6 +2856,11 @@ class DAFG:
             f"    Calls: {b['calls']} ({b['calls_pct']}%) | Nodes: {b['nodes']} ({b['nodes_pct']}%) | Revisions: {b['revisions']}",
             "=" * 70,
         ])
+        if "quality" in a:
+            from dafg.judge import RunJudge
+            report = RunJudge.evaluate_from_analytics(a, raw_graph=self)
+            lines.append("")
+            lines.append(report.format_report())
         return "\n".join(lines)
 
     def save_state(self) -> None:

@@ -155,6 +155,14 @@ from dafg.observe import (
     StdoutProbe,
     parse_observe_flag,
 )
+from dafg.judge import (
+    FrictionPoint,
+    FrictionSeverity,
+    QualityDimension,
+    QualityVerdict,
+    RunJudge,
+    RunQualityReport,
+)
 
 __version__ = "0.4.0"
 __all__ = [
@@ -282,4 +290,10 @@ __all__ = [
     "SpanStatus",
     "StdoutProbe",
     "parse_observe_flag",
+    "FrictionPoint",
+    "FrictionSeverity",
+    "QualityDimension",
+    "QualityVerdict",
+    "RunJudge",
+    "RunQualityReport",
 ]
