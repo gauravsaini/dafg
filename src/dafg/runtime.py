@@ -2987,60 +2987,120 @@ class DAFG:
             lines.append(report.format_report())
         return "\n".join(lines)
 
-    def save_state(self, expected_version: Optional[int] = None) -> None:
+    def _reconcile_state(self, canonical: Dict[str, Any]) -> None:
+        """Reconcile local mutations with canonical on-disk state on CAS conflict."""
+        self.state_version = int(canonical.get("state_version", self.state_version))
+        self.is_sealed = bool(canonical.get("is_sealed", self.is_sealed))
+        if canonical.get("sealed_at"):
+            self.sealed_at = canonical.get("sealed_at")
+
+        # Merge budget consumption (monotonic maximums)
+        canon_budget = canonical.get("budget", {})
+        self.budget.calls_consumed = max(self.budget.calls_consumed, canon_budget.get("calls_consumed", 0))
+        self.budget.nodes_created = max(self.budget.nodes_created, canon_budget.get("nodes_created", 0))
+        self.budget.revisions_consumed = max(self.budget.revisions_consumed, canon_budget.get("revisions_consumed", 0))
+        self.budget.adaptations_consumed = max(self.budget.adaptations_consumed, canon_budget.get("adaptations_consumed", 0))
+
+        # Merge idempotency keys, domain events, and audit log
+        self.processed_idempotency_keys.update(canonical.get("processed_idempotency_keys", []))
+        for item in canonical.get("audit_log", []):
+            if item not in self.audit_log:
+                self.audit_log.append(item)
+        for item in canonical.get("domain_events", []):
+            if item not in self.domain_events:
+                self.domain_events.append(item)
+
+        # Merge nodes
+        for nid, n_data in canonical.get("nodes", {}).items():
+            if nid not in self.nodes:
+                self.nodes[nid] = TaskNode.from_dict(n_data)
+            else:
+                local_node = self.nodes[nid]
+                canon_node = TaskNode.from_dict(n_data)
+                # If canonical node has made further progress or is terminal, adopt it
+                if canon_node.attempts > local_node.attempts or canon_node.revisions > local_node.revisions:
+                    self.nodes[nid] = canon_node
+                elif canon_node.status in (NodeStatus.ACCEPTED, NodeStatus.FAILED) and local_node.status not in (NodeStatus.ACCEPTED, NodeStatus.FAILED):
+                    self.nodes[nid] = canon_node
+
+        # Merge gate states
+        canon_gates = canonical.get("gate_states", {})
+        for gid, g_state in canon_gates.items():
+            if gid not in self.gate_states:
+                self.gate_states[gid] = g_state
+            elif isinstance(g_state, dict) and g_state.get("status") == "MET":
+                self.gate_states[gid] = g_state
+            if self.ledger and gid in self.ledger.gates:
+                if isinstance(g_state, dict) and g_state.get("status") == "MET" and self.ledger.gates[gid].status != "MET":
+                    self.ledger.gates[gid].status = "MET"
+                    self.ledger.gates[gid].evidence = g_state.get("evidence")
+
+    def save_state(self, expected_version: Optional[int] = None, max_retries: int = 3) -> None:
         if not self.state_path:
             return
 
-        gate_states: Dict[str, Any] = {}
-        if self.ledger:
-            for gid, gate in self.ledger.gates.items():
-                gate_states[gid] = {
-                    "status": gate.status,
-                    "evidence": gate.evidence,
-                    "abandon_reason": gate.abandon_reason,
-                }
-        elif self.gate_states:
-            gate_states = dict(self.gate_states)
+        is_auto_cas = expected_version is None
+        target_version = self.state_version if is_auto_cas else expected_version
 
-        state = {
-            "version": "1.0",
-            "state_version": self.state_version,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "run_id": self.run_id,
-            "run_epoch": self.run_epoch,
-            "is_sealed": self.is_sealed,
-            "sealed_at": self.sealed_at,
-            "outcome_status": self.outcome_status.value if isinstance(self.outcome_status, OutcomeStatus) else self.outcome_status,
-            "intermediate_false_acceptances": self.intermediate_false_acceptances,
-            "budget": {
-                "max_calls": self.budget.max_calls,
-                "max_nodes": self.budget.max_nodes,
-                "max_revisions": self.budget.max_revisions,
-                "max_adaptations": self.budget.max_adaptations,
-                "deadline": self.budget.deadline,
-                "calls_consumed": self.budget.calls_consumed,
-                "nodes_created": self.budget.nodes_created,
-                "revisions_consumed": self.budget.revisions_consumed,
-                "adaptations_consumed": self.budget.adaptations_consumed,
-            },
-            "contracts": {cid: c.to_dict() for cid, c in self.contracts.items()},
-            "bypass_policy": self.bypass_policy.to_dict(),
-            "bypass_telemetry": self.bypass_telemetry.to_dict(),
-            "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
-            "gate_states": gate_states,
-            "wave_diagnostics": [d.to_dict() for d in self.wave_diagnostics],
-            "analytics": self.get_run_analytics(),
-            "execution_history": self.execution_history,
-            "domain_events": self.domain_events,
-            "audit_log": self.audit_log,
-            "processed_idempotency_keys": list(self.processed_idempotency_keys),
-        }
-        self.state_version = StateStore.commit(
-            self.state_path,
-            state,
-            expected_version=expected_version,
-        )
-        self._fabric.emit_metric("state.persisted", 1.0)
+        for attempt in range(max_retries + 1):
+            gate_states: Dict[str, Any] = {}
+            if self.ledger:
+                for gid, gate in self.ledger.gates.items():
+                    gate_states[gid] = {
+                        "status": gate.status,
+                        "evidence": gate.evidence,
+                        "abandon_reason": gate.abandon_reason,
+                    }
+            elif self.gate_states:
+                gate_states = dict(self.gate_states)
+
+            state = {
+                "version": "1.0",
+                "state_version": self.state_version,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "run_id": self.run_id,
+                "run_epoch": self.run_epoch,
+                "is_sealed": self.is_sealed,
+                "sealed_at": self.sealed_at,
+                "outcome_status": self.outcome_status.value if isinstance(self.outcome_status, OutcomeStatus) else self.outcome_status,
+                "intermediate_false_acceptances": self.intermediate_false_acceptances,
+                "budget": {
+                    "max_calls": self.budget.max_calls,
+                    "max_nodes": self.budget.max_nodes,
+                    "max_revisions": self.budget.max_revisions,
+                    "max_adaptations": self.budget.max_adaptations,
+                    "deadline": self.budget.deadline,
+                    "calls_consumed": self.budget.calls_consumed,
+                    "nodes_created": self.budget.nodes_created,
+                    "revisions_consumed": self.budget.revisions_consumed,
+                    "adaptations_consumed": self.budget.adaptations_consumed,
+                },
+                "contracts": {cid: c.to_dict() for cid, c in self.contracts.items()},
+                "bypass_policy": self.bypass_policy.to_dict(),
+                "bypass_telemetry": self.bypass_telemetry.to_dict(),
+                "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
+                "gate_states": gate_states,
+                "wave_diagnostics": [d.to_dict() for d in self.wave_diagnostics],
+                "analytics": self.get_run_analytics(),
+                "execution_history": self.execution_history,
+                "domain_events": self.domain_events,
+                "audit_log": self.audit_log,
+                "processed_idempotency_keys": list(self.processed_idempotency_keys),
+            }
+            try:
+                self.state_version = StateStore.commit(
+                    self.state_path,
+                    state,
+                    expected_version=target_version,
+                )
+                self._fabric.emit_metric("state.persisted", 1.0)
+                return
+            except OptimisticConcurrencyConflictError as e:
+                if not is_auto_cas or attempt >= max_retries:
+                    raise e
+                canonical = StateStore.load(self.state_path)
+                self._reconcile_state(canonical)
+                target_version = self.state_version
 
     @classmethod
     def load_state(
@@ -3154,7 +3214,8 @@ class DAFG:
                     parent.children.append(node.id)
                 node.depth = parent.depth + 1
 
-        dafg.save_state()
+        if had_interrupted_nodes:
+            dafg.save_state()
         return dafg
 
     @classmethod

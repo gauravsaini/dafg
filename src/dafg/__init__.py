@@ -14,6 +14,7 @@ from dafg.gates import (
 )
 from dafg.sandbox import (
     SandboxSecurityViolation,
+    SubprocessExecutionBoundary,
     SubprocessSandbox,
 )
 from dafg.mutation import (
@@ -330,5 +331,8 @@ __all__ = [
     "GoalContract",
     "IndependentContractChallenger",
     "SafeCommandPolicy",
+    "SandboxSecurityViolation",
+    "SubprocessExecutionBoundary",
+    "SubprocessSandbox",
 ]
 

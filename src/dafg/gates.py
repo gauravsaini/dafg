@@ -962,13 +962,20 @@ class GateEngine:
             # Evidence Integrity check: reject stale/altered cached evidence (Invariant I8)
             is_valid_evidence = True
             rec = EvidenceRecord.parse_evidence_string(gate.evidence)
-            if rec:
+            if not rec:
+                is_valid_evidence = False  # Legacy/unstructured evidence without record token is rejected
+            else:
                 current_sig = ApprovalStore.signature(gate)
-                if rec.gate_signature and rec.gate_signature != current_sig:
+                if not rec.gate_signature or rec.gate_signature != current_sig:
                     is_valid_evidence = False  # Gate was altered after evidence was recorded
+                expected_cmd_digest = hashlib.sha256((gate.check or "").encode("utf-8")).hexdigest()
+                if not rec.command_digest or rec.command_digest != expected_cmd_digest:
+                    is_valid_evidence = False  # Command digest mismatch
                 if context and "run_epoch" in context:
-                    if rec.run_epoch < context["run_epoch"]:
-                        is_valid_evidence = False  # Evidence belongs to prior epoch
+                    if rec.run_epoch != context["run_epoch"]:
+                        is_valid_evidence = False  # Evidence does not match current run epoch
+                if context and "run_id" in context and rec.run_id and rec.run_id != context["run_id"]:
+                    is_valid_evidence = False  # Evidence belongs to a different run
 
             if is_valid_evidence:
                 return GateResult(
@@ -1094,9 +1101,9 @@ class GateEngine:
                     attributes={"gate_id": gate.id, "check": gate.check, "expect": gate.expect or ""},
                 )
 
-            from dafg.sandbox import SubprocessSandbox, SandboxSecurityViolation
+            from dafg.sandbox import SubprocessExecutionBoundary, SandboxSecurityViolation
             base_sandbox_root = getattr(ledger, "work_dir", None) or (ledger.filepath.parent if (ledger and ledger.filepath) else work_dir)
-            sandbox = SubprocessSandbox(workdir=base_sandbox_root, timeout=timeout_val)
+            sandbox = SubprocessExecutionBoundary(workdir=base_sandbox_root, timeout=timeout_val)
             try:
                 proc = sandbox.run(gate.check, cwd=work_dir)
             except SandboxSecurityViolation as ssv:

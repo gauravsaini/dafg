@@ -28,8 +28,14 @@ class SandboxSecurityViolation(Exception):
     pass
 
 
-class SubprocessSandbox:
-    """Encapsulates OS-level execution containment."""
+class SubprocessExecutionBoundary:
+    """Encapsulates host containment boundaries within the Python standard library.
+
+    Manages environment sanitization (credential stripping, null-routed proxy configuration,
+    disabling ambient module loading), disposable home/temp directories, process groups, and
+    resource limits (RLIMIT_CPU, RLIMIT_FSIZE). Kernel-level network/socket namespace isolation
+    and strict filesystem sandboxing require OS/container runtimes (e.g. bubblewrap, docker, cgroups).
+    """
 
     SENSITIVE_ENV_PATTERNS = (
         re.compile(r".*(KEY|SECRET|TOKEN|CREDENTIAL|PASSWORD|AUTH).*", re.IGNORECASE),
@@ -158,10 +164,21 @@ class SubprocessSandbox:
         # Check for hardlink escaping to external inodes
         if resolved.exists():
             stat = resolved.stat()
-            if stat.st_nlink > 1 and stat.st_dev != self.workdir.stat().st_dev:
-                raise SandboxSecurityViolation(
-                    f"Hardlink escape blocked: target '{target_path}' links across filesystem devices"
-                )
+            # If a regular file has multiple links (st_nlink > 1), verify all links reside within workdir
+            if not resolved.is_dir() and stat.st_nlink > 1:
+                internal_links = 0
+                for p in self.workdir.rglob("*"):
+                    try:
+                        if not p.is_symlink() and not p.is_dir() and p.exists():
+                            p_stat = p.stat()
+                            if p_stat.st_dev == stat.st_dev and p_stat.st_ino == stat.st_ino:
+                                internal_links += 1
+                    except (OSError, ValueError):
+                        continue
+                if internal_links < stat.st_nlink:
+                    raise SandboxSecurityViolation(
+                        f"Hardlink escape blocked: target '{target_path}' links to external inode outside workdir hierarchy"
+                    )
 
         return resolved
 
@@ -234,3 +251,4 @@ class SubprocessSandbox:
                 except OSError:
                     pass
             raise e
+SubprocessSandbox = SubprocessExecutionBoundary

@@ -6,6 +6,7 @@ Zero runtime dependencies — Python standard library only.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -17,7 +18,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
-from dafg.gates import ApprovalStore, Gate, GateEngine, GateLedger
+from dafg.gates import ApprovalStore, EvidenceRecord, Gate, GateEngine, GateLedger
 from dafg.judge import (
     FrictionPoint,
     FrictionSeverity,
@@ -262,6 +263,11 @@ class IndependentGoalEvaluator:
             if not test_script.exists():
                 return False, f"Missing test harness {test_script}"
 
+            if manifest.test_harness_digest:
+                actual_digest = hashlib.sha256(test_script.read_bytes()).hexdigest()
+                if actual_digest != manifest.test_harness_digest:
+                    return False, f"Independent verification rejected: Test harness tampered (expected {manifest.test_harness_digest}, got {actual_digest})"
+
             proc = subprocess.run(
                 ["uv", "run", "python", str(test_script.resolve()), "E2E"],
                 capture_output=True,
@@ -284,6 +290,11 @@ class IndependentGoalEvaluator:
             test_script = workdir / "test_system.js"
             if not test_script.exists():
                 return False, f"Missing test harness {test_script}"
+
+            if manifest.test_harness_digest:
+                actual_digest = hashlib.sha256(test_script.read_bytes()).hexdigest()
+                if actual_digest != manifest.test_harness_digest:
+                    return False, f"Independent verification rejected: Test harness tampered (expected {manifest.test_harness_digest}, got {actual_digest})"
 
             proc = subprocess.run(
                 ["node", str(test_script.resolve()), "E2E"],
@@ -353,7 +364,7 @@ class ArtifactConsistencyGuard:
                         f"Gate '{gid}' status mismatch: GATES.md has '{gate.status}' but state.json has '{sg_status}'"
                     )
 
-        # 2. Approved gates consistency: Any gate marked MET in GATES.md must be approved
+        # 2. Approved gates consistency: Any gate marked MET in GATES.md must be approved and carry valid EvidenceRecord
         for gid, gate in ledger.gates.items():
             if gate.status == "MET" and gate.check:
                 sig = ApprovalStore.signature(gate)
@@ -361,6 +372,21 @@ class ArtifactConsistencyGuard:
                     violations.append(
                         f"Gate '{gid}' marked MET in GATES.md but its signature '{sig}' is not approved in {app_path.name}"
                     )
+                rec = EvidenceRecord.parse_evidence_string(gate.evidence or "")
+                if not rec:
+                    violations.append(
+                        f"Gate '{gid}' marked MET in GATES.md is missing a valid EvidenceRecord in evidence"
+                    )
+                else:
+                    if rec.gate_signature and rec.gate_signature != sig:
+                        violations.append(
+                            f"Gate '{gid}' EvidenceRecord signature mismatch: recorded '{rec.gate_signature}', expected '{sig}'"
+                        )
+                    expected_cmd_digest = hashlib.sha256((gate.check or "").encode("utf-8")).hexdigest()
+                    if rec.command_digest and rec.command_digest != expected_cmd_digest:
+                        violations.append(
+                            f"Gate '{gid}' EvidenceRecord command digest mismatch"
+                        )
 
         # 3. Sealed state check: if state is sealed, no gate may remain UNMET or PENDING
         if state_data.get("is_sealed", False):
@@ -409,6 +435,7 @@ class GoalManifest:
     integration_expect: str
     all_owns: List[str]
     goal_contract: Optional[GoalContract] = None
+    test_harness_digest: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -710,6 +737,7 @@ else:
     test_e2e()
 '''
             test_file.write_text(content, encoding="utf-8")
+            manifest.test_harness_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
 
             # Create module stubs in src/
             for mod in manifest.modules:
@@ -754,6 +782,7 @@ if (dispatch[filterArg]) {{
 }}
 '''
             test_file.write_text(content, encoding="utf-8")
+            manifest.test_harness_digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
             for mod in manifest.modules:
                 mod_path = workdir / mod.file_path
                 if not mod_path.exists():

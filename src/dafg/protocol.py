@@ -50,6 +50,7 @@ class Action(str, Enum):
     CHALLENGE = "CHALLENGE"
     SUBMIT_EVIDENCE = "SUBMIT_EVIDENCE"
     ACCEPT_VERDICT = "ACCEPT_VERDICT"
+    FASTPATH_COMMIT = "FASTPATH_COMMIT"
     REVISE = "REVISE"
     INVALIDATE = "INVALIDATE"
     REJECT = "REJECT"
@@ -192,10 +193,12 @@ class ProtocolEngine:
         (ProtocolState.PROVING, Action.HALT): ProtocolState.IDLE,
         (ProtocolState.PROVING, Action.DISPATCH_PROVE): ProtocolState.PROVING,
         (ProtocolState.PROVING, Action.DISPATCH_FASTPATH): ProtocolState.PROVING,
+        (ProtocolState.PROVING, Action.FASTPATH_COMMIT): ProtocolState.ACCEPTED,
         (ProtocolState.CHALLENGING, Action.SUBMIT_EVIDENCE): ProtocolState.VERIFYING,
         (ProtocolState.CHALLENGING, Action.REVISE): ProtocolState.REVISING,
         (ProtocolState.CHALLENGING, Action.BLOCK): ProtocolState.IDLE,
         (ProtocolState.VERIFYING, Action.ACCEPT_VERDICT): ProtocolState.ACCEPTED,
+        (ProtocolState.VERIFYING, Action.FASTPATH_COMMIT): ProtocolState.ACCEPTED,
         (ProtocolState.VERIFYING, Action.REVISE): ProtocolState.REVISING,
         (ProtocolState.VERIFYING, Action.REJECT): ProtocolState.REJECTED,
         (ProtocolState.VERIFYING, Action.FAIL): ProtocolState.REJECTED,
@@ -310,7 +313,7 @@ class ProtocolEngine:
         target_p_state = cls.TRANSITION_MAP[rule_key]
 
         # 4. Dispatch Identity Fencing for verdict actions
-        if cmd.action == Action.ACCEPT_VERDICT:
+        if cmd.action in (Action.ACCEPT_VERDICT, Action.FASTPATH_COMMIT):
             active_dispatch_raw = getattr(node, "active_dispatch", None)
             active_dispatch: Optional[DispatchIdentity] = (
                 DispatchIdentity.from_dict(active_dispatch_raw)
@@ -469,7 +472,7 @@ class ProtocolReducer:
             if hasattr(node, "wait_metrics"):
                 node.wait_metrics.time_dispatched = datetime.now(timezone.utc).timestamp()
 
-        elif event.action == Action.ACCEPT_VERDICT.value:
+        elif event.action in (Action.ACCEPT_VERDICT.value, Action.FASTPATH_COMMIT.value):
             node.active_dispatch = None
             if hasattr(node, "wait_metrics"):
                 node.wait_metrics.time_finished = datetime.now(timezone.utc).timestamp()

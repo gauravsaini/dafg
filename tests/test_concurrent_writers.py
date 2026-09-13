@@ -1,12 +1,13 @@
 """Tests for Invariant I6: Transactional CAS and Artifact Consistency Guard."""
 
+import hashlib
 import json
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import pytest
 
 from dafg.runtime import StateStore, OptimisticConcurrencyConflictError, DAFG, TaskNode, NodeStatus, Budget
-from dafg.gates import Gate, GateLedger, ApprovalStore
+from dafg.gates import Gate, GateLedger, ApprovalStore, EvidenceRecord
 from dafg.organism import ArtifactConsistencyGuard
 
 
@@ -94,6 +95,26 @@ def test_artifact_consistency_guard_passes_consistent_bundle(tmp_path):
     state_file = tmp_path / "state.json"
     gates_file = tmp_path / "GATES.md"
     approvals_file = tmp_path / ".approved_gates.json"
+    dummy_gate = Gate(
+        id="G1",
+        title="Check system health",
+        check="python3 -c \"print('OK')\"",
+        expect="OK",
+        status="MET",
+    )
+    sig = ApprovalStore.signature(dummy_gate)
+    cmd_digest = hashlib.sha256(dummy_gate.check.encode("utf-8")).hexdigest()
+    rec = EvidenceRecord(
+        run_id="local_run",
+        run_epoch=1,
+        gate_id="G1",
+        gate_signature=sig,
+        command_digest=cmd_digest,
+        environment_digest="env123",
+        timestamp="2026-09-14T00:00:00Z",
+        match_preview="OK",
+    )
+    ev_str = f"exit_code=0 timestamp=2026-09-14T00:00:00Z match='OK' epoch=1 sig={sig[:12]} record={rec.serialize()}"
 
     # Write GATES.md
     gates_md = make_gates_md(
@@ -102,14 +123,13 @@ def test_artifact_consistency_guard_passes_consistent_bundle(tmp_path):
         check="python3 -c \"print('OK')\"",
         expect="OK",
         status="MET",
-        evidence="exit_code=0 timestamp=2026-09-14T00:00:00Z match='OK'",
+        evidence=ev_str,
     )
     gates_file.write_text(gates_md, encoding="utf-8")
     ledger = GateLedger.parse(gates_md, filepath=gates_file)
     gate = ledger.gates["G1"]
 
     # Setup Approvals
-    sig = ApprovalStore.signature(gate)
     approvals_file.write_text(json.dumps([sig]), encoding="utf-8")
 
     # Setup State
