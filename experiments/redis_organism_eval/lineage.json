@@ -7,13 +7,13 @@
   "generations": [
     {
       "generation": 1,
-      "run_id": "run_1789273903668_9740",
+      "run_id": "run_1789274383369_12083",
       "score": 93.5,
       "verdict": "IMPERFECT",
       "delivery_state": "VERIFIED_DELIVERY",
       "friction_severity_index": 0.292,
       "gate_flakiness_index": 0.0,
-      "concurrency_health": 0.0,
+      "concurrency_health": 86.7,
       "gates_met": 6,
       "gates_total": 6,
       "friction_points": [
@@ -91,10 +91,10 @@
         }
       ],
       "mutations_applied": [],
-      "duration_ms": 213.27,
-      "timestamp": "2026-09-13T04:31:43.886844+00:00"
+      "duration_ms": 226.95,
+      "timestamp": "2026-09-13T04:39:43.601914+00:00"
     }
   ],
   "total_mutations": 0,
-  "created_at": "2026-09-13T04:31:43.667589+00:00"
+  "created_at": "2026-09-13T04:39:43.368686+00:00"
 }

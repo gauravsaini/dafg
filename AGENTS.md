@@ -81,7 +81,7 @@ unverified, or unapproved. Only when all gates are `MET` with recorded evidence
 uv run pytest -q
 ```
 
-All 425 tests pass in ~7s, 100% offline.
+All 429 tests pass in ~7s, 100% offline.
 
 ## CLI Entry Points
 

@@ -2,7 +2,7 @@
   "passed": false,
   "events_analyzed": 0,
   "violations": [
-    "Trace file '/private/var/folders/fz/n16rnnt56w7b2ff5svkpqhgm0000gn/T/pytest-of-ektasaini/pytest-530/test_protocol_audit_cli_trace_0/nonexistent.json' does not exist (TRACE_FILE_NOT_FOUND)"
+    "Trace file '/private/var/folders/fz/n16rnnt56w7b2ff5svkpqhgm0000gn/T/pytest-of-ektasaini/pytest-533/test_protocol_audit_cli_trace_0/nonexistent.json' does not exist (TRACE_FILE_NOT_FOUND)"
   ],
-  "timestamp": "2026-09-13T04:34:12.961740+00:00"
+  "timestamp": "2026-09-13T04:40:06.786944+00:00"
 }

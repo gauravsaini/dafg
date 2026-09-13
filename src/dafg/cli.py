@@ -255,9 +255,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         parser.add_argument("--goal", required=True, help="High-level goal string (e.g. 'Clone Redis key-value store')")
         parser.add_argument("--generations", type=int, default=4, help="Maximum evolutionary generations (default: 4)")
-        parser.add_argument("--target-score", type=float, default=90.0, help="Target quality score for convergence (default: 90.0)")
+        parser.add_argument("--target-score", type=float, default=85.0, help="Target quality score for convergence (default: 85.0, aligned with PERFECT threshold)")
         parser.add_argument("--workdir", default=None, help="Directory to scaffold and evolve organism")
-        parser.add_argument("--auto-approve", action="store_true", default=True, help="Automatically approve synthesized check commands")
+        parser.add_argument("--auto-approve", action="store_true", default=False, help="Explicitly authorize auto-approval of sandboxed synthesized checks")
         parser.add_argument("--json", action="store_true", help="Output lineage summary as JSON")
         args = parser.parse_args(sub_args)
 
@@ -282,6 +282,10 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("=" * 72)
             print(f"Goal: {args.goal}")
             print(f"Target Quality Score: {args.target_score} | Max Generations: {args.generations}")
+            if args.auto_approve:
+                print("🔒 Security: --auto-approve enabled under SafeCommandPolicy sandbox.")
+            else:
+                print("🔒 Security Notice: Auto-approval disabled. Synthesized checks require explicit approval.")
             print("Initializing Autonomous Genesis...")
 
         lineage = organism.evolve_to_completion(generation_callback=print_gen_update)

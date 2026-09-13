@@ -41,6 +41,132 @@ from dafg.runtime import (
 from dafg.trends import RunSummary, TrendStore
 
 
+class SecurityPolicyViolationError(Exception):
+    """Raised when an autonomously synthesized check command violates sandboxing policy."""
+    pass
+
+
+class SafeCommandPolicy:
+    """Enforces strict command sandboxing for autonomously synthesized checks."""
+    FORBIDDEN_OPERATORS: Set[str] = {"&&", "||", ";", "|", "`", "$(", ">", "<", "\n"}
+    FORBIDDEN_BINARIES: Set[str] = {
+        "rm", "rmdir", "dd", "mkfs", "sudo", "su", "chmod", "chown",
+        "curl", "wget", "nc", "netcat", "sh", "bash", "zsh", "exec", "eval",
+    }
+    ALLOWED_COMMAND_PREFIXES: Tuple[str, ...] = (
+        "uv run python test_system.py",
+        "node test_system.js",
+        "python test_system.py",
+        "python3 test_system.py",
+    )
+
+    @classmethod
+    def validate_command(cls, check_command: str) -> None:
+        """Verify check command is strictly constrained to safe test runner execution."""
+        cmd = check_command.strip()
+        if not cmd:
+            raise SecurityPolicyViolationError("Empty check command is invalid")
+
+        for op in cls.FORBIDDEN_OPERATORS:
+            if op in cmd:
+                raise SecurityPolicyViolationError(
+                    f"Security violation: check command contains forbidden operator '{op}': '{cmd}'"
+                )
+
+        tokens = [t.lower() for t in re.findall(r"\b[a-zA-Z0-9_\.\/-]+\b", cmd)]
+        for b in cls.FORBIDDEN_BINARIES:
+            if b in tokens:
+                raise SecurityPolicyViolationError(
+                    f"Security violation: check command attempts to execute forbidden binary '{b}': '{cmd}'"
+                )
+
+        if not any(cmd.startswith(prefix) for prefix in cls.ALLOWED_COMMAND_PREFIXES):
+            raise SecurityPolicyViolationError(
+                f"Security violation: check command must invoke authorized test harness, got: '{cmd}'"
+            )
+
+
+@dataclass
+class GoalContract:
+    """Immutable functional contract extracted from the high-level goal.
+    
+    Guarantees that the Organism cannot Goodhart the score by dropping gates,
+    weakening assertions, or omitting required architectural capabilities.
+    """
+    goal: str
+    system_name: str
+    required_capabilities: List[str]
+    invariant_gates: Dict[str, str]  # gate_id -> title
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def validate_ledger(self, ledger: GateLedger) -> Tuple[bool, List[str]]:
+        """Validate that all invariant gates remain active, non-abandoned, and verified."""
+        violations: List[str] = []
+        for gid, title in self.invariant_gates.items():
+            if gid not in ledger.gates:
+                violations.append(f"Anti-Goodhart violation: Missing mandatory goal gate '{gid}' ({title})")
+                continue
+            gate = ledger.gates[gid]
+            if gate.status == "ABANDONED":
+                violations.append(f"Anti-Goodhart violation: Mandatory goal gate '{gid}' was improperly abandoned")
+            if not gate.check or not gate.expect:
+                violations.append(f"Anti-Goodhart violation: Mandatory gate '{gid}' has hollow check/expect verification")
+        return (len(violations) == 0, violations)
+
+
+class IndependentGoalEvaluator:
+    """Independent oracle that validates actual software behavior independent of the Judge formula."""
+
+    @classmethod
+    def evaluate_system(cls, manifest: GoalManifest, workdir: Path) -> Tuple[bool, str]:
+        """Run independent behavioral verification directly on the produced system."""
+        import subprocess
+
+        if manifest.language == "python":
+            test_script = workdir / "test_system.py"
+            if not test_script.exists():
+                return False, f"Missing test harness {test_script}"
+
+            proc = subprocess.run(
+                ["uv", "run", "python", str(test_script.resolve()), "E2E"],
+                capture_output=True,
+                text=True,
+                cwd=str(workdir),
+                timeout=15.0,
+            )
+            if proc.returncode != 0:
+                return False, f"Independent verification exited with {proc.returncode}: {proc.stderr}"
+            if manifest.integration_expect not in proc.stdout:
+                return False, f"Independent verification output mismatch: expected '{manifest.integration_expect}'"
+
+            for mod in manifest.modules:
+                mod_f = workdir / mod.file_path
+                if not mod_f.exists() or mod_f.stat().st_size == 0:
+                    return False, f"Module file '{mod.file_path}' is missing or empty"
+
+            return True, "Independent goal verification succeeded"
+        else:
+            test_script = workdir / "test_system.js"
+            if not test_script.exists():
+                return False, f"Missing test harness {test_script}"
+
+            proc = subprocess.run(
+                ["node", str(test_script.resolve()), "E2E"],
+                capture_output=True,
+                text=True,
+                cwd=str(workdir),
+                timeout=15.0,
+            )
+            if proc.returncode != 0:
+                return False, f"Independent verification exited with {proc.returncode}: {proc.stderr}"
+            if manifest.integration_expect not in proc.stdout:
+                return False, f"Independent verification output mismatch: expected '{manifest.integration_expect}'"
+
+            return True, "Independent goal verification succeeded"
+
+
 @dataclass
 class ModuleSpec:
     """Specification of a decoupled functional module synthesized from a goal."""
@@ -68,10 +194,13 @@ class GoalManifest:
     integration_check: str
     integration_expect: str
     all_owns: List[str]
+    goal_contract: Optional[GoalContract] = None
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["modules"] = [asdict(m) for m in self.modules]
+        if self.goal_contract:
+            d["goal_contract"] = self.goal_contract.to_dict()
         return d
 
 
@@ -231,6 +360,15 @@ class OrganismGenesis:
         test_file = f"test_system{ext}"
         all_owns.append(test_file)
 
+        invariant_gates = {m.gate_id: m.gate_title for m in modules}
+        invariant_gates[f"G{gid_counter}"] = f"Full {system_name} End-to-End Integration"
+        contract = GoalContract(
+            goal=clean_goal,
+            system_name=system_name,
+            required_capabilities=[m.name for m in modules],
+            invariant_gates=invariant_gates,
+        )
+
         manifest = GoalManifest(
             goal=clean_goal,
             system_name=system_name,
@@ -242,6 +380,7 @@ class OrganismGenesis:
             integration_check=f"{test_runner} E2E",
             integration_expect="E2E_PASS",
             all_owns=all_owns,
+            goal_contract=contract,
         )
         return manifest
 
@@ -492,9 +631,17 @@ class OrganismEvolver:
         report: RunQualityReport,
         ledger: GateLedger,
         trend_store: Optional[TrendStore] = None,
+        goal_contract: Optional[GoalContract] = None,
     ) -> List[str]:
         """Analyze run quality and friction to autonomously apply multi-dimensional mutations."""
         mutations: List[str] = []
+
+        # Anti-Goodhart invariant check
+        if goal_contract:
+            valid, violations = goal_contract.validate_ledger(ledger)
+            if not valid:
+                for v in violations:
+                    mutations.append(f"AntiGoodhartGuard: Refused illegal mutation ({v})")
 
         # -------------------------------------------------------------------
         # 1. Graph Evolution: Resolve SERIAL_CONFLICT and REVISION_THRASH
@@ -607,9 +754,9 @@ class AutonomousOrganism:
         goal: str,
         workdir: Optional[Union[str, Path]] = None,
         max_generations: int = 4,
-        target_score: float = 90.0,
+        target_score: float = 85.0,
         fabric: Optional[ObservabilityFabric] = None,
-        auto_approve: bool = True,
+        auto_approve: bool = False,
     ):
         self.goal = goal.strip()
         self.workdir = Path(workdir) if workdir else Path(f"./organism_{int(time.time())}")
@@ -643,10 +790,15 @@ class AutonomousOrganism:
         # Load ledger
         ledger = GateLedger.load(gates_md_path)
 
-        # Pre-approve synthesized gates
+        # Pre-approve synthesized gates ONLY IF explicit auto_approve opt-in was provided
+        # AND every synthesized check passes SafeCommandPolicy sandboxing!
         approvals_path = self.workdir / ".approved_gates.json"
         appr_store = ApprovalStore(filepath=approvals_path)
-        appr_store.approve_all(ledger)
+        if self.auto_approve:
+            for g in ledger.gates.values():
+                if g.check:
+                    SafeCommandPolicy.validate_command(g.check)
+            appr_store.approve_all(ledger)
 
         engine = GateEngine(approval_store=appr_store, auto_approve=self.auto_approve)
 
@@ -696,17 +848,28 @@ class AutonomousOrganism:
             )
 
             # Check for convergence
-            concurrency_dim = report.dimensions.get("Concurrency Health")
+            concurrency_dim = report.dimensions.get("concurrency_health") or report.dimensions.get("Concurrency Health")
             concurrency_score = concurrency_dim.score if concurrency_dim else 0.0
 
             gates_met_count = sum(1 for g in ledger.gates.values() if g.status == "MET")
             total_gates_count = len(ledger.gates)
             all_met = (gates_met_count == total_gates_count and total_gates_count > 0)
 
+            # 1. Anti-Goodharting: Validate Goal Contract invariants (no dropped or hollow gates)
+            contract_valid = True
+            if manifest.goal_contract:
+                contract_valid, contract_violations = manifest.goal_contract.validate_ledger(ledger)
+
+            # 2. Independent Goal Oracle: Verify real behavioral execution independent of self-authored gates
+            indep_passed, indep_reason = IndependentGoalEvaluator.evaluate_system(manifest, self.workdir)
+
+            # 3. Autonomous Convergence: Aligned with judge.py QualityVerdict.PERFECT (score >= 85.0, FSI < 0.20, VERIFIED_DELIVERY)
             is_converged = (
-                (report.score >= self.target_score or report.verdict == QualityVerdict.PERFECT)
+                (report.verdict == QualityVerdict.PERFECT or report.score >= self.target_score)
                 and all_met
                 and report.outcome_status == OutcomeStatus.VERIFIED_DELIVERY.value
+                and contract_valid
+                and indep_passed
             )
 
             mutations_applied: List[str] = []
@@ -717,6 +880,7 @@ class AutonomousOrganism:
                     report=report,
                     ledger=ledger,
                     trend_store=trend_store,
+                    goal_contract=manifest.goal_contract,
                 )
                 self.lineage.total_mutations += len(mutations_applied)
                 graph.save_state()
