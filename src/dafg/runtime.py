@@ -2585,7 +2585,7 @@ class DAFG:
             best_val = 0.0
             for dep_id in node.needs:
                 v = _longest(dep_id)
-                if v > best_val:
+                if v >= best_val:
                     best_val = v
                     best_parent = dep_id
             dist[nid] = best_val + cost.get(nid, 0.0)
@@ -2598,8 +2598,16 @@ class DAFG:
         if not dist:
             return []
 
-        # Trace back from the node with the longest distance
-        end = max(dist, key=dist.get)  # type: ignore[arg-type]
+        # Trace back from the node with the longest distance.
+        # Break ties by chain length so zero-cost chains pick the deepest leaf.
+        def _chain_len(nid: str) -> int:
+            length, cur = 0, nid
+            while cur is not None:
+                length += 1
+                cur = pred.get(cur)
+            return length
+
+        end = max(dist, key=lambda nid: (dist[nid], _chain_len(nid)))  # type: ignore[arg-type]
         path: List[str] = []
         cur: Optional[str] = end
         while cur is not None:
