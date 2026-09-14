@@ -7,6 +7,7 @@ Zero runtime dependencies — Python standard library only.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -44,6 +45,8 @@ class ExperimentRecord:
     gt_passed: Optional[int] = None
     gt_failed: Optional[int] = None
     gt_pass_rate: Optional[float] = None
+    gt_source_hash: Optional[str] = None
+    gt_hash_matched: Optional[bool] = None
     discrepancy: Optional[float] = None
     verdict: str = "UNKNOWN"
     provenance: str = "unknown"
@@ -55,6 +58,23 @@ class ExperimentRecord:
 
 class ExperimentComparator:
     """Parses experiment directories and emits programmatic comparison tables."""
+
+    @staticmethod
+    def compute_source_hash(dir_path: Path) -> Optional[str]:
+        """Compute SHA-256 (first 16 hex chars) of concatenated contents of sorted src/*.py.
+
+        Matches standard CLI: cat src/*.py | sha256sum | cut -c1-16
+        """
+        src_dir = dir_path / "src"
+        if not src_dir.is_dir():
+            return None
+        py_files = sorted(src_dir.glob("*.py"))
+        if not py_files:
+            return None
+        h = hashlib.sha256()
+        for f in py_files:
+            h.update(f.read_bytes())
+        return h.hexdigest()[:16]
 
     @classmethod
     def analyze_dir(cls, dir_path: Path | str, fresh: bool = False) -> ExperimentRecord:
@@ -125,6 +145,20 @@ class ExperimentComparator:
             artifacts.append(rel_gt)
             try:
                 gt_data = json.loads(gt_file.read_text(encoding="utf-8"))
+                recorded_hash = gt_data.get("source_hash")
+                rec.gt_source_hash = recorded_hash
+
+                # Verify against on-disk source if src/ directory exists
+                target_code_dir = gt_file.parent.parent
+                if not (target_code_dir / "src").is_dir():
+                    target_code_dir = path
+                expected_hash = cls.compute_source_hash(target_code_dir)
+
+                if recorded_hash and expected_hash:
+                    rec.gt_hash_matched = (recorded_hash == expected_hash)
+                elif not recorded_hash and expected_hash:
+                    rec.gt_hash_matched = False
+
                 rec.gt_total = int(gt_data.get("total", 0))
                 rec.gt_passed = int(gt_data.get("passed", 0))
                 rec.gt_failed = int(gt_data.get("failed", 0))
@@ -315,14 +349,20 @@ class ExperimentComparator:
         for r in records:
             run_short = r.run_id if len(r.run_id) <= 16 else (r.run_id[:16] + "…")
             if r.gt_pass_rate is not None:
-                gt_str = f"{r.gt_pass_rate * 100:.1f}%"
+                if r.gt_hash_matched is False:
+                    gt_str = f"**STALE HASH** ({r.gt_pass_rate * 100:.1f}%)"
+                else:
+                    gt_str = f"{r.gt_pass_rate * 100:.1f}%"
             else:
                 gt_str = "N/A"
 
             if r.discrepancy is not None:
-                d_val = r.discrepancy
-                d_str = "0.0" if abs(d_val) < 1e-6 else f"{d_val:+.1f}"
-                disc_str = f"**{d_str}**" if abs(d_val) > 5.0 else d_str
+                if r.gt_hash_matched is False:
+                    disc_str = "**INVALID (HASH MISMATCH)**"
+                else:
+                    d_val = r.discrepancy
+                    d_str = "0.0" if abs(d_val) < 1e-6 else f"{d_val:+.1f}"
+                    disc_str = f"**{d_str}**" if abs(d_val) > 5.0 else d_str
             else:
                 disc_str = "N/A"
 

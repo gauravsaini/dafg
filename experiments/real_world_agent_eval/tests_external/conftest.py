@@ -182,20 +182,50 @@ class GroundTruthTelemetryPlugin:
                 out_path = self.workdir / "eval_results" / "ground_truth.json"
 
         try:
+            # Staleness check: warn if existing GT was for different code
+            if out_path.is_file():
+                try:
+                    existing = json.loads(out_path.read_text(encoding="utf-8"))
+                    old_hash = existing.get("source_hash", "")
+                    if old_hash and old_hash != data["source_hash"]:
+                        terminalreporter.write_line(
+                            f"\n[Ground Truth Oracle] WARNING: existing ground_truth.json has "
+                            f"source_hash={old_hash} but current code hashes to "
+                            f"{data['source_hash']}. Prior artifact was STALE."
+                        )
+                except Exception:
+                    pass
+
             out_path.parent.mkdir(parents=True, exist_ok=True)
             tmp_path = out_path.with_suffix(".tmp")
             tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
             tmp_path.replace(out_path)
-            terminalreporter.write_line(f"\n[Ground Truth Oracle] Telemetry saved to {out_path}")
-            terminalreporter.write_line(
-                f"[Ground Truth Oracle] Score: {passed}/{total} passed ({pass_rate * 100:.1f}%)"
-            )
+
+            # Verify-after-write: re-read and check hash matches current code
+            verify_hash = self._compute_source_hash()
+            if verify_hash != data["source_hash"]:
+                terminalreporter.write_line(
+                    f"\n[Ground Truth Oracle] INTEGRITY FAILURE: source changed during test run! "
+                    f"Written hash={data['source_hash']}, current hash={verify_hash}. "
+                    f"ground_truth.json is UNRELIABLE."
+                )
+            else:
+                terminalreporter.write_line(f"\n[Ground Truth Oracle] Telemetry saved to {out_path}")
+                terminalreporter.write_line(
+                    f"[Ground Truth Oracle] Score: {passed}/{total} passed ({pass_rate * 100:.1f}%)"
+                )
+                terminalreporter.write_line(
+                    f"[Ground Truth Oracle] Source hash: {data['source_hash']} (verified)"
+                )
         except Exception as e:
             terminalreporter.write_line(f"\n[Ground Truth Oracle] Failed writing telemetry: {e}")
 
     @staticmethod
     def _compute_source_hash() -> str:
-        """SHA-256 of all .py files under KV_SERVER_WORKDIR/src/ (sorted, deterministic)."""
+        """SHA-256 (first 16 hex chars) of concatenated contents of sorted src/*.py.
+
+        Matches standard CLI: cat src/*.py | sha256sum | cut -c1-16
+        """
         workdir = os.environ.get("KV_SERVER_WORKDIR", "")
         if not workdir:
             return "unknown"
@@ -203,8 +233,7 @@ class GroundTruthTelemetryPlugin:
         if not src_dir.is_dir():
             return "no_src_dir"
         h = hashlib.sha256()
-        for py_file in sorted(src_dir.rglob("*.py")):
-            h.update(py_file.name.encode())
+        for py_file in sorted(src_dir.glob("*.py")):
             h.update(py_file.read_bytes())
         return h.hexdigest()[:16]
 

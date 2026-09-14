@@ -15,6 +15,7 @@ from src.kv_store import KVStore
 
 class KVServer(http.server.ThreadingHTTPServer):
     daemon_threads = True
+    request_queue_size = 128
 
     def __init__(self, server_address, RequestHandlerClass, store: Optional[KVStore] = None):
         super().__init__(server_address, RequestHandlerClass)
@@ -22,7 +23,7 @@ class KVServer(http.server.ThreadingHTTPServer):
 
 
 class KVHandler(http.server.BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
+    protocol_version = "HTTP/1.0"
 
     def log_message(self, format, *args):
         pass
@@ -39,9 +40,16 @@ class KVHandler(http.server.BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
+        try:
+            self.wfile.flush()
+        except Exception:
+            pass
 
     def _read_body(self) -> bytes:
-        content_length = int(self.headers.get("Content-Length", 0))
+        try:
+            content_length = int(self.headers.get("Content-Length", 0))
+        except (ValueError, TypeError):
+            content_length = 0
         if content_length > 0:
             return self.rfile.read(content_length)
         return b""
