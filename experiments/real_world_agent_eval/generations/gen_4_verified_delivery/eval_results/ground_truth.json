@@ -3,5 +3,7 @@
   "passed": 20,
   "failed": 0,
   "pass_rate": 1.0,
-  "duration_seconds": 3.33
+  "duration_seconds": 2.15,
+  "source_hash": "9dddd15eaa378a43",
+  "generated_at": "2026-09-14T21:32:03Z"
 }

@@ -4,6 +4,7 @@ Completely isolated from DAFG internal gates. Standard library only.
 """
 from __future__ import annotations
 
+import hashlib
 import http.client
 import json
 import os
@@ -165,6 +166,8 @@ class GroundTruthTelemetryPlugin:
             "failed": failed,
             "pass_rate": pass_rate,
             "duration_seconds": duration,
+            "source_hash": self._compute_source_hash(),
+            "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         }
 
         if os.environ.get("GROUND_TRUTH_JSON_PATH"):
@@ -189,6 +192,21 @@ class GroundTruthTelemetryPlugin:
             )
         except Exception as e:
             terminalreporter.write_line(f"\n[Ground Truth Oracle] Failed writing telemetry: {e}")
+
+    @staticmethod
+    def _compute_source_hash() -> str:
+        """SHA-256 of all .py files under KV_SERVER_WORKDIR/src/ (sorted, deterministic)."""
+        workdir = os.environ.get("KV_SERVER_WORKDIR", "")
+        if not workdir:
+            return "unknown"
+        src_dir = Path(workdir).resolve() / "src"
+        if not src_dir.is_dir():
+            return "no_src_dir"
+        h = hashlib.sha256()
+        for py_file in sorted(src_dir.rglob("*.py")):
+            h.update(py_file.name.encode())
+            h.update(py_file.read_bytes())
+        return h.hexdigest()[:16]
 
 
 # ---------------------------------------------------------------------------
@@ -230,19 +248,28 @@ def kv_server(request):
 
     port = int(os.environ["KV_SERVER_PORT"]) if "KV_SERVER_PORT" in os.environ else get_free_port()
 
-    workdir_candidates = [
-        os.environ.get("KV_SERVER_WORKDIR"),
-        Path.cwd(),
-        Path(__file__).resolve().parent.parent,
-        Path(request.config.rootdir),
-    ]
-    resolved_workdir = None
-    for cand in workdir_candidates:
-        if cand and (Path(cand) / "src" / "server.py").is_file():
-            resolved_workdir = Path(cand).resolve()
-            break
-    if resolved_workdir is None:
-        resolved_workdir = Path(__file__).resolve().parent.parent
+    explicit_workdir = os.environ.get("KV_SERVER_WORKDIR")
+    if explicit_workdir:
+        p = Path(explicit_workdir).resolve()
+        if not (p / "src" / "server.py").is_file():
+            raise RuntimeError(
+                f"KV_SERVER_WORKDIR={explicit_workdir} does not contain src/server.py. "
+                f"Refusing to fall back to avoid testing the wrong code."
+            )
+        resolved_workdir = p
+    else:
+        workdir_candidates = [
+            Path.cwd(),
+            Path(__file__).resolve().parent.parent,
+            Path(request.config.rootdir),
+        ]
+        resolved_workdir = None
+        for cand in workdir_candidates:
+            if cand and (Path(cand) / "src" / "server.py").is_file():
+                resolved_workdir = Path(cand).resolve()
+                break
+        if resolved_workdir is None:
+            resolved_workdir = Path(__file__).resolve().parent.parent
 
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{resolved_workdir}:{env.get('PYTHONPATH', '')}".rstrip(":")
