@@ -3035,7 +3035,7 @@ class DAFG:
                     self.ledger.gates[gid].status = "MET"
                     self.ledger.gates[gid].evidence = g_state.get("evidence")
 
-    def save_state(self, expected_version: Optional[int] = None, max_retries: int = 3) -> None:
+    def save_state(self, expected_version: Optional[int] = None, max_retries: int = 10) -> None:
         if not self.state_path:
             return
 
@@ -3098,6 +3098,9 @@ class DAFG:
             except OptimisticConcurrencyConflictError as e:
                 if not is_auto_cas or attempt >= max_retries:
                     raise e
+                # Jittered backoff to alleviate thundering herd across OS processes
+                import random
+                time.sleep((0.005 + random.uniform(0.001, 0.01)) * (1.5 ** min(attempt, 4)))
                 canonical = StateStore.load(self.state_path)
                 self._reconcile_state(canonical)
                 target_version = self.state_version
