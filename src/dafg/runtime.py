@@ -2152,7 +2152,7 @@ class DAFG:
                             status="MET",
                             evidence_type=EvidenceType.TEST_RESULT,
                             evidence_ref=res.evidence or "verified",
-                            artifact_version=node.version,
+                            artifact_version=max(node.version, node.epoch),
                         ))
 
                 if not all_gates_pass:
@@ -2184,7 +2184,7 @@ class DAFG:
                             status="MET",
                             evidence_type=EvidenceType.INVARIANT_CHECK,
                             evidence_ref=f"contract_invariant='{inv}'",
-                            artifact_version=contract.version,
+                            artifact_version=max(contract.version, node.epoch),
                             timestamp=datetime.now(timezone.utc).isoformat(),
                         ))
 
@@ -2601,11 +2601,16 @@ class DAFG:
         self.processed_idempotency_keys.clear()
         self.wave_diagnostics.clear()
         self.execution_history.clear()
+        self.budget.calls_consumed = 0
+        self.budget.revisions_consumed = 0
         for node in self.nodes.values():
             node.status = NodeStatus.READY
             node.protocol_state = ProtocolState.IDLE
             node.active_dispatch = None
             node.epoch = self.run_epoch
+            node.version = self.run_epoch
+            node.attempts = 0
+            node.revisions = 0
             node.evidence_ledger.clear()
 
     def is_completed(self) -> bool:

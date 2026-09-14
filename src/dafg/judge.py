@@ -411,7 +411,8 @@ class RunJudge:
         # 7. Stale Cascade Checks (from raw_graph)
         # -------------------------------------------------------------------
         if raw_graph is not None:
-            stale_nodes = [n.id for n in getattr(raw_graph, "nodes", {}).values() if n.epoch > 1]
+            current_epoch = getattr(raw_graph, "run_epoch", 1)
+            stale_nodes = [n.id for n in getattr(raw_graph, "nodes", {}).values() if n.epoch < current_epoch]
             if stale_nodes:
                 friction_points.append(FrictionPoint(
                     category="STALE_CASCADE",

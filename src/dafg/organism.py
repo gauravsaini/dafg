@@ -932,9 +932,13 @@ class OrganismEvolver:
 
             elif fp.category == "REVISION_THRASH":
                 # Invert or decouple node by introducing prerequisite interface check
-                node_id = fp.node_id
-                if node_id and node_id in graph.nodes:
-                    node = graph.nodes[node_id]
+                thrashing_nodes = []
+                if fp.node_id and fp.node_id in graph.nodes:
+                    thrashing_nodes.append(graph.nodes[fp.node_id])
+                else:
+                    thrashing_nodes = [n for n in graph.nodes.values() if n.revisions > 0]
+
+                for node in thrashing_nodes:
                     cid = f"contract_rev_{node.id}"
                     if cid not in graph.contracts:
                         graph.contracts[cid] = InterfaceContract(
