@@ -54,3 +54,55 @@ def test_gate_engine_enforces_safe_policy_when_configured():
     res = engine.execute_gate(bad_gate)
     assert res.status == "FAILED"
     assert "Security violation" in res.error
+
+
+def test_safe_command_policy_blocks_path_traversal_targets():
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("node test_system.js ../../../etc/passwd")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("python3 test_system.py ../../secret")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("uv run python test_system.py /etc/shadow")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("node test_system.js test.js")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("python test_system.py sub/dir/test")
+
+
+def test_safe_command_policy_blocks_pytest_traversal():
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("pytest ../../../etc/passwd")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("uv run pytest /abs/path")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("python -m pytest ..\\windows\\path")
+
+
+def test_safe_command_policy_blocks_prefix_confusion():
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("node test_system.js.bak")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("python test_system.py_malicious")
+
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("node test_system.jsx")
+
+
+def test_safe_command_policy_blocks_null_bytes():
+    with pytest.raises(SecurityPolicyViolationError):
+        SafeCommandPolicy.validate_command("node test_system.js CORE\x00extra")
+
+
+def test_safe_command_policy_authorizes_alphanumeric_targets():
+    SafeCommandPolicy.validate_command("node test_system.js CORE")
+    SafeCommandPolicy.validate_command("python3 test_system.py E2E")
+    SafeCommandPolicy.validate_command("uv run python test_system.py STORAGE_PASS")
+    SafeCommandPolicy.validate_command("uv run python test_system.py MODULE_1")
+

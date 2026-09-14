@@ -49,7 +49,7 @@ class SecurityPolicyViolationError(Exception):
 
 class SafeCommandPolicy:
     """Enforces strict command sandboxing for autonomously synthesized checks."""
-    FORBIDDEN_OPERATORS: Set[str] = {"&&", "||", ";", "|", "`", "$(", ">", "<", "\n", "$", "&"}
+    FORBIDDEN_OPERATORS: Set[str] = {"&&", "||", ";", "|", "`", "$(", ">", "<", "\n", "\r", "$", "&", "\x00", "\\"}
     FORBIDDEN_BINARIES: Set[str] = {
         "rm", "rmdir", "dd", "mkfs", "sudo", "su", "chmod", "chown",
         "curl", "wget", "nc", "netcat", "sh", "bash", "zsh", "exec", "eval",
@@ -81,16 +81,17 @@ class SafeCommandPolicy:
         """Verify check command is strictly constrained to safe test runner execution."""
         import shlex
 
-        cmd = check_command.strip()
-        if not cmd:
+        if not check_command or not check_command.strip():
             raise SecurityPolicyViolationError("Empty check command is invalid")
 
-        # 1. Shell metacharacters and redirection operators
+        # 1. Shell metacharacters, escapes, and redirection operators
         for op in cls.FORBIDDEN_OPERATORS:
-            if op in cmd:
+            if op in check_command:
                 raise SecurityPolicyViolationError(
-                    f"Security violation: check command contains forbidden operator '{op}': '{cmd}'"
+                    f"Security violation: check command contains forbidden operator '{op}': '{check_command}'"
                 )
+
+        cmd = check_command.strip(" \t")
 
         # 2. Dynamic execution and process spawning patterns
         cmd_lower = cmd.lower()
@@ -124,7 +125,7 @@ class SafeCommandPolicy:
         # 6. Must match an authorized test runner prefix
         matched_prefix = None
         for prefix in cls.ALLOWED_COMMAND_PREFIXES:
-            if cmd.startswith(prefix):
+            if cmd == prefix or cmd.startswith(prefix + " "):
                 matched_prefix = prefix
                 break
 
@@ -133,15 +134,24 @@ class SafeCommandPolicy:
                 f"Security violation: check command must invoke authorized test harness, got: '{cmd}'"
             )
 
-        # 7. Constrain trailing arguments to safe alphanumeric targets (e.g. CORE, STORAGE, E2E)
+        # 7. Constrain trailing arguments
         remainder = cmd[len(matched_prefix):].strip()
         if remainder:
             args = shlex.split(remainder)
+            is_pytest = "pytest" in matched_prefix
             for arg in args:
-                if not re.match(r"^[a-zA-Z0-9_\.\/-]+$", arg):
-                    raise SecurityPolicyViolationError(
-                        f"Security violation: unsafe target argument '{arg}' in command: '{cmd}'"
-                    )
+                if is_pytest:
+                    # Pytest accepts flags or safe relative paths without traversal
+                    if ".." in arg or arg.startswith("/") or "\\" in arg or not re.match(r"^[a-zA-Z0-9_\-\.\/]+$", arg):
+                        raise SecurityPolicyViolationError(
+                            f"Security violation: unsafe pytest argument '{arg}' in command: '{cmd}'"
+                        )
+                else:
+                    # Test script harness only accepts alphanumeric target suite names
+                    if not re.match(r"^[a-zA-Z0-9_-]+$", arg):
+                        raise SecurityPolicyViolationError(
+                            f"Security violation: unsafe target argument '{arg}' contains illegal characters: must match ^[a-zA-Z0-9_-]+$"
+                        )
 
 
 @dataclass
