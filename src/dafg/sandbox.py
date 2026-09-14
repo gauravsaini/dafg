@@ -128,7 +128,7 @@ class SubprocessExecutionBoundary:
             clean_env["HTTP_PROXY"] = "http://127.0.0.1:0"
             clean_env["HTTPS_PROXY"] = "http://127.0.0.1:0"
             clean_env["ALL_PROXY"] = "socks5://127.0.0.1:0"
-            clean_env["NO_PROXY"] = ""
+            clean_env["NO_PROXY"] = "localhost,127.0.0.1"
             clean_env["PIP_NO_INDEX"] = "1"
             clean_env["NPM_CONFIG_OFFLINE"] = "true"
 

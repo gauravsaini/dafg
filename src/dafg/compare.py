@@ -40,6 +40,11 @@ class ExperimentRecord:
     friction_severity_index: float = 0.0
     gate_flakiness_index: float = 0.0
     composite_score: float = 0.0
+    gt_total: Optional[int] = None
+    gt_passed: Optional[int] = None
+    gt_failed: Optional[int] = None
+    gt_pass_rate: Optional[float] = None
+    discrepancy: Optional[float] = None
     verdict: str = "UNKNOWN"
     provenance: str = "unknown"
     artifacts_found: List[str] = field(default_factory=list)
@@ -96,6 +101,39 @@ class ExperimentComparator:
                 hook_res = guard.evaluate()
                 rec.stop_hook_decision = hook_res.decision
                 rec.stop_hook_status = hook_res.outcome_status
+            except Exception:
+                pass
+
+        # Check for ground truth evaluation results
+        gt_file = path / "eval_results" / "ground_truth.json"
+        if not gt_file.exists():
+            gt_file = path / "ground_truth.json"
+        if not gt_file.exists() and (path / "generations").is_dir():
+            # Fallback to latest generation if analyzing an organism container directory
+            gen_dirs = sorted([d for d in (path / "generations").iterdir() if d.is_dir()])
+            for gd in reversed(gen_dirs):
+                cand = gd / "eval_results" / "ground_truth.json"
+                if cand.exists():
+                    gt_file = cand
+                    break
+
+        if gt_file.exists():
+            try:
+                rel_gt = str(gt_file.relative_to(path))
+            except ValueError:
+                rel_gt = gt_file.name
+            artifacts.append(rel_gt)
+            try:
+                gt_data = json.loads(gt_file.read_text(encoding="utf-8"))
+                rec.gt_total = int(gt_data.get("total", 0))
+                rec.gt_passed = int(gt_data.get("passed", 0))
+                rec.gt_failed = int(gt_data.get("failed", 0))
+                if "pass_rate" in gt_data:
+                    rec.gt_pass_rate = float(gt_data["pass_rate"])
+                elif rec.gt_total > 0:
+                    rec.gt_pass_rate = rec.gt_passed / rec.gt_total
+                else:
+                    rec.gt_pass_rate = 0.0
             except Exception:
                 pass
 
@@ -198,6 +236,9 @@ class ExperimentComparator:
             except Exception:
                 pass
 
+        if rec.gt_pass_rate is not None:
+            rec.discrepancy = round(rec.composite_score - (rec.gt_pass_rate * 100.0), 1)
+
         rec.artifacts_found = artifacts
         return rec
 
@@ -217,6 +258,8 @@ class ExperimentComparator:
 
         report = RunJudge.evaluate(graph)
         rec.run_id = report.run_id
+        rec.gates_total = len(ledger.gates)
+        rec.gates_met = sum(1 for g in ledger.gates.values() if g.status == "MET")
         rec.composite_score = report.score
         rec.verdict = str(report.verdict.value) if hasattr(report.verdict, "value") else str(report.verdict)
         rec.friction_severity_index = report.friction_severity_index
@@ -234,6 +277,9 @@ class ExperimentComparator:
             rec.concurrency_health_score = ch.score
 
         rec.provenance = "fresh_execution"
+
+        if rec.gt_pass_rate is not None:
+            rec.discrepancy = round(rec.composite_score - (rec.gt_pass_rate * 100.0), 1)
 
         if persist:
             out_path = path / "eval_results" / "quality_report.json"
@@ -255,6 +301,8 @@ class ExperimentComparator:
             "Total Deferrals",
             "Concurrency Health",
             "Score",
+            "GT Pass Rate",
+            "Discrepancy",
             "Verdict",
             "Provenance",
         ]
@@ -266,6 +314,18 @@ class ExperimentComparator:
 
         for r in records:
             run_short = r.run_id if len(r.run_id) <= 16 else (r.run_id[:16] + "…")
+            if r.gt_pass_rate is not None:
+                gt_str = f"{r.gt_pass_rate * 100:.1f}%"
+            else:
+                gt_str = "N/A"
+
+            if r.discrepancy is not None:
+                d_val = r.discrepancy
+                d_str = "0.0" if abs(d_val) < 1e-6 else f"{d_val:+.1f}"
+                disc_str = f"**{d_str}**" if abs(d_val) > 5.0 else d_str
+            else:
+                disc_str = "N/A"
+
             row = [
                 f"`{r.name}`",
                 f"`{run_short}`",
@@ -277,6 +337,8 @@ class ExperimentComparator:
                 f"{r.total_task_deferrals}",
                 f"{r.concurrency_health_score:.1f} / 100",
                 f"**{r.composite_score:.1f}** / 100",
+                gt_str,
+                disc_str,
                 f"`{r.verdict}`",
                 f"`{r.provenance}`",
             ]

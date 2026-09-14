@@ -66,3 +66,55 @@ def test_experiment_comparator_fresh_non_destructive():
     # Ensure zero mutation on disk
     assert gates_path.read_text(encoding="utf-8") == original_content
     assert gates_path.stat().st_mtime == original_mtime
+
+
+def test_experiment_comparator_with_ground_truth(tmp_path):
+    eval_dir = tmp_path / "eval_results"
+    eval_dir.mkdir(parents=True)
+
+    qdata = {
+        "run_id": "run_test_01",
+        "score": 94.3,
+        "verdict": "IMPERFECT",
+    }
+    (eval_dir / "quality_report.json").write_text(json.dumps(qdata), encoding="utf-8")
+
+    gt_data = {
+        "total": 20,
+        "passed": 0,
+        "failed": 20,
+        "pass_rate": 0.0,
+        "duration_seconds": 0.5,
+    }
+    (eval_dir / "ground_truth.json").write_text(json.dumps(gt_data), encoding="utf-8")
+
+    rec = ExperimentComparator.analyze_dir(tmp_path)
+    assert rec.gt_total == 20
+    assert rec.gt_passed == 0
+    assert rec.gt_failed == 20
+    assert rec.gt_pass_rate == 0.0
+    assert rec.composite_score == 94.3
+    assert rec.discrepancy == 94.3
+
+    # Test markdown generation includes GT columns
+    md = ExperimentComparator.generate_markdown_table([rec])
+    assert "GT Pass Rate" in md
+    assert "Discrepancy" in md
+    assert "0.0%" in md
+    assert "**+94.3**" in md
+
+    # Test zero discrepancy formatting (e.g. perfect alignment)
+    rec_aligned = ExperimentRecord(
+        name="aligned_exp",
+        dir_path="/tmp/aligned",
+        composite_score=100.0,
+        gt_total=20,
+        gt_passed=20,
+        gt_failed=0,
+        gt_pass_rate=1.0,
+        discrepancy=0.0,
+    )
+    md_aligned = ExperimentComparator.generate_markdown_table([rec_aligned])
+    assert "100.0%" in md_aligned
+    assert "| 0.0 |" in md_aligned
+

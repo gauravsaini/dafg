@@ -304,10 +304,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("experiments", nargs="+", help="Paths to experiment directories")
         parser.add_argument("--json", action="store_true", help="Output comparison matrix as JSON")
         parser.add_argument("--fresh", action="store_true", help="Execute a fresh, unified run across all experiment directories")
+        parser.add_argument("--generations", action="store_true", help="Expand generation subdirectories")
         args = parser.parse_args(sub_args)
 
         from dafg.compare import ExperimentComparator
-        dirs = [Path(p) for p in args.experiments]
+        dirs: List[Path] = []
+        for p in args.experiments:
+            exp_p = Path(p)
+            gen_dir = exp_p / "generations"
+            if args.generations and gen_dir.is_dir():
+                sub_dirs = sorted([d for d in gen_dir.iterdir() if d.is_dir()])
+                if sub_dirs:
+                    dirs.extend(sub_dirs)
+                    continue
+            dirs.append(exp_p)
+
         records = [ExperimentComparator.analyze_dir(d, fresh=args.fresh) for d in dirs]
         if args.json:
             import json

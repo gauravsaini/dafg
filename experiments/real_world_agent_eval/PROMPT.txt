@@ -1,0 +1,72 @@
+# Goal: High-Performance Thread-Safe In-Memory Key-Value Store with Monotonic TTL and HTTP REST API
+
+Implement a fast, production-grade, thread-safe in-memory key-value store with monotonic TTL expiration, atomic integer increments, and an HTTP REST interface in pure Python standard library.
+
+## Architectural Requirements
+
+### 1. Zero External Dependencies
+- Use Python standard library ONLY (`http.server`, `urllib.parse`, `json`, `threading`, `time`, `socket`, `argparse`).
+- No external packages (no FastAPI, Flask, requests, httpx, pydantic, redis, etc.).
+
+### 2. Module Layout
+- `src/kv_store.py`: In-memory storage engine and business logic (`KVStore` class).
+- `src/server.py`: Multi-threaded HTTP server daemon (`ThreadingHTTPServer`) with CLI entry point.
+
+### 3. Core KV Store Engine (`src/kv_store.py`)
+Implement `KVStore` supporting:
+- `set(key: str, value: Any, ttl: Optional[float] = None) -> None`:
+  * Stores arbitrary JSON-serializable value under `key`.
+  * If `ttl` is provided, must be a strictly positive number (`float` or `int`, not `bool`). If invalid, raise `ValueError`.
+  * Expiration timestamp MUST be computed using `time.monotonic() + ttl` (immune to system clock adjustments).
+  * Setting an existing key without `ttl` clears any previous expiration timer.
+- `get(key: str) -> Tuple[bool, Any, Optional[float]]`:
+  * Returns `(found, value, remaining_ttl)`.
+  * If key is missing or expired, returns `(False, None, None)`.
+  * Explicitly distinguishes stored `None`/`null` values from non-existent keys.
+  * Prunes expired keys on access (lazy expiration).
+- `delete(key: str) -> bool`:
+  * Removes key and timer from store. Returns `True` if key existed and was valid, `False` otherwise.
+- `incr(key: str, amount: int = 1) -> int`:
+  * Atomically increments integer value at `key` by `amount`.
+  * If `key` does not exist or has expired, initializes value to `0 + amount`.
+  * If existing value is not an integer (or is `bool`), raises `TypeError("Value is not an integer")`.
+  * If `amount` is not an integer (or is `bool`), raises `TypeError("Amount must be an integer")`.
+  * Thread-safe critical section: MUST acquire mutex lock across the entire read-modify-write cycle.
+- `reset() -> None`:
+  * Clears all keys and active timers.
+- `health() -> Dict[str, Any]`:
+  * Returns `{"status": "healthy", "keys_count": int, "uptime_seconds": float}`.
+
+### 4. HTTP REST API Server (`src/server.py`)
+Provide a `ThreadingHTTPServer` daemon supporting CLI flags `--host` (default `127.0.0.1`) and `--port` (default `8080`, supporting port `0` for dynamic ephemeral OS binding).
+
+#### Endpoints:
+1. `GET /health`
+   - Status `200 OK`: `{"status": "healthy", "keys_count": int, "uptime_seconds": float}` (or `{"status": "ok"}`).
+2. `POST /keys/<key>` (and `PUT /keys/<key>`)
+   - Request body: `{"value": <any>, "ttl": <optional positive float>}` (or query string `?ttl=<sec>`).
+   - Percent-decodes `<key>` from URL path.
+   - Status `200 OK` (or `201 Created`): `{"status": "ok", "key": str, "value": <any>, "ttl": <float|null>}`.
+   - Returns `400 Bad Request` if:
+     * Body is missing or not valid JSON.
+     * Required field `"value"` is missing from body dictionary.
+     * Provided `ttl` is non-numeric, boolean, zero, or negative.
+3. `GET /keys/<key>`
+   - Percent-decodes `<key>` from URL path.
+   - Status `200 OK`: `{"key": str, "value": <any>, "ttl": <float|null>}`.
+   - Status `404 Not Found`: `{"error": "Key not found", "key": str}`.
+4. `DELETE /keys/<key>`
+   - Percent-decodes `<key>` from URL path.
+   - Status `200 OK`: `{"status": "ok", "deleted": true, "key": str}`.
+   - Status `404 Not Found`: `{"error": "Key not found", "key": str}`.
+5. `POST /incr/<key>` AND `POST /keys/<key>/incr` (both paths supported)
+   - Optional request body: `{"amount": <int>}` (default: `1`).
+   - Status `200 OK`: `{"status": "ok", "key": str, "value": int}`.
+   - Returns `400 Bad Request` if stored value or amount is not an integer.
+6. `POST /reset`
+   - Status `200 OK`: `{"status": "ok", "cleared": true}`.
+
+### 5. HTTP Protocol Framing & Concurrency Rules
+- **Request Body Consumption**: Handler MUST explicitly read `self.rfile.read(content_length)` when `Content-Length > 0` before writing responses to prevent TCP socket resets (`ConnectionResetError`).
+- **Response Headers**: All responses MUST include `Content-Type: application/json` and accurate `Content-Length`.
+- **Thread Safety**: Server MUST handle 50+ concurrent worker threads executing concurrent reads, writes, deletes, and atomic increments with zero lost updates and zero unhandled exceptions.
