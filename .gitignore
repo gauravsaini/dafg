@@ -18,3 +18,4 @@ dafg-eval/results/raw_trials.jsonl
 dafg-eval/results/traces.jsonl
 .sandbox_tmp/
 .sandbox_home/
+*.lock

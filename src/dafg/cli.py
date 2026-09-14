@@ -43,6 +43,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--gates", default="GATES.md", help="Path to GATES.md")
         parser.add_argument("--approvals-file", default=".approved_gates.json", help="Path to approvals file")
         parser.add_argument("--auto-approve", action="store_true", help="Auto approve check commands")
+        parser.add_argument("--enforce-safe-policy", action="store_true", help="Enforce SafeCommandPolicy sandbox on check commands")
         parser.add_argument("--no-analytics", action="store_true", help="Suppress analytics report")
         parser.add_argument("--json-analytics", action="store_true", help="Print analytics as JSON")
         parser.add_argument("--judge", action="store_true", help="Print standalone Run Quality Report from Analytics Judge")
@@ -73,7 +74,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         gates_fp = Path(args.gates)
         ledger = GateLedger.load(gates_fp) if gates_fp.exists() else None
         appr_store = ApprovalStore(filepath=args.approvals_file)
-        engine = GateEngine(approval_store=appr_store, auto_approve=args.auto_approve) if ledger else None
+        enforce_safe = args.enforce_safe_policy
+        engine = GateEngine(approval_store=appr_store, auto_approve=args.auto_approve, enforce_safe_policy=enforce_safe) if ledger else None
         state_fp = Path(args.state)
         if state_fp.exists():
             graph = DAFG.load_state(state_fp, ledger=ledger, engine=engine, probes=probes)

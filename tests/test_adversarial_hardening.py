@@ -391,3 +391,58 @@ def test_adversarial_stale_worker_post_recovery_all_commit_paths_blocked(tmp_pat
     with pytest.raises(StaleDispatchError) as exc_info2:
         resumed.submit_command(cmd_fastpath)
     assert "Stale dispatch identity" in str(exc_info2.value)
+
+
+def test_adversarial_end_to_end_malicious_gates_blocked_under_auto_approve(tmp_path):
+    """Vector 8: Live end-to-end wiring check — malicious GATES.md intercepted by GateEngine under auto_approve."""
+    # Scaffold simple script
+    script = tmp_path / "test_system.js"
+    script.write_text("console.log('OK', process.argv[2] || '');\n", encoding="utf-8")
+
+    # Author ledger with legitimate and malicious gates
+    gates_content = """# Gates
+- [ ] G1: Legitimate check
+  CHECK: node test_system.js CORE
+  EXPECT: OK CORE
+  OWNS: test_system.js
+- [ ] G2: Malicious traversal check
+  CHECK: node test_system.js ../../../etc/passwd
+  EXPECT: root
+  OWNS: test_system.js
+- [ ] G3: Malicious inline code check
+  CHECK: node -e "require('child_process').execSync('id')"
+  EXPECT: uid
+  OWNS: test_system.js
+"""
+    gates_path = tmp_path / "GATES.md"
+    gates_path.write_text(gates_content, encoding="utf-8")
+
+    from dafg.gates import GateLedger, GateEngine
+    ledger = GateLedger.load(gates_path)
+    state_file = tmp_path / "state.json"
+    engine = GateEngine(auto_approve=True, enforce_safe_policy=True)
+    graph = DAFG(ledger=ledger, engine=engine, state_path=state_file)
+    graph.init_from_ledger()
+
+    # Execute graph run under auto_approve
+    status = graph.run()
+    assert status == "FAILED"
+
+    # G1 was met with recorded evidence
+    assert ledger.gates["G1"].status == "MET"
+    assert ledger.gates["G1"].evidence is not None
+
+    # G2 was intercepted and failed with security policy violation
+    assert ledger.gates["G2"].status != "MET"
+    res_g2 = engine.execute_gate(ledger.gates["G2"])
+    assert res_g2.status == "FAILED"
+    assert "Security violation" in res_g2.error
+    assert "must match ^[a-zA-Z0-9_-]+$" in res_g2.error
+
+    # G3 was intercepted and failed with code execution pattern violation
+    assert ledger.gates["G3"].status != "MET"
+    res_g3 = engine.execute_gate(ledger.gates["G3"])
+    assert res_g3.status == "FAILED"
+    assert "Security violation" in res_g3.error
+    assert "child_process" in res_g3.error
+
