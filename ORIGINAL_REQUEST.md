@@ -105,3 +105,37 @@ Differentiate the three adapter architectures to reflect their actual structural
 - [ ] Python standard library only (zero external runtime dependencies).
 - [ ] `uv run pytest -q` passes offline.
 - [ ] `uv run gates --status GATES.md` and `uv run stop-hook GATES.md --json` return valid evidence and allow completion.
+
+## 2026-09-14T13:09:30Z
+
+Build and execute an end-to-end evaluation benchmark where a real local CLI code-generating agent implements a fast in-memory KV store with TTL, atomic increments, and HTTP REST interface, supervised by DAFG Organism runtime. Validate DAFG's internal completion claims against an independent, adversarial ground-truth test suite completely external to DAFG's gate ledger.
+
+Working directory: experiments/real_world_agent_eval
+Integrity mode: benchmark
+
+## Requirements
+
+### R1. Independent Adversarial Ground-Truth Oracle
+Author a standalone test suite (`tests_external/test_kv_ground_truth.py`) completely isolated from `OrganismGenesis` and `GATES.md`. The oracle must run against the running server/module, issuing real HTTP requests (POST/GET/DELETE, TTL expiry verification, atomic INCR, concurrent read/write contention) and asserting on real status codes and JSON response bodies.
+
+### R2. Real Code-Generating Agent Execution
+TaskNode executions in DAFG must dispatch implementation work to a real local CLI agent (e.g. `omp` or worker subagent) operating in an isolated workdir. The agent writes actual Python implementation files (`src/kv_store.py`, `src/server.py`), producing real syntax errors, logic bugs, and concurrency defects that DAFG must supervise and recover.
+
+### R3. Functional Gate Verification (Breaking the Self-Referential Loop)
+DAFG's `GATES.md` must contain objective, functional verification commands that execute real inputs against the running application or exported API functions (e.g. invoking endpoints with curl/requests and validating output JSON). No synthetic or deterministic self-approving stub harnesses are permitted.
+
+### R4. Programmatic Evaluation & Discrepancy Auditing (`dafg compare`)
+Execute an unscripted multi-generation run under DAFG organism supervision. Run `dafg compare` to evaluate whether DAFG's self-reported run quality score and `VERIFIED_DELIVERY` status correlate with the independent external ground-truth test suite pass rate.
+
+## Acceptance Criteria
+
+### Ground-Truth Isolation
+- [ ] The ground-truth test suite exists in `tests_external/` and is never referenced in, imported by, or accessible to `GATES.md` or the implementing agent.
+- [ ] Ground-truth tests assert actual functionality: key storage, retrieval, deletion, TTL expiry timing, atomic integer increment under concurrency, and proper HTTP error codes.
+
+### Closed-Loop Integrity
+- [ ] DAFG gate commands execute live functions or HTTP endpoints and verify actual returned JSON payloads, completely eliminating self-referential pass-through or tautological stubs.
+- [ ] Initial generation failures stem from genuine code defects produced by the CLI agent, exercising DAFG's sandbox, CAS state commit, and error classification.
+
+### Empirical Correlation
+- [ ] `dafg compare` outputs an objective comparison showing the external ground-truth suite pass rate alongside DAFG's internal score, confirming whether `VERIFIED_DELIVERY` represents real external functional validity.
