@@ -26,7 +26,14 @@ from dafg.judge import (
     RunJudge,
     RunQualityReport,
 )
-from dafg.mutation import GateMutator, MutationStrategy
+from dafg.mutation import (
+    EvolutionMutator,
+    EvolutionMutationType,
+    GateMutator,
+    MutationEntry,
+    MutationProposal,
+    MutationStrategy,
+)
 from dafg.observe import InMemoryProbe, ObservabilityFabric, parse_observe_flag
 from dafg.persona import PersonaCompiler, PersonaProfile
 from dafg.repair import RepairBudget, RepairDiagnoser, RepairLoop
@@ -874,8 +881,136 @@ class OrganismReactor:
             })
 
 
+@dataclass
+class EvolutionPolicy:
+    """Hard convergence criteria for multi-generation evolution.
+
+    The organism converges ONLY when ALL criteria are simultaneously satisfied.
+    Not just 'run completed', but genuine verified delivery.
+    """
+    target_score: float = 90.0             # Judge score threshold
+    max_generations: int = 10              # Hard generation cap
+    fsi_threshold: float = 0.15            # Max friction severity index
+    require_all_gates_met: bool = True     # Every gate must be MET
+    require_verified_delivery: bool = True # Stop-hook = VERIFIED_DELIVERY
+    require_no_critical_friction: bool = True  # No HIGH-severity friction
+    require_contract_valid: bool = True    # GoalContract invariants hold
+    goodhart_lookback: int = 3             # Generations to check for Goodhart pressure
+    goodhart_score_gate_divergence: float = 0.3  # Max allowed score↑ + gate_strength↓
+    flakiness_threshold: float = 0.2       # Max gate flakiness index
+
+    def check_convergence(
+        self,
+        score: float,
+        fsi: float,
+        all_gates_met: bool,
+        delivery_state: str,
+        contract_valid: bool,
+        friction_points: List[Any],
+        flakiness_index: float,
+    ) -> Tuple[bool, List[str]]:
+        """Evaluate whether the organism has converged. Returns (converged, reasons_blocking)."""
+        blocking: List[str] = []
+
+        if score < self.target_score:
+            blocking.append(f"Score {score:.1f} < target {self.target_score}")
+        if fsi >= self.fsi_threshold:
+            blocking.append(f"FSI {fsi:.3f} >= threshold {self.fsi_threshold}")
+        if self.require_all_gates_met and not all_gates_met:
+            blocking.append("Not all gates MET")
+        if self.require_verified_delivery and delivery_state != "VERIFIED_DELIVERY":
+            blocking.append(f"Delivery state '{delivery_state}' != VERIFIED_DELIVERY")
+        if self.require_contract_valid and not contract_valid:
+            blocking.append("GoalContract invariant violated")
+        if flakiness_index > self.flakiness_threshold:
+            blocking.append(f"Flakiness index {flakiness_index:.3f} > threshold {self.flakiness_threshold}")
+
+        if self.require_no_critical_friction:
+            high_fps = []
+            for fp in friction_points:
+                sev = getattr(fp, "severity", None)
+                if sev is not None:
+                    sev_val = sev.value if hasattr(sev, "value") else str(sev)
+                else:
+                    sev_val = fp.get("severity", "") if isinstance(fp, dict) else ""
+                if sev_val == "HIGH":
+                    high_fps.append(fp)
+            if high_fps:
+                blocking.append(f"{len(high_fps)} HIGH-severity friction point(s) remain")
+
+        return (len(blocking) == 0, blocking)
+
+
+class GoodhartDetector:
+    """Detects Goodhart pressure across generations.
+
+    Watches for patterns where mutations 'game' the Judge score by:
+    - Weakening gate assertions while score increases
+    - Shrinking gate scope (fewer gates) while score increases
+    - Dropping OWNS coverage while score increases
+    """
+
+    @classmethod
+    def detect(
+        cls,
+        generation_records: List[GenerationRecord],
+        lookback: int = 3,
+        divergence_threshold: float = 0.3,
+    ) -> Tuple[bool, List[str]]:
+        """Analyze recent generations for Goodhart gaming patterns."""
+        if len(generation_records) < 2:
+            return False, []
+
+        recent = generation_records[-lookback:] if len(generation_records) >= lookback else generation_records
+        warnings: List[str] = []
+
+        # Pattern 1: Score increasing while gates_met/gates_total ratio stays flat or drops
+        if len(recent) >= 2:
+            first, last = recent[0], recent[-1]
+            score_delta = last.score - first.score
+            first_ratio = first.gates_met / max(1, first.gates_total)
+            last_ratio = last.gates_met / max(1, last.gates_total)
+            ratio_delta = last_ratio - first_ratio
+
+            if score_delta > 10.0 and ratio_delta < -0.1:
+                warnings.append(
+                    f"Goodhart: Score rose {score_delta:+.1f} but gate pass ratio dropped "
+                    f"{ratio_delta:+.3f} over {len(recent)} generations"
+                )
+
+        # Pattern 2: Gate count shrinking across generations
+        if len(recent) >= 2:
+            first_total = recent[0].gates_total
+            last_total = recent[-1].gates_total
+            if first_total > 0 and last_total < first_total:
+                warnings.append(
+                    f"Goodhart: Gate count shrank from {first_total} to {last_total} "
+                    f"over {len(recent)} generations — possible scope reduction"
+                )
+
+        # Pattern 3: Score rising while friction severity stays constant (plateau gaming)
+        if len(recent) >= 3:
+            scores = [g.score for g in recent]
+            fsis = [g.friction_severity_index for g in recent]
+            score_monotonic_up = all(scores[i] <= scores[i+1] for i in range(len(scores)-1))
+            fsi_flat = max(fsis) - min(fsis) < 0.05
+            if score_monotonic_up and fsi_flat and scores[-1] - scores[0] > 15.0:
+                warnings.append(
+                    f"Goodhart: Score monotonically rising ({scores[0]:.1f}→{scores[-1]:.1f}) "
+                    f"while FSI stagnant ({min(fsis):.3f}–{max(fsis):.3f})"
+                )
+
+        return (len(warnings) > 0, warnings)
+
+
 class OrganismEvolver:
-    """Evolutionary engine that mutates task graph, personas, gates, and strategies across runs."""
+    """Evolutionary engine that mutates task graph, personas, gates, and strategies across runs.
+
+    First-class, not incidental: every run MUST produce a MutationProposal.
+    Driven by real RunJudge scores and friction points.
+    Exercises TrendAnalyzer for flakiness/regression detection.
+    Anti-Goodhart guardrails enforced via GoalContract + GoodhartDetector.
+    """
 
     @classmethod
     def evolve(
@@ -885,16 +1020,56 @@ class OrganismEvolver:
         ledger: GateLedger,
         trend_store: Optional[TrendStore] = None,
         goal_contract: Optional[GoalContract] = None,
+        generation: int = 0,
     ) -> List[str]:
-        """Analyze run quality and friction to autonomously apply multi-dimensional mutations."""
-        mutations: List[str] = []
+        """Analyze run quality and friction to autonomously apply multi-dimensional mutations.
+
+        Returns a flat list of mutation description strings (legacy interface).
+        Use evolve_proposal() for the structured MutationProposal interface.
+        """
+        proposal = cls.evolve_proposal(
+            graph=graph,
+            report=report,
+            ledger=ledger,
+            trend_store=trend_store,
+            goal_contract=goal_contract,
+            generation=generation,
+        )
+        # Merge entries + vetoes into flat string list for backward compat
+        result: List[str] = []
+        for v in proposal.vetoes:
+            result.append(v.description)
+        for e in proposal.entries:
+            result.append(e.description)
+        return result
+
+    @classmethod
+    def evolve_proposal(
+        cls,
+        graph: DAFG,
+        report: RunQualityReport,
+        ledger: GateLedger,
+        trend_store: Optional[TrendStore] = None,
+        goal_contract: Optional[GoalContract] = None,
+        generation: int = 0,
+    ) -> MutationProposal:
+        """Analyze run quality and friction to produce a structured MutationProposal.
+
+        Every run produces exactly one proposal. An empty proposal = converged.
+        """
+        proposal = MutationProposal(generation=generation, score_before=report.score)
 
         # Anti-Goodhart invariant check
         if goal_contract:
             valid, violations = goal_contract.validate_ledger(ledger)
             if not valid:
                 for v in violations:
-                    mutations.append(f"AntiGoodhartGuard: Refused illegal mutation ({v})")
+                    veto = MutationEntry(
+                        mutation_type=EvolutionMutationType.ANTI_GOODHART_VETO,
+                        description=f"AntiGoodhartGuard: Refused illegal mutation ({v})",
+                        vetoed=True,
+                    )
+                    proposal.vetoes.append(veto)
 
         # -------------------------------------------------------------------
         # 1. Graph Evolution: Resolve SERIAL_CONFLICT and REVISION_THRASH
@@ -917,9 +1092,12 @@ class OrganismEvolver:
                             n.owns.remove(conflicting_path)
                             sub_path = f"{conflicting_path}.sub_{idx}"
                             n.owns.append(sub_path)
-                            mutations.append(
-                                f"GraphEvolution: Partitioned '{conflicting_path}' ownership from {n.id} to '{sub_path}'"
-                            )
+                            desc = f"GraphEvolution: Partitioned '{conflicting_path}' ownership from {n.id} to '{sub_path}'"
+                            proposal.entries.append(MutationEntry(
+                                mutation_type=EvolutionMutationType.GRAPH_PARTITION,
+                                description=desc,
+                                target_id=conflicting_path,
+                            ))
                             if ledger and n.assigned_gates:
                                 for gid in n.assigned_gates:
                                     g = ledger.get_gate(gid)
@@ -947,7 +1125,12 @@ class OrganismEvolver:
                             consumers=[node.id],
                             output_schema={"type": "strict_interface", "enforce_pre_flight": True},
                         )
-                        mutations.append(f"GraphEvolution: Injected strict InterfaceContract '{cid}' for {node.id}")
+                        desc = f"GraphEvolution: Injected strict InterfaceContract '{cid}' for {node.id}"
+                        proposal.entries.append(MutationEntry(
+                            mutation_type=EvolutionMutationType.GRAPH_CONTRACT,
+                            description=desc,
+                            target_id=node.id,
+                        ))
 
         # -------------------------------------------------------------------
         # 2. Persona Evolution: Specialize underperforming personas
@@ -961,7 +1144,12 @@ class OrganismEvolver:
                 profile = compiler.compile(node, attempt=node.revisions + 1)
                 profile.review_focus.append("Zero-regression verification")
                 profile.review_focus.append("Strict interface boundaries")
-                mutations.append(f"PersonaEvolution: Promoted {node.id} persona to '{evolved_role}' with sharpened review focus")
+                desc = f"PersonaEvolution: Promoted {node.id} persona to '{evolved_role}' with sharpened review focus"
+                proposal.entries.append(MutationEntry(
+                    mutation_type=EvolutionMutationType.PERSONA_PROMOTE,
+                    description=desc,
+                    target_id=node.id,
+                ))
 
         # -------------------------------------------------------------------
         # 3. Gate Evolution: Strengthen weak gates & stabilize flaky gates
@@ -977,7 +1165,12 @@ class OrganismEvolver:
                         old_expect = gate.expect or ""
                         if not old_expect.startswith("^") and not old_expect.endswith("$"):
                             gate.expect = f"(?m)^{re.escape(old_expect)}.*"
-                            mutations.append(f"GateEvolution: Strengthened weak gate {gid} expect regex to '{gate.expect}'")
+                            desc = f"GateEvolution: Strengthened weak gate {gid} expect regex to '{gate.expect}'"
+                            proposal.entries.append(MutationEntry(
+                                mutation_type=EvolutionMutationType.GATE_STRENGTHEN,
+                                description=desc,
+                                target_id=gid,
+                            ))
                 except Exception:
                     pass
 
@@ -991,7 +1184,12 @@ class OrganismEvolver:
                         # Isolate environmental flakiness by wrapping check in deterministic subprocess
                         if "LC_ALL=C" not in g.check:
                             g.check = f"LC_ALL=C {g.check}"
-                            mutations.append(f"GateEvolution: Stabilized flaky gate {fg.gate_id} with deterministic locale isolation")
+                            desc = f"GateEvolution: Stabilized flaky gate {fg.gate_id} with deterministic locale isolation"
+                            proposal.entries.append(MutationEntry(
+                                mutation_type=EvolutionMutationType.GATE_STABILIZE,
+                                description=desc,
+                                target_id=fg.gate_id,
+                            ))
             except Exception:
                 pass
 
@@ -1002,35 +1200,51 @@ class OrganismEvolver:
         if concurrency_dim and concurrency_dim.score < 80.0:
             old_workers = graph.max_parallel_workers
             graph.max_parallel_workers = min(16, old_workers * 2)
-            mutations.append(
-                f"StrategyEvolution: Scaled parallel worker pool from {old_workers} to {graph.max_parallel_workers} based on Concurrency Health ({concurrency_dim.score:.1f}/100)"
+            desc = (
+                f"StrategyEvolution: Scaled parallel worker pool from {old_workers} "
+                f"to {graph.max_parallel_workers} based on Concurrency Health ({concurrency_dim.score:.1f}/100)"
             )
+            proposal.entries.append(MutationEntry(
+                mutation_type=EvolutionMutationType.CONCURRENCY_SCALE,
+                description=desc,
+                target_id="graph",
+            ))
 
-        return mutations
+        return proposal
 
 
 class AutonomousOrganism:
     """The Autonomous Execution Organism runtime.
     
     Coordinates end-to-end goal decomposition, reactive execution, and multi-run evolution.
+    Uses EvolutionPolicy for hard convergence criteria and GoodhartDetector
+    for anti-gaming guardrails across generations.
     """
 
     def __init__(
         self,
         goal: str,
         workdir: Optional[Union[str, Path]] = None,
-        max_generations: int = 4,
-        target_score: float = 85.0,
+        max_generations: int = 10,
+        target_score: float = 90.0,
         fabric: Optional[ObservabilityFabric] = None,
         auto_approve: bool = False,
+        evolution_policy: Optional[EvolutionPolicy] = None,
     ):
         self.goal = goal.strip()
         self.workdir = Path(workdir) if workdir else Path(f"./organism_{int(time.time())}")
-        self.max_generations = max(1, max_generations)
-        self.target_score = target_score
         self.auto_approve = auto_approve
 
+        self.policy = evolution_policy or EvolutionPolicy(
+            target_score=target_score,
+            max_generations=max_generations,
+        )
+        self.max_generations = self.policy.max_generations
+        self.target_score = self.policy.target_score
+
         self.fabric = fabric or ObservabilityFabric([InMemoryProbe()])
+        self.mutation_proposals: List[MutationProposal] = []
+        self.goodhart_warnings: List[str] = []
         self.lineage = OrganismLineage(
             goal=self.goal,
             system_name="uninitialized",
@@ -1083,24 +1297,37 @@ class AutonomousOrganism:
         self,
         generation_callback: Optional[Callable[[GenerationRecord], None]] = None,
     ) -> OrganismLineage:
-        """Run autonomous generations until convergence or max_generations."""
+        """Run autonomous generations until convergence or max_generations.
+
+        The closed loop each generation:
+        1. Runtime executes the graph
+        2. Judge scores it
+        3. Trends log it
+        4. Mutation proposes changes (always — even if empty)
+        5. Genesis/Evolver apply them
+        6. GoodhartDetector checks for gaming
+        7. EvolutionPolicy evaluates hard convergence criteria
+        8. Next generation runs automatically (or converge/halt)
+        """
         manifest, ledger, graph = self.bootstrap_genesis()
         trend_store_path = self.workdir / "eval_results" / "trends.jsonl"
         trend_store = TrendStore(filepath=trend_store_path)
+        from dafg.trends import TrendAnalyzer
+        trend_analyzer = TrendAnalyzer(trend_store)
 
         latest_report: Optional[RunQualityReport] = None
 
         for gen in range(1, self.max_generations + 1):
             gen_start = time.time()
 
-            # Execute run
+            # === STEP 1: Runtime executes the graph ===
             run_status = graph.run()
 
-            # Evaluate with Analytics Judge
+            # === STEP 2: Judge scores it ===
             report = RunJudge.evaluate(graph, trend_store_path=trend_store_path)
             latest_report = report
 
-            # Record run to TrendStore
+            # === STEP 3: Trends log it ===
             trend_store.append_run(
                 RunSummary(
                     run_id=graph.run_id,
@@ -1113,7 +1340,7 @@ class AutonomousOrganism:
                 )
             )
 
-            # Check for convergence
+            # Gather convergence signals
             concurrency_dim = report.dimensions.get("concurrency_health") or report.dimensions.get("Concurrency Health")
             concurrency_score = concurrency_dim.score if concurrency_dim else 0.0
 
@@ -1121,39 +1348,43 @@ class AutonomousOrganism:
             total_gates_count = len(ledger.gates)
             all_met = (gates_met_count == total_gates_count and total_gates_count > 0)
 
-            # 1. Anti-Goodharting: Validate Goal Contract invariants (no dropped or hollow gates)
+            # Anti-Goodharting: Validate Goal Contract invariants
             contract_valid = True
             if manifest.goal_contract:
                 contract_valid, contract_violations = manifest.goal_contract.validate_ledger(ledger)
 
-            # 2. Independent Goal Oracle: Verify real behavioral execution independent of self-authored gates
+            # Independent Goal Oracle
             indep_passed, indep_reason = IndependentGoalEvaluator.evaluate_system(manifest, self.workdir)
 
-            # 3. Autonomous Convergence: Aligned with judge.py QualityVerdict.PERFECT (score >= 85.0, FSI < 0.20, VERIFIED_DELIVERY)
-            is_converged = (
-                (report.verdict == QualityVerdict.PERFECT or report.score >= self.target_score)
-                and all_met
-                and report.outcome_status == OutcomeStatus.VERIFIED_DELIVERY.value
-                and contract_valid
-                and indep_passed
+            # === STEP 7: EvolutionPolicy evaluates hard convergence ===
+            policy_converged, blocking_reasons = self.policy.check_convergence(
+                score=report.score,
+                fsi=report.friction_severity_index,
+                all_gates_met=all_met,
+                delivery_state=report.outcome_status,
+                contract_valid=contract_valid,
+                friction_points=report.friction_points,
+                flakiness_index=report.gate_flakiness_index,
             )
 
-            mutations_applied: List[str] = []
-            if not is_converged and gen < self.max_generations:
-                # Evolve organism for next generation
-                mutations_applied = OrganismEvolver.evolve(
-                    graph=graph,
-                    report=report,
-                    ledger=ledger,
-                    trend_store=trend_store,
-                    goal_contract=manifest.goal_contract,
-                )
-                self.lineage.total_mutations += len(mutations_applied)
-                graph.prepare_next_generation(gen + 1)
-                graph.save_state()
+            # Also require independent oracle to pass for final convergence
+            is_converged = policy_converged and contract_valid and indep_passed
 
+            # === STEP 4: Mutation proposes changes (ALWAYS — even if empty) ===
+            proposal = OrganismEvolver.evolve_proposal(
+                graph=graph,
+                report=report,
+                ledger=ledger,
+                trend_store=trend_store,
+                goal_contract=manifest.goal_contract,
+                generation=gen,
+            )
+            self.mutation_proposals.append(proposal)
+            mutations_applied = proposal.descriptions
+
+            # === STEP 6: GoodhartDetector checks for gaming ===
+            # Build gen_record early so detector can see it
             gen_duration = (time.time() - gen_start) * 1000.0
-
             gen_record = GenerationRecord(
                 generation=gen,
                 run_id=graph.run_id,
@@ -1169,8 +1400,16 @@ class AutonomousOrganism:
                 mutations_applied=mutations_applied,
                 duration_ms=round(gen_duration, 2),
             )
-
             self.lineage.generations.append(gen_record)
+
+            # Detect Goodhart pressure across accumulated generations
+            gh_detected, gh_warnings = GoodhartDetector.detect(
+                self.lineage.generations,
+                lookback=self.policy.goodhart_lookback,
+            )
+            if gh_detected:
+                self.goodhart_warnings.extend(gh_warnings)
+
             if generation_callback:
                 generation_callback(gen_record)
 
@@ -1178,13 +1417,26 @@ class AutonomousOrganism:
                 self.lineage.converged = True
                 break
 
+            # === STEP 5: Apply mutations and advance generation ===
+            if gen < self.max_generations and not proposal.is_empty:
+                self.lineage.total_mutations += len(proposal.entries)
+                graph.prepare_next_generation(gen + 1)
+                graph.save_state()
+            elif gen < self.max_generations:
+                # Empty proposal but not converged — still advance to re-evaluate
+                graph.prepare_next_generation(gen + 1)
+                graph.save_state()
+
         if latest_report:
             self.lineage.final_score = latest_report.score
             self.lineage.final_verdict = latest_report.verdict.value
 
-        # Persist lineage
+        # Persist lineage with mutation proposals and Goodhart warnings
+        lineage_data = self.lineage.to_dict()
+        lineage_data["mutation_proposals"] = [p.to_dict() for p in self.mutation_proposals]
+        lineage_data["goodhart_warnings"] = self.goodhart_warnings
         lineage_file = self.workdir / "lineage.json"
-        lineage_file.write_text(json.dumps(self.lineage.to_dict(), indent=2), encoding="utf-8")
+        lineage_file.write_text(json.dumps(lineage_data, indent=2), encoding="utf-8")
 
         return self.lineage
 
