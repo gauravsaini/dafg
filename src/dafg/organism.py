@@ -1163,7 +1163,12 @@ class OrganismEvolver:
                     if adeq.weak:
                         # Strengthen expect pattern
                         old_expect = gate.expect or ""
-                        if not old_expect.startswith("^") and not old_expect.endswith("$"):
+                        if not (
+                            old_expect.startswith("^")
+                            or old_expect.startswith("(?m)^")
+                            or old_expect.startswith("(?s)^")
+                            or old_expect.endswith("$")
+                        ):
                             gate.expect = f"(?m)^{re.escape(old_expect)}.*"
                             desc = f"GateEvolution: Strengthened weak gate {gid} expect regex to '{gate.expect}'"
                             proposal.entries.append(MutationEntry(
