@@ -252,3 +252,254 @@ def test_lint_catches_parenthesized_and_plus_tautological_patterns():
     assert any("tautological EXPECT pattern '[\\s\\S]+'" in m for m in messages)
 
 
+def test_lint_low_specificity_expect_tokens():
+    text = """
+- [ ] G1: Bare zero
+  CHECK: echo 0
+  EXPECT: 0
+  OWNS: src/foo.py
+
+- [ ] G2: Lowercase ok
+  CHECK: echo ok
+  EXPECT: ok
+  OWNS: src/foo.py
+
+- [ ] G3: Uppercase OK
+  CHECK: echo OK
+  EXPECT: OK
+  OWNS: src/foo.py
+
+- [ ] G4: Bare one
+  CHECK: echo 1
+  EXPECT: 1
+  OWNS: src/foo.py
+
+- [ ] G5: Boolean true
+  CHECK: echo true
+  EXPECT: true
+  OWNS: src/foo.py
+
+- [ ] G6: Pass token
+  CHECK: echo pass
+  EXPECT: pass
+  OWNS: src/foo.py
+
+- [ ] G7: Yes token
+  CHECK: echo yes
+  EXPECT: yes
+  OWNS: src/foo.py
+"""
+    ledger = GateLedger.parse(text)
+    issues = GateLinter.lint(ledger)
+    warn_gates = {i.gate_id for i in issues if i.severity == "WARNING" and "low-specificity EXPECT token" in i.message}
+    assert warn_gates == {"G1", "G2", "G3", "G4", "G5", "G6", "G7"}
+
+
+def test_lint_high_specificity_expect_no_warning():
+    text = """
+- [ ] G1: Passed status
+  CHECK: pytest
+  EXPECT: passed
+  OWNS: src/foo.py
+
+- [ ] G2: Specific test count
+  CHECK: pytest
+  EXPECT: OK (tests=15)
+  OWNS: src/foo.py
+
+- [ ] G3: Exit code pattern
+  CHECK: ./run.sh
+  EXPECT: exit_code=0
+  OWNS: src/foo.py
+
+- [ ] G4: Long success string
+  CHECK: make build
+  EXPECT: build_successful
+  OWNS: src/foo.py
+"""
+    ledger = GateLedger.parse(text)
+    issues = GateLinter.lint(ledger)
+    low_spec_warnings = [i for i in issues if "low-specificity EXPECT token" in i.message]
+    assert len(low_spec_warnings) == 0
+
+
+def test_lint_missing_owns_on_runnable_gate_warning():
+    text = """
+- [ ] G1: Runnable without owns
+  CHECK: echo "hello world"
+  EXPECT: hello world
+
+- [ ] G2: Runnable with whitespace owns
+  CHECK: echo "hello world"
+  EXPECT: hello world
+  OWNS:   
+
+- [ ] G3: Runnable with valid owns
+  CHECK: echo "hello world"
+  EXPECT: hello world
+  OWNS: src/foo.py
+"""
+    ledger = GateLedger.parse(text)
+    issues = GateLinter.lint(ledger)
+    owns_warnings = {i.gate_id for i in issues if i.severity == "WARNING" and "declares no OWNS: files" in i.message}
+    assert owns_warnings == {"G1", "G2"}
+    assert "G3" not in owns_warnings
+
+
+def test_lint_manual_gate_no_owns_no_warning():
+    text = """
+- [ ] G1: Manual gate without owns
+  EVIDENCE: verified by architect
+"""
+    ledger = GateLedger.parse(text)
+    issues = GateLinter.lint(ledger)
+    owns_warnings = [i for i in issues if "declares no OWNS: files" in i.message]
+    assert len(owns_warnings) == 0
+
+
+def test_lint_empty_match_regexes():
+    text = """
+- [ ] G1: Empty line anchor
+  CHECK: echo ""
+  EXPECT: ^$
+  OWNS: src/foo.py
+
+- [ ] G2: Match star
+  CHECK: echo ""
+  EXPECT: .*
+  OWNS: src/foo.py
+
+- [ ] G3: Whitespace star
+  CHECK: echo ""
+  EXPECT: \\s*
+  OWNS: src/foo.py
+
+- [ ] G4: Non-empty specific regex
+  CHECK: echo "hello"
+  EXPECT: hello+
+  OWNS: src/foo.py
+"""
+    ledger = GateLedger.parse(text)
+    issues = GateLinter.lint(ledger)
+    empty_warnings = {i.gate_id for i in issues if i.severity == "WARNING" and "matches empty/trivial output" in i.message}
+    assert "G1" in empty_warnings
+    assert "G2" in empty_warnings
+    assert "G3" in empty_warnings
+    assert "G4" not in empty_warnings
+
+
+def test_parse_author_property():
+    text = """
+- [ ] G1: Human gate
+  CHECK: echo "verified"
+  EXPECT: verified
+  AUTHOR: human
+
+- [ ] G2: Planner gate
+  CHECK: echo "planned"
+  EXPECT: planned
+  AUTHOR: Planner
+
+- [ ] G3: Implementer gate
+  CHECK: echo "done"
+  EXPECT: done
+  AUTHOR:   Implementer  
+
+- [ ] G4: External gate
+  CHECK: echo "tested"
+  EXPECT: tested
+  AUTHOR: EXTERNAL
+
+- [ ] G5: Unspecified author
+  CHECK: echo "default"
+  EXPECT: default
+"""
+    ledger = GateLedger.parse(text)
+    assert ledger.gates["G1"].author == "human"
+    assert ledger.gates["G2"].author == "planner"
+    assert ledger.gates["G3"].author == "implementer"
+    assert ledger.gates["G4"].author == "external"
+    assert ledger.gates["G5"].author is None
+
+
+def test_lint_authorship_separation_standard_and_strict():
+    text_standard = """
+- [ ] G1: Implementer authored
+  CHECK: echo "deliverable"
+  EXPECT: deliverable
+  OWNS: src/foo.py
+  AUTHOR: implementer
+
+- [ ] G2: Human authored
+  CHECK: echo "deliverable"
+  EXPECT: deliverable
+  OWNS: src/foo.py
+  AUTHOR: human
+"""
+    # Standard mode: WARNING
+    ledger_std = GateLedger.parse(text_standard)
+    issues_std = GateLinter.lint(ledger_std)
+    auth_issues_std = [i for i in issues_std if "violates authorship separation" in i.message]
+    assert len(auth_issues_std) == 1
+    assert auth_issues_std[0].gate_id == "G1"
+    assert auth_issues_std[0].severity == "WARNING"
+
+    # Strict mode: ERROR
+    text_strict = """MODE: strict
+- [ ] G1: Implementer authored
+  CHECK: echo "deliverable"
+  EXPECT: deliverable
+  OWNS: src/foo.py
+  AUTHOR: implementer
+
+- [ ] G2: Planner authored
+  CHECK: echo "deliverable"
+  EXPECT: deliverable
+  OWNS: src/foo.py
+  AUTHOR: planner
+"""
+    ledger_strict = GateLedger.parse(text_strict)
+    issues_strict = GateLinter.lint(ledger_strict)
+    auth_issues_strict = [i for i in issues_strict if "violates authorship separation" in i.message]
+    assert len(auth_issues_strict) == 1
+    assert auth_issues_strict[0].gate_id == "G1"
+    assert auth_issues_strict[0].severity == "ERROR"
+
+
+def test_lint_quick_mode_suppresses_warnings():
+    text = """MODE: quick
+- [ ] G1: Bare low-spec token without owns
+  CHECK: echo ok
+  EXPECT: ok
+  AUTHOR: implementer
+"""
+    ledger = GateLedger.parse(text)
+    issues = GateLinter.lint(ledger)
+    assert len(issues) == 0
+
+    # But errors are still retained
+    text_err = """MODE: quick
+- [ ] G1: 
+  CHECK: echo ok
+  EXPECT: ok
+"""
+    ledger_err = GateLedger.parse(text_err)
+    issues_err = GateLinter.lint(ledger_err)
+    assert len(issues_err) == 1
+    assert issues_err[0].severity == "ERROR"
+    assert "empty title" in issues_err[0].message
+
+
+def test_mode_header_formats():
+    text1 = "<!-- MODE: quick -->\n- [ ] G1: T\n  CHECK: echo ok\n  EXPECT: ok\n"
+    assert GateLedger.parse(text1).mode == "quick"
+
+    text2 = "# MODE: strict\n- [ ] G1: T\n  CHECK: echo ok\n  EXPECT: ok\n"
+    assert GateLedger.parse(text2).mode == "strict"
+
+    text3 = "mode: standard\n- [ ] G1: T\n  CHECK: echo ok\n  EXPECT: ok\n"
+    assert GateLedger.parse(text3).mode == "standard"
+
+
+
+

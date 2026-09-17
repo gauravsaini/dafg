@@ -3,7 +3,8 @@
 import subprocess
 import pytest
 from dafg.gates import ApprovalStore, Gate, GateLedger
-from dafg.hook import CompletionGuard, StopDecision
+from dafg.hook import CompletionGuard, EvidenceCoverage, StopDecision
+
 
 
 def test_stop_hook_blocks_when_gates_pending():
@@ -336,5 +337,184 @@ def test_stop_hook_blocks_unapproved_commands_on_unmet_gates():
     assert decision.allowed is False
     assert "G1" in decision.unapproved_gates
     assert "G1" in decision.pending_gates
+
+
+def test_stop_decision_evidence_coverage_rollup():
+    """EvidenceCoverage should accurately count tiers and compute coverage percentage."""
+    text = """
+- [x] G1: Executable proof gate
+  CHECK: echo 1
+  EXPECT: 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='1' mutation_tested=true
+
+- [x] G2: String match gate
+  CHECK: echo 2
+  EXPECT: 2
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='2'
+
+- [x] G3: Model judgment manual gate
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='verified manually'
+
+- [ ] G4: Pending gate
+  CHECK: echo 4
+  EXPECT: 4
+  EVIDENCE: pending
+
+- [-] G5: Abandoned gate
+  ABANDON: Dropped from scope due to architecture revision
+"""
+    ledger = GateLedger.parse(text)
+    guard = CompletionGuard(ledger=ledger)
+    decision = guard.evaluate()
+
+    assert decision.coverage is not None
+    cov = decision.coverage
+    assert cov.total == 5
+    assert cov.executable_proof == 1
+    assert cov.string_match == 1
+    assert cov.model_judgment == 1
+    assert cov.pending == 1
+    assert cov.none == 1
+    # runnable_proof = 1 + 1 = 2; 2 / 5 = 40.0%
+    assert cov.coverage_pct == 40.0
+    assert cov.percentage == 40.0
+
+    cov_dict = cov.to_dict()
+    assert cov_dict["total"] == 5
+    assert cov_dict["executable_proof"] == 1
+    assert cov_dict["string_match"] == 1
+    assert cov_dict["model_judgment"] == 1
+    assert cov_dict["pending"] == 1
+    assert cov_dict["none"] == 1
+    assert cov_dict["coverage_pct"] == 40.0
+    assert cov_dict["percentage"] == 40.0
+
+
+def test_stop_hook_cli_coverage_output_human_and_json(tmp_path):
+    """CLI stop-hook should display evidence coverage summary in both human and JSON modes."""
+    gates_file = tmp_path / "GATES.md"
+    gates_file.write_text("""
+- [x] G1: Runnable check
+  CHECK: python -c "print('ok')"
+  EXPECT: ok
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='ok'
+
+- [x] G2: Manual check
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='manual inspection'
+""", encoding="utf-8")
+
+    ledger = GateLedger.parse(gates_file.read_text(encoding="utf-8"), filepath=gates_file)
+    store = ApprovalStore(filepath=tmp_path / ".approved_gates.json")
+    store.approve_all(ledger)
+
+
+    # 1. JSON mode
+    res_json = subprocess.run(
+        ["python", "-m", "dafg.hook", str(gates_file), "--json"],
+        capture_output=True,
+        text=True,
+    )
+    assert res_json.returncode == 0
+    import json
+    data = json.loads(res_json.stdout)
+    assert data["allowed"] is True
+    assert data["decision"] == "allow"
+    assert "coverage" in data
+    assert data["coverage"]["total"] == 2
+    assert data["coverage"]["string_match"] == 1
+    assert data["coverage"]["model_judgment"] == 1
+    assert data["coverage"]["coverage_pct"] == 50.0
+
+    # 2. Human mode
+    res_human = subprocess.run(
+        ["python", "-m", "dafg.hook", str(gates_file)],
+        capture_output=True,
+        text=True,
+    )
+    assert res_human.returncode == 0
+    assert "✓ STOP ALLOWED:" in res_human.stdout
+    assert "Evidence Coverage: 1/2 gates have runnable proof (50.0%), 1 rely on MODEL_JUDGMENT" in res_human.stdout
+
+
+def test_stop_hook_excessive_abandonment_blocks_default_threshold():
+    """CompletionGuard should block when abandon rate exceeds default 50% threshold."""
+    text = """
+- [x] G1: Delivered gate
+  CHECK: echo 1
+  EXPECT: 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='1'
+
+- [-] G2: Abandoned gate A
+  ABANDON: Dropped due to descope from project requirements
+
+- [-] G3: Abandoned gate B
+  ABANDON: Deferred to subsequent major milestone release
+"""
+    ledger = GateLedger.parse(text)
+    guard = CompletionGuard(ledger=ledger)
+    decision = guard.evaluate()
+
+    assert decision.allowed is False
+    assert decision.decision == "block"
+    assert decision.outcome_status == "EXCESSIVE_ABANDONMENT"
+    assert "EXCESSIVE_ABANDONMENT: 2/3 gates abandoned (66.7%) exceeds threshold of 50.0%." in decision.reason
+    assert decision.coverage is not None
+    assert decision.coverage.total == 3
+
+
+def test_stop_hook_abandon_threshold_override_blocks_on_lower_threshold():
+    """CompletionGuard respects ABANDON_THRESHOLD: 0.25 and blocks when abandon rate exceeds it."""
+    text = """
+ABANDON_THRESHOLD: 0.25
+
+- [x] G1: Delivered gate A
+  CHECK: echo 1
+  EXPECT: 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='1'
+
+- [x] G2: Delivered gate B
+  CHECK: echo 2
+  EXPECT: 2
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='2'
+
+- [-] G3: Abandoned gate C
+  ABANDON: Dropped because alternative architecture was selected
+"""
+    ledger = GateLedger.parse(text)
+    assert ledger.abandon_threshold == 0.25
+    guard = CompletionGuard(ledger=ledger)
+    decision = guard.evaluate()
+
+    assert decision.allowed is False
+    assert decision.decision == "block"
+    assert decision.outcome_status == "EXCESSIVE_ABANDONMENT"
+    assert "EXCESSIVE_ABANDONMENT: 1/3 gates abandoned (33.3%) exceeds threshold of 25.0%." in decision.reason
+
+
+def test_stop_hook_abandon_threshold_override_allows_on_higher_threshold():
+    """CompletionGuard respects ABANDON_THRESHOLD: 0.80 and allows 66% abandon rate."""
+    text = """
+ABANDON_THRESHOLD: 80%
+
+- [x] G1: Delivered gate
+  CHECK: echo 1
+  EXPECT: 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='1'
+
+- [-] G2: Abandoned gate A
+  ABANDON: Dropped due to descope from project requirements
+
+- [-] G3: Abandoned gate B
+  ABANDON: Deferred to subsequent major milestone release
+"""
+    ledger = GateLedger.parse(text)
+    assert ledger.abandon_threshold == 0.80
+    guard = CompletionGuard(ledger=ledger)
+    decision = guard.evaluate()
+
+    assert decision.allowed is True
+    assert decision.decision == "allow"
+    assert decision.outcome_status == "HANDOFF_REQUIRED"
+    assert len(decision.abandoned_gates) == 2
 
 

@@ -8,6 +8,7 @@ ledger.
 from __future__ import annotations
 
 import argparse
+import ast
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import fcntl
@@ -27,12 +28,21 @@ GATE_HEADER_RE = re.compile(
 )
 MALFORMED_HEADER_RE = re.compile(r"^[ \t]*-\s*\[.*\]")
 PROPERTY_RE = re.compile(
-    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS_READ|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET):\s*(?P<value>.*)$",
+    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS_READ|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET|AUTHOR):\s*(?P<value>.*)$",
     re.IGNORECASE,
 )
 TOP_ABANDON_RE = re.compile(
     r"^ABANDON:\s*(?P<id>[A-Za-z0-9_.:-]+)(?:\s+(?P<reason>.*))?$"
 )
+MODE_HEADER_RE = re.compile(
+    r"^[ \t]*(?:<!--[ \t]*)?(?:#\s*)?MODE:\s*(?P<mode>[A-Za-z]+)(?:[ \t]*-->)?",
+    re.IGNORECASE,
+)
+ABANDON_THRESHOLD_RE = re.compile(
+    r"^[ \t]*(?:<!--[ \t]*)?(?:#\s*)?ABANDON_THRESHOLD:\s*(?P<val>[0-9.]+%?)(?:[ \t]*-->)?",
+    re.IGNORECASE,
+)
+
 
 TAUTOLOGICAL_PATTERNS = {
     ".*",
@@ -101,6 +111,7 @@ class Gate:
     determinism: Optional[str] = None
     adversarial: Optional[str] = None
     adversarial_budget: Optional[int] = None
+    author: Optional[str] = None  # human, planner, implementer, external
     header_index: int = -1
     evidence_index: Optional[int] = None
     abandon_index: Optional[int] = None
@@ -127,7 +138,14 @@ def classify_evidence(gate: Gate) -> EvidenceStrength:
         # Manual gate with evidence but no CHECK command
         return EvidenceStrength.MODEL_JUDGMENT
     if "exit_code=0" in gate.evidence:
-        if getattr(gate, 'mutation_tested', False):
+        has_mutation_proof = False
+        if getattr(gate, "mutation_tested", False):
+            has_mutation_proof = True
+        elif re.search(r"\bmutation_tested=(?:true|1)\b", gate.evidence, re.IGNORECASE):
+            has_mutation_proof = True
+        if re.search(r"\bmutation_tested=(?:false|0)\b", gate.evidence, re.IGNORECASE):
+            has_mutation_proof = False
+        if has_mutation_proof:
             return EvidenceStrength.EXECUTABLE_PROOF
         return EvidenceStrength.STRING_MATCH
     return EvidenceStrength.PENDING
@@ -220,6 +238,8 @@ class GateLedger:
         self.abandonments: Dict[str, str] = {}
         self.duplicate_ids: List[Tuple[str, int]] = []
         self.syntax_errors: List[LintIssue] = []
+        self.mode: str = "standard"  # quick, standard, strict
+        self.abandon_threshold: float = 0.5  # block if abandon rate exceeds this
 
     @classmethod
     def parse(
@@ -239,6 +259,35 @@ class GateLedger:
 
         for idx, line in enumerate(lines):
             line_no = idx + 1
+            # Check top-level MODE header: MODE: quick / standard / strict
+            mode_match = MODE_HEADER_RE.match(line)
+            if mode_match:
+                parsed_mode = mode_match.group("mode").strip().lower()
+                if parsed_mode in ("quick", "standard", "strict"):
+                    ledger.mode = parsed_mode
+                else:
+                    ledger.syntax_errors.append(LintIssue(
+                        severity="ERROR",
+                        gate_id=None,
+                        message=f"Invalid MODE: '{parsed_mode}' (must be quick, standard, or strict)",
+                        line_number=line_no,
+                    ))
+                continue
+
+            # Check top-level ABANDON_THRESHOLD header: ABANDON_THRESHOLD: 0.5 / 50%
+            thresh_match = ABANDON_THRESHOLD_RE.match(line)
+            if thresh_match:
+                raw_v = thresh_match.group("val").strip()
+                try:
+                    ledger.abandon_threshold = float(raw_v[:-1]) / 100.0 if raw_v.endswith("%") else float(raw_v)
+                except ValueError:
+                    ledger.syntax_errors.append(LintIssue(
+                        severity="ERROR", gate_id=None,
+                        message=f"Invalid ABANDON_THRESHOLD value: '{raw_v}'", line_number=line_no,
+                    ))
+                continue
+
+
             # Check top-level ABANDON line: ABANDON: <id> <reason>
             abandon_match = TOP_ABANDON_RE.match(line)
             if abandon_match:
@@ -349,6 +398,8 @@ class GateLedger:
                             current_gate.adversarial_budget = int(val)
                         except ValueError:
                             pass
+                    elif key_upper == "AUTHOR":
+                        current_gate.author = val.strip().lower()
                 continue
 
             if current_gate is not None:
@@ -500,10 +551,20 @@ class ApprovalStore:
     gate ID, command, cwd, and expect pattern.
     """
 
-    def __init__(self, filepath: Optional[Union[str, Path]] = None, auto_approve: bool = False):
+    DANGEROUS_METACHARACTERS = ("|", "&&", ";", ">", "`")
+    DANGEROUS_COMMANDS_RE = re.compile(r"\b(curl|wget|rm|chmod)\b", re.IGNORECASE)
+
+    def __init__(
+        self,
+        filepath: Optional[Union[str, Path]] = None,
+        auto_approve: bool = False,
+        mode: str = "standard",
+    ):
         self.filepath = Path(filepath) if filepath else None
         self.auto_approve = auto_approve
+        self.mode = (mode or "standard").lower()
         self.approved_signatures: Set[str] = set()
+        self.approved_patterns: Set[str] = set()
         if self.filepath and self.filepath.exists():
             self.load()
 
@@ -512,12 +573,52 @@ class ApprovalStore:
         key = f"{gate.id}|{gate.check or ''}|{gate.cwd or ''}|{gate.expect or ''}"
         return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
+    @classmethod
+    def is_safe_for_pattern(cls, text: str) -> bool:
+        """Check if command or pattern text is safe for pattern-based evaluation."""
+        if not text:
+            return False
+        if any(meta in text for meta in cls.DANGEROUS_METACHARACTERS):
+            return False
+        if cls.DANGEROUS_COMMANDS_RE.search(text):
+            return False
+        return True
+
+    def approve_pattern(self, pattern: str) -> None:
+        """Approve a regex pattern for safe command classes."""
+        if not self.is_safe_for_pattern(pattern):
+            raise ValueError(
+                "Pattern contains dangerous metacharacters or operations barred from pattern approvals"
+            )
+        try:
+            re.compile(pattern)
+        except re.error as e:
+            raise ValueError(f"Invalid regex pattern '{pattern}': {e}")
+        if self.filepath and self.filepath.exists():
+            self.load()
+        self.approved_patterns.add(pattern)
+        self.save()
+
     def is_approved(self, gate: Gate) -> bool:
         if self.auto_approve:
             return True
         if not gate.check:
             return False
-        return self.signature(gate) in self.approved_signatures
+        # 1. Exact SHA-256 signature always satisfies approval
+        if self.signature(gate) in self.approved_signatures:
+            return True
+        # 2. In quick mode, safe commands are automatically approved
+        if self.mode == "quick" and self.is_safe_for_pattern(gate.check):
+            return True
+        # 3. Check approved regex patterns (only if command is safe)
+        if self.approved_patterns and self.is_safe_for_pattern(gate.check):
+            for pat in self.approved_patterns:
+                try:
+                    if re.search(pat, gate.check):
+                        return True
+                except re.error:
+                    continue
+        return False
 
     def approve(self, gate: Gate) -> None:
         if gate.check:
@@ -547,7 +648,14 @@ class ApprovalStore:
             with open(lock_file, "w") as lf:
                 try:
                     fcntl.flock(lf.fileno(), fcntl.LOCK_EX)
-                    tmp_file.write_text(json.dumps(sorted(list(self.approved_signatures)), indent=2), encoding="utf-8")
+                    if self.approved_patterns:
+                        payload: Union[Dict[str, List[str]], List[str]] = {
+                            "approved_signatures": sorted(list(self.approved_signatures)),
+                            "approved_patterns": sorted(list(self.approved_patterns)),
+                        }
+                    else:
+                        payload = sorted(list(self.approved_signatures))
+                    tmp_file.write_text(json.dumps(payload, indent=2), encoding="utf-8")
                     os.replace(tmp_file, self.filepath)
                 finally:
                     try:
@@ -561,6 +669,13 @@ class ApprovalStore:
                 data = json.loads(self.filepath.read_text(encoding="utf-8"))
                 if isinstance(data, list):
                     self.approved_signatures.update(data)
+                elif isinstance(data, dict):
+                    self.approved_signatures.update(
+                        data.get("approved_signatures", data.get("signatures", []))
+                    )
+                    self.approved_patterns.update(
+                        data.get("approved_patterns", data.get("patterns", []))
+                    )
             except Exception:
                 pass
 
@@ -744,6 +859,68 @@ class GateLinter:
                     )
                 )
 
+            # Low-specificity EXPECT token check (R2)
+            if gate.expect is not None and gate.check is not None:
+                token = gate.expect.strip()
+                if token and (len(token) <= 3 or token.lower() in {"ok", "0", "1", "true", "yes", "pass"}):
+                    issues.append(
+                        LintIssue(
+                            severity="WARNING",
+                            gate_id=gid,
+                            message=f"Gate '{gid}' has low-specificity EXPECT token '{gate.expect}': bare tokens ≤3 chars trivially match incidental output",
+                            line_number=gate.line_number,
+                        )
+                    )
+
+            # Patterns matching empty/trivial output (R2)
+            if gate.expect is not None and gate.expect.strip():
+                try:
+                    rx = re.compile(gate.expect)
+                    if rx.search("") is not None:
+                        issues.append(
+                            LintIssue(
+                                severity="WARNING",
+                                gate_id=gid,
+                                message=f"Gate '{gid}' has EXPECT pattern '{gate.expect}' which matches empty/trivial output",
+                                line_number=gate.line_number,
+                            )
+                        )
+                except re.error:
+                    pass
+
+            # Runnable check missing OWNS: check (R2)
+            if gate.check is not None and gate.check.strip() and gate.status != "ABANDONED":
+                if not gate.owns or not gate.owns.strip():
+                    issues.append(
+                        LintIssue(
+                            severity="WARNING",
+                            gate_id=gid,
+                            message=f"Gate '{gid}' is a runnable check but declares no OWNS: files",
+                            line_number=gate.line_number,
+                        )
+                    )
+
+            # Authorship separation check (R4, R6)
+            if gate.author and gate.author.lower() == "implementer":
+                issues.append(
+                    LintIssue(
+                        severity="ERROR" if getattr(ledger, "mode", "standard") == "strict" else "WARNING",
+                        gate_id=gid,
+                        message=f"Gate '{gid}' has AUTHOR: implementer on deliverable (violates authorship separation)",
+                        line_number=gate.line_number,
+                    )
+                )
+            elif getattr(ledger, "mode", "standard") == "strict" and gate.status != "ABANDONED":
+                if not gate.author or not gate.author.strip():
+                    issues.append(
+                        LintIssue(
+                            severity="ERROR",
+                            gate_id=gid,
+                            message=f"Gate '{gid}' missing AUTHOR: in strict mode (independent authorship required)",
+                            line_number=gate.line_number,
+                        )
+                    )
+
         # 3. Top-level abandonments referencing unknown IDs
         for gid, reason in ledger.abandonments.items():
             if gid not in ledger.gates:
@@ -804,6 +981,10 @@ class GateLinter:
                     message=f"Gate '{gid}' CHECK reads the ledger file — potential ledger-state coupling",
                     line_number=gate.line_number,
                 ))
+
+        # Quick mode filter: errors only
+        if getattr(ledger, "mode", "standard") == "quick":
+            issues = [i for i in issues if i.severity == "ERROR"]
 
         return issues
 
@@ -1237,6 +1418,141 @@ class GateEngine:
         return results
 
 
+def bootstrap_ledger(root: Union[str, Path] = Path(".")) -> GateLedger:
+    """Discovers tests and scaffolds an initial valid GATES.md."""
+    root_path = Path(root).resolve()
+    ignore_dirs = {
+        ".git", "node_modules", "__pycache__", ".venv", "venv",
+        ".agents", "dist", "build", ".pytest_cache", "eval_results",
+    }
+    test_files: List[Path] = []
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        dirnames[:] = [d for d in dirnames if d not in ignore_dirs and not d.startswith(".")]
+        for fname in filenames:
+            is_py_test = (fname.startswith("test_") and fname.endswith(".py")) or fname.endswith("_test.py")
+            is_js_test = any(fname.endswith(ext) for ext in (".test.js", ".test.ts", ".spec.js", ".spec.ts"))
+            if is_py_test or is_js_test:
+                test_files.append(Path(dirpath) / fname)
+
+    test_files.sort(key=lambda p: p.relative_to(root_path).as_posix())
+
+    gates_md_lines = [
+        "# Project Acceptance Gates",
+        "MODE: standard",
+        "",
+    ]
+
+    import_re = re.compile(
+        r"""(?:import\s+.*?\s+from\s+['"]([^'"]+)['"]|require\s*\(\s*['"]([^'"]+)['"]\s*\))"""
+    )
+
+    if not test_files:
+        owns_fallback = "src/" if (root_path / "src").is_dir() else "."
+        gates_md_lines.extend([
+            "- [ ] G1: Project initial test suite",
+            "  CHECK: uv run pytest -q",
+            "  EXPECT: passed",
+            f"  OWNS: {owns_fallback}",
+            "  EVIDENCE: pending",
+            "  AUTHOR: external",
+            "",
+        ])
+    else:
+        for idx, tf in enumerate(test_files, start=1):
+            gid = f"G{idx}"
+            title = f"Test suite {tf.name}"
+            rel_str = tf.relative_to(root_path).as_posix()
+            owned_files: Set[str] = set()
+
+            if tf.suffix == ".py":
+                check_cmd = f"uv run pytest {rel_str} -q"
+                expect_pat = "passed"
+                try:
+                    content = tf.read_text(encoding="utf-8", errors="replace")
+                    tree = ast.parse(content, filename=str(tf))
+                    cands: Set[str] = set()
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Import):
+                            for n in node.names:
+                                cands.add(n.name)
+                        elif isinstance(node, ast.ImportFrom):
+                            if node.module:
+                                cands.add(node.module)
+                                for n in node.names:
+                                    cands.add(f"{node.module}.{n.name}")
+                    for mod in cands:
+                        parts = mod.split(".")
+                        for cand in [
+                            root_path / "src" / f"{Path(*parts)}.py",
+                            root_path / "src" / Path(*parts) / "__init__.py",
+                            root_path / f"{Path(*parts)}.py",
+                            root_path / Path(*parts) / "__init__.py",
+                        ]:
+                            if cand.is_file() and not any(part in ignore_dirs for part in cand.parts):
+                                cand_rel = cand.relative_to(root_path)
+                                if "tests" not in cand_rel.parts and not (cand_rel.name.startswith("test_") or cand_rel.name.endswith("_test.py")):
+                                    owned_files.add(cand_rel.as_posix())
+                    non_init = [f for f in owned_files if not f.endswith("__init__.py")]
+                    if non_init:
+                        owned_files = set(non_init)
+                except Exception:
+                    pass
+            else:
+                check_cmd = f"node {rel_str}"
+                expect_pat = "passed"
+                try:
+                    content = tf.read_text(encoding="utf-8", errors="replace")
+                    for m in import_re.finditer(content):
+                        specifier = m.group(1) or m.group(2)
+                        if specifier:
+                            spec_paths = [
+                                (tf.parent / specifier).resolve(),
+                                (root_path / specifier.lstrip("/")).resolve(),
+                            ]
+                            for base in spec_paths:
+                                for cand in [
+                                    base,
+                                    base.with_suffix(".js"),
+                                    base.with_suffix(".ts"),
+                                    base / "index.js",
+                                    base / "index.ts",
+                                ]:
+                                    if cand.is_file() and not any(part in ignore_dirs for part in cand.parts):
+                                        try:
+                                            cand_rel = cand.relative_to(root_path)
+                                            if "tests" not in cand_rel.parts and "test" not in cand_rel.name:
+                                                owned_files.add(cand_rel.as_posix())
+                                        except ValueError:
+                                            pass
+                except Exception:
+                    pass
+
+            if owned_files:
+                owns_str = ", ".join(sorted(list(owned_files)))
+            else:
+                owns_str = "src/" if (root_path / "src").is_dir() else rel_str
+
+            gates_md_lines.extend([
+                f"- [ ] {gid}: {title}",
+                f"  CHECK: {check_cmd}",
+                f"  EXPECT: {expect_pat}",
+                f"  OWNS: {owns_str}",
+                f"  EVIDENCE: pending",
+                f"  AUTHOR: external",
+                "",
+            ])
+
+    ledger_text = "\n".join(gates_md_lines)
+    ledger = GateLedger.parse(ledger_text, filepath=root_path / "GATES.md", work_dir=root_path)
+    issues = GateLinter.lint(ledger)
+    errors = [i for i in issues if i.severity == "ERROR"]
+    warnings = [i for i in issues if i.severity == "WARNING"]
+    if errors or warnings:
+        issue_msgs = [f"[{i.severity}] {i.gate_id or 'GENERAL'}: {i.message}" for i in issues]
+        raise ValueError(f"Bootstrapped ledger failed lint check: {'; '.join(issue_msgs)}")
+    return ledger
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Deterministic Gate Ledger Engine")
     parser.add_argument("file", nargs="?", default="GATES.md", help="Path to GATES.md")
@@ -1247,12 +1563,34 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--reverify", action="store_true", help="Reverify previously met gates")
     parser.add_argument("--trends", action="store_true", help="Show trend briefing from recent runs")
     parser.add_argument("--approvals-file", default=".approved_gates.json", help="Path to approvals file")
+    parser.add_argument("--pattern", default=None, help="Regex pattern to approve (used with --approve)")
+    parser.add_argument("--bootstrap", action="store_true", help="Bootstrap initial GATES.md from existing test files")
     parser.add_argument("--mutate", action="store_true", help="Run mutation adequacy tests on gates")
     parser.add_argument("--repair", action="store_true", help="Run failing gates through the repair loop")
     parser.add_argument("--repair-fn", default=None, help="Path to repair script (receives gate_id, diagnosis, check as args)")
     parser.add_argument("--max-repair-attempts", type=int, default=3, help="Maximum repair attempts per gate")
     parser.add_argument("--adversarial", action="store_true", help="Run adversarial search on gates with ADVERSARIAL config")
     args = parser.parse_args(argv)
+
+    if args.bootstrap:
+        target_path = Path(args.file)
+        ledger = bootstrap_ledger(Path("."))
+        target_path.write_text(ledger.serialize(), encoding="utf-8")
+        print(f"✓ Bootstrapped {len(ledger.gates)} gates into '{target_path}' from project tests.")
+        return 0
+
+    if args.pattern:
+        appr_path = Path(args.approvals_file)
+        if args.approvals_file == ".approved_gates.json" and Path(args.file).is_file() and (Path(args.file).parent / ".approved_gates.json").exists():
+            appr_path = Path(args.file).parent / ".approved_gates.json"
+        store = ApprovalStore(filepath=appr_path)
+        try:
+            store.approve_pattern(args.pattern)
+            print(f"✓ Approved pattern '{args.pattern}' (saved to {appr_path})")
+            return 0
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
 
     ledger_path = Path(args.file)
     if not ledger_path.exists():
@@ -1278,10 +1616,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             if issue.severity == "ERROR":
                 has_errors = True
             print(f"[{issue.severity}] Line {issue.line_number} (Gate {issue.gate_id or 'GENERAL'}): {issue.message}")
+        if not has_errors:
+            print(f"✓ Ledger lint passed: 0 errors, {len(issues)} warning(s) found.")
+            return 0
+        return 1
+
     appr_path = Path(args.approvals_file)
     if args.approvals_file == ".approved_gates.json" and (ledger_path.parent / ".approved_gates.json").exists():
         appr_path = ledger_path.parent / ".approved_gates.json"
-    approval_store = ApprovalStore(filepath=appr_path)
+    approval_store = ApprovalStore(filepath=appr_path, mode=getattr(ledger, "mode", "standard"))
 
     if args.approve:
         approval_store.approve_all(ledger)
@@ -1359,12 +1702,15 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.mutate:
         from dafg.mutation import GateMutator
-        mutator = GateMutator()
+        if getattr(ledger, "mode", "standard") == "quick":
+            print("Notice: Mutation testing is disabled in quick mode.")
+            return 0
+        mutator = GateMutator(mode=getattr(ledger, "mode", "standard"))
         weak_gates = []
         for gid, gate in ledger.gates.items():
             if not gate.check or gate.status == "ABANDONED":
                 continue
-            report = mutator.test_adequacy(gate, cwd=ledger_path.parent)
+            report = mutator.test_adequacy(gate, cwd=ledger_path.parent, mode=getattr(ledger, "mode", "standard"))
             strength = "STRONG" if not report.weak else "WEAK"
             print(f"{gid:10} kill_rate={report.kill_rate:.0%} {strength}")
             for r in report.results:

@@ -25,7 +25,7 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from dafg.observe import ObservabilityFabric
 
-from dafg.gates import Gate, GateEngine, GateLedger, GateResult
+from dafg.gates import EvidenceStrength, Gate, GateEngine, GateLedger, GateResult, classify_evidence
 from dafg.protocol import (
     Action,
     AuditRecord,
@@ -2896,6 +2896,11 @@ class DAFG:
             g_met = sum(1 for g in self.ledger.gates.values() if g.status == "MET")
             g_pending = sum(1 for g in self.ledger.gates.values() if g.status == "PENDING")
             g_abandoned = sum(1 for g in self.ledger.gates.values() if g.status == "ABANDONED")
+            r_proof = sum(
+                1 for g in self.ledger.gates.values()
+                if classify_evidence(g) in (EvidenceStrength.EXECUTABLE_PROOF, EvidenceStrength.STRING_MATCH)
+            )
+            cov_pct = round((r_proof / g_total) * 100.0, 1) if g_total > 0 else 0.0
             gates_info = {
                 "available": True,
                 "total": g_total,
@@ -2903,16 +2908,26 @@ class DAFG:
                 "pending": g_pending,
                 "abandoned": g_abandoned,
                 "pass_rate": round(g_met / g_total, 4) if g_total > 0 else 0.0,
+                "evidence_coverage": cov_pct,
+                "coverage_pct": cov_pct,
             }
         elif self.gate_states:
             g_total = len(self.gate_states)
             g_met = sum(1 for g in self.gate_states.values() if g.get("status") == "MET")
+            r_proof = sum(
+                1 for g in self.gate_states.values()
+                if "exit_code=0" in str(g.get("evidence") or "")
+            )
+            cov_pct = round((r_proof / g_total) * 100.0, 1) if g_total > 0 else 0.0
             gates_info = {
                 "available": True,
                 "total": g_total,
                 "met": g_met,
                 "pass_rate": round(g_met / g_total, 4) if g_total > 0 else 0.0,
+                "evidence_coverage": cov_pct,
+                "coverage_pct": cov_pct,
             }
+
 
         base_analytics = {
             "run_id": self.run_id,

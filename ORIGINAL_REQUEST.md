@@ -139,3 +139,85 @@ Execute an unscripted multi-generation run under DAFG organism supervision. Run 
 
 ### Empirical Correlation
 - [ ] `dafg compare` outputs an objective comparison showing the external ground-truth suite pass rate alongside DAFG's internal score, confirming whether `VERIFIED_DELIVERY` represents real external functional validity.
+
+## 2026-09-17T12:33:39Z
+
+Implement "Verifying the Verification" in DAFG: resolve the six core architectural limitations of gate-driven verification by adding source-file mutation testing, an opinionated gate linter, explicit evidence coverage rollups, gate authorship separation with abandon rate escalation, pattern-based approvals, and proportional discipline with automated test bootstrapping.
+
+Working directory: /Users/ektasaini/Desktop/framework
+Integrity mode: development
+
+## Requirements
+
+### R1. Source-File Mutation Testing (`mutation.py`)
+Implement `MutationStrategy.SOURCE_SABOTAGE` in `GateMutator`. For any runnable gate with declared `OWNS:` files, temporarily inject syntactically valid defects (e.g., raised exceptions, altered returns) into the target source files in a safe backup-and-restore harness. Verify that the gate's `CHECK:` command fails when code is broken. Gates surviving mutation testing must be classified as `EvidenceStrength.EXECUTABLE_PROOF`.
+
+### R2. Opinionated Gate Linter (`gates.py`)
+Enhance `GateLinter` with high-standard verification rules:
+- Reject or warn on low-specificity `EXPECT:` tokens (e.g. bare single tokens ≤3 chars like `0`, `ok`, `OK`) that trivially match incidental output.
+- Flag runnable `CHECK:` gates that declare no `OWNS:` files, preventing unowned/unverifiable checks.
+- Flag patterns that match trivial/empty output.
+
+### R3. Evidence Coverage Rollup & Transparency (`hook.py`, `judge.py`)
+Surface the verifiable vs. subjective ratio explicitly:
+- `CompletionGuard.evaluate()` must compute and report an `EvidenceCoverage` breakdown (`executable_proof`, `string_match`, `model_judgment`, `pending`, `none`, and overall coverage percentage).
+- Stop hook output must state clear coverage metrics (e.g. "5/8 gates have runnable proof (62.5%), 3 rely on MODEL_JUDGMENT").
+- `RunJudge` must integrate evidence coverage percentage into the Verification Integrity score and flag low-coverage runs as friction points.
+
+### R4. Gate Authorship Separation & Anti-Goodhart Escalation (`gates.py`, `hook.py`)
+Prevent agents from gaming acceptance criteria:
+- Add an `AUTHOR:` property to gates (`human`, `planner`, `implementer`, `external`).
+- `GateLinter` flags warnings when `AUTHOR: implementer` is detected on its own deliverables.
+- `CompletionGuard` tracks ledger abandon rates. If abandoned gates exceed a threshold (default 50%, configurable via `ABANDON_THRESHOLD:` header), stop-hook blocks completion with `EXCESSIVE_ABANDONMENT`.
+
+### R5. Pattern-Based Command Approvals (`gates.py`, `cli.py`)
+Remove the per-command approval bottleneck without compromising security:
+- `ApprovalStore` supports pattern-based approvals (`approved_patterns`) alongside exact SHA-256 signatures.
+- Safe command classes (e.g. `uv run pytest *`, `node test_*`) can be approved by pattern.
+- Metacharacters (`|`, `&&`, `;`, `>`, `` ` ``), network commands (`curl`, `wget`), and destructive operations (`rm`, `chmod`) are strictly barred from pattern approvals and require explicit per-command sign-off.
+- CLI supports `gates --approve --pattern "<regex>"`.
+
+### R6. Proportional Ceremony & Test Bootstrapping (`gates.py`, `cli.py`)
+Make discipline proportional to task scale:
+- Support `MODE: quick | standard | strict` in `GATES.md`.
+  - `quick`: Auto-approves safe pattern checks, disables mutation testing, errors-only linting.
+  - `standard`: Default full verification discipline.
+  - `strict`: Requires mutation testing on all gates and enforces independent authorship.
+- Implement `dafg gates --bootstrap` (or `gates --bootstrap`): scans existing project test files (`test_*.py`, `*.test.js`), extracts imports to populate `OWNS:`, and generates an initial draft `GATES.md`.
+
+## Acceptance Criteria
+
+### Mutation Adequacy
+- [ ] `GateMutator.mutate(gate, MutationStrategy.SOURCE_SABOTAGE)` modifies owned source files, verifies the gate check fails, and restores files safely under all exit conditions.
+- [ ] A gate that passes both original check and source sabotage check achieves `EvidenceStrength.EXECUTABLE_PROOF`.
+
+### Linter Rigor
+- [ ] `GateLinter.lint()` emits warnings for low-specificity `EXPECT:` strings (e.g., `0`, `ok`).
+- [ ] `GateLinter.lint()` warns when runnable gates lack `OWNS:` declarations.
+
+### Evidence Transparency
+- [ ] `StopDecision` includes an `EvidenceCoverage` rollup object with exact counts and percentage.
+- [ ] `stop-hook` CLI outputs evidence coverage stats in human-readable and JSON modes.
+- [ ] `RunJudge` docks points and logs friction when evidence coverage is below 50%.
+
+### Authorship & Abandonment Safeguards
+- [ ] `Gate` parses and preserves `AUTHOR:` field from `GATES.md`.
+- [ ] Ledgers with >50% abandoned gates are rejected by `CompletionGuard` with `EXCESSIVE_ABANDONMENT`.
+- [ ] `ABANDON_THRESHOLD:` header in `GATES.md` allows overriding the threshold.
+
+### Pattern Approvals
+- [ ] `ApprovalStore.is_approved(gate)` returns `True` for commands matching safe approved regex patterns.
+- [ ] Dangerous commands (containing `&&`, `|`, `;`, `curl`, `rm`) are rejected from pattern approval.
+- [ ] `gates --approve --pattern "<regex>"` stores pattern in `.approved_gates.json`.
+
+### Proportional Discipline
+- [ ] `GateLedger` parses `MODE:` header and applies `quick`, `standard`, or `strict` behavior across linter and approval validation.
+- [ ] `gates --bootstrap` automatically discovers test files and generates a valid, lint-passing `GATES.md`.
+
+### Zero Regression
+- [ ] All existing tests continue to pass (`uv run pytest -q` passes 529+ tests offline).
+- [ ] New automated unit tests cover all 6 requirements.
+
+## 2026-09-17T23:00:14Z
+
+The quota window has reset. Please resume execution. Milestones M1 and M2 are completed and passing tests (67 passed in test_mutation.py, test_gates_linter.py, test_adversarial_m1.py, test_mutation_adversarial.py). Please proceed with Milestone M3 (Evidence Coverage Rollup & Transparency in hook.py and judge.py) and onwards.

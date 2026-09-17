@@ -207,3 +207,150 @@ def test_judge_report_formatting():
     assert "GATE FLAKINESS INDEX:    0.00" in formatted
     assert "[SERIAL_CONFLICT]" in formatted
     assert "Split 'x.py' ownership." in formatted
+
+
+def test_judge_docks_points_and_logs_friction_on_low_coverage():
+    """RunJudge docks Verification Integrity points and logs LOW_EVIDENCE_COVERAGE when coverage < 50%."""
+    # Test 1: Coverage = 25.0% (severity MEDIUM)
+    analytics_med = {
+        "run_id": "test_med_cov",
+        "funnel": {"accepted_nodes": 1, "total_nodes": 1},
+        "concurrency": {"steps": 1, "avg_concurrency_ratio": 1.0, "total_conflict_deferrals": 0, "domain_deferrals": 0},
+        "triad": {},
+        "critical_path": {},
+        "budget": {},
+        "gates": {
+            "available": True,
+            "total": 4,
+            "met": 4,
+            "pending": 0,
+            "abandoned": 0,
+            "pass_rate": 1.0,
+            "evidence_coverage": 25.0,
+            "coverage_pct": 25.0,
+        },
+    }
+    report_med = RunJudge.evaluate_from_analytics(analytics_med)
+    dim_verif = report_med.dimensions["verification_integrity"]
+    # dock = (50 - 25) * 0.5 = 12.5 -> score = 100 - 12.5 = 87.5
+    assert dim_verif.score == 87.5
+
+    cov_fps = [fp for fp in report_med.friction_points if fp.category == "LOW_EVIDENCE_COVERAGE"]
+    assert len(cov_fps) == 1
+    assert cov_fps[0].severity == FrictionSeverity.MEDIUM
+    assert cov_fps[0].impact == 0.5
+    assert cov_fps[0].details["coverage_pct"] == 25.0
+    assert any("Replace subjective manual gates with executable CHECK" in rec for rec in report_med.recommendations)
+
+    # Test 2: Coverage = 10.0% (severity HIGH)
+    analytics_high = {
+        "run_id": "test_high_cov",
+        "funnel": {"accepted_nodes": 1, "total_nodes": 1},
+        "concurrency": {"steps": 1, "avg_concurrency_ratio": 1.0, "total_conflict_deferrals": 0, "domain_deferrals": 0},
+        "triad": {},
+        "critical_path": {},
+        "budget": {},
+        "gates": {
+            "available": True,
+            "total": 10,
+            "met": 10,
+            "pending": 0,
+            "abandoned": 0,
+            "pass_rate": 1.0,
+            "evidence_coverage": 10.0,
+            "coverage_pct": 10.0,
+        },
+    }
+    report_high = RunJudge.evaluate_from_analytics(analytics_high)
+    cov_fps_high = [fp for fp in report_high.friction_points if fp.category == "LOW_EVIDENCE_COVERAGE"]
+    assert len(cov_fps_high) == 1
+    assert cov_fps_high[0].severity == FrictionSeverity.HIGH
+    # dock = (50 - 10) * 0.5 = 20.0 -> score = 100 - 20 = 80.0
+    assert report_high.dimensions["verification_integrity"].score == 80.0
+
+
+def test_judge_clean_scoring_on_adequate_coverage():
+    """RunJudge does not dock points or flag friction when evidence coverage >= 50%."""
+    analytics = {
+        "run_id": "test_good_cov",
+        "funnel": {"accepted_nodes": 1, "total_nodes": 1},
+        "concurrency": {"steps": 1, "avg_concurrency_ratio": 1.0, "total_conflict_deferrals": 0, "domain_deferrals": 0},
+        "triad": {},
+        "critical_path": {},
+        "budget": {},
+        "gates": {
+            "available": True,
+            "total": 4,
+            "met": 4,
+            "pending": 0,
+            "abandoned": 0,
+            "pass_rate": 1.0,
+            "evidence_coverage": 75.0,
+            "coverage_pct": 75.0,
+        },
+    }
+    report = RunJudge.evaluate_from_analytics(analytics)
+    assert report.dimensions["verification_integrity"].score == 100.0
+    cov_fps = [fp for fp in report.friction_points if fp.category == "LOW_EVIDENCE_COVERAGE"]
+    assert len(cov_fps) == 0
+
+
+def test_judge_derives_coverage_from_graph_ledger(tmp_path):
+    """RunJudge computes coverage from raw_graph.ledger when not in analytics dictionary."""
+    from dafg.gates import GateLedger
+    ledger_text = """
+- [x] G1: Executable check
+  CHECK: echo 1
+  EXPECT: 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='1'
+
+- [x] G2: Manual gate 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='verified'
+
+- [x] G3: Manual gate 2
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='verified'
+
+- [x] G4: Manual gate 3
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='verified'
+"""
+    ledger = GateLedger.parse(ledger_text)
+    node = TaskNode(id="t1", title="Task", owns=["a.py"], status=NodeStatus.ACCEPTED)
+    graph = DAFG(nodes={"t1": node}, state_path=tmp_path / "state.json")
+    graph.ledger = ledger
+    graph.seal_run()
+
+    report = RunJudge.evaluate(graph)
+    # 1 of 4 is runnable proof = 25.0% < 50.0%
+    cov_fps = [fp for fp in report.friction_points if fp.category == "LOW_EVIDENCE_COVERAGE"]
+    assert len(cov_fps) == 1
+    assert cov_fps[0].details["coverage_pct"] == 25.0
+
+
+def test_runtime_get_run_analytics_includes_evidence_coverage(tmp_path):
+    """DAFG.get_run_analytics() populates evidence_coverage and coverage_pct."""
+    from dafg.gates import GateLedger
+    ledger_text = """
+- [x] G1: Runnable
+  CHECK: echo 1
+  EXPECT: 1
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='1'
+
+- [x] G2: Another runnable
+  CHECK: echo 2
+  EXPECT: 2
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='2'
+
+- [x] G3: Manual
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='manual'
+"""
+    ledger = GateLedger.parse(ledger_text)
+    graph = DAFG(state_path=tmp_path / "state.json")
+    graph.ledger = ledger
+    analytics = graph.get_run_analytics()
+
+    assert analytics["gates"]["available"] is True
+    assert analytics["gates"]["total"] == 3
+    # 2 of 3 runnable proof -> 66.7%
+    assert analytics["gates"]["evidence_coverage"] == 66.7
+    assert analytics["gates"]["coverage_pct"] == 66.7
+

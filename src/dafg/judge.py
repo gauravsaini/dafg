@@ -16,6 +16,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from dafg.gates import EvidenceStrength, classify_evidence
+
 
 class QualityVerdict(str, Enum):
     """Overall quality grade for a DAFG execution run."""
@@ -216,6 +218,33 @@ class RunJudge:
                 impact=impact,
             ))
             recommendations.append("Investigate failing gate CHECK commands and add pre-flight input manifests.")
+
+        # Check evidence coverage
+        cov_pct = gates.get("evidence_coverage")
+        if cov_pct is None:
+            cov_pct = gates.get("coverage_pct")
+        if cov_pct is None and raw_graph is not None and getattr(raw_graph, "ledger", None):
+            ledger = raw_graph.ledger
+            t_g = len(ledger.gates)
+            if t_g > 0:
+                r_cnt = sum(
+                    1 for g in ledger.gates.values()
+                    if classify_evidence(g) in (EvidenceStrength.EXECUTABLE_PROOF, EvidenceStrength.STRING_MATCH)
+                )
+                cov_pct = round((r_cnt / t_g) * 100.0, 1)
+
+        if gate_total > 0 and cov_pct is not None and cov_pct < 50.0:
+            dock = round((50.0 - cov_pct) * 0.5, 1)
+            s_verif = max(0.0, s_verif - dock)
+            friction_points.append(FrictionPoint(
+                category="LOW_EVIDENCE_COVERAGE",
+                message=f"Low evidence coverage ({cov_pct:.1f}%): less than 50% of gates have runnable proof.",
+                severity=FrictionSeverity.HIGH if cov_pct < 25.0 else FrictionSeverity.MEDIUM,
+                impact=round(min(1.0, (50.0 - cov_pct) / 50.0), 2),
+                details={"coverage_pct": cov_pct},
+            ))
+            recommendations.append("Replace subjective manual gates with executable CHECK and EXPECT verification commands.")
+
 
         # Check for unapproved check commands in audit log
         unapproved_deductions = 0

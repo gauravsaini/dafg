@@ -362,9 +362,15 @@ class ArtifactConsistencyGuard:
 
         app_path = Path(approvals_path) if approvals_path else gates_file.parent / ".approved_gates.json"
         approved_signatures: Set[str] = set()
+        approved_patterns: Set[str] = set()
         if app_path.exists():
             try:
-                approved_signatures = set(json.loads(app_path.read_text(encoding="utf-8")))
+                raw = json.loads(app_path.read_text(encoding="utf-8"))
+                if isinstance(raw, dict):
+                    approved_signatures = set(raw.get("approved_signatures", raw.get("signatures", [])))
+                    approved_patterns = set(raw.get("approved_patterns", raw.get("patterns", [])))
+                elif isinstance(raw, list):
+                    approved_signatures = set(raw)
             except Exception as e:
                 violations.append(f"Failed to parse approvals file {app_path}: {e}")
 
@@ -385,7 +391,16 @@ class ArtifactConsistencyGuard:
         for gid, gate in ledger.gates.items():
             if gate.status == "MET" and gate.check:
                 sig = ApprovalStore.signature(gate)
-                if sig not in approved_signatures:
+                is_appr = sig in approved_signatures
+                if not is_appr and approved_patterns and ApprovalStore.is_safe_for_pattern(gate.check):
+                    for pat in approved_patterns:
+                        try:
+                            if re.search(pat, gate.check):
+                                is_appr = True
+                                break
+                        except re.error:
+                            continue
+                if not is_appr:
                     violations.append(
                         f"Gate '{gid}' marked MET in GATES.md but its signature '{sig}' is not approved in {app_path.name}"
                     )

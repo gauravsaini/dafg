@@ -17,7 +17,22 @@ from pathlib import Path
 import sys
 from typing import Any, Dict, List, Optional, Union
 
-from dafg.gates import ApprovalStore, Gate, GateLedger, GateLinter
+from dafg.gates import ApprovalStore, EvidenceStrength, Gate, GateLedger, GateLinter, classify_evidence
+
+
+@dataclass
+class EvidenceCoverage:
+    total: int = 0
+    executable_proof: int = 0
+    string_match: int = 0
+    model_judgment: int = 0
+    pending: int = 0
+    none: int = 0
+    coverage_pct: float = 0.0
+    percentage: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
 
 
 @dataclass
@@ -31,12 +46,14 @@ class StopDecision:
     abandoned_gates: List[str] = field(default_factory=list)
     progress_guard_released: bool = False
     outcome_status: str = "INCOMPLETE_RUN"
+    coverage: Optional[EvidenceCoverage] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2)
+
 
 
 class CompletionGuard:
@@ -73,6 +90,7 @@ class CompletionGuard:
                     allowed=False,
                     decision="block",
                     reason="No active gate ledger found or ledger file missing.",
+                    coverage=EvidenceCoverage(),
                 )
 
         if not self.ledger.gates:
@@ -80,7 +98,43 @@ class CompletionGuard:
                 allowed=False,
                 decision="block",
                 reason="Gate ledger contains no defined acceptance gates.",
+                coverage=EvidenceCoverage(),
             )
+
+        # Compute EvidenceCoverage rollup across all gates
+        total_gates = len(self.ledger.gates)
+        c_exec = 0
+        c_str = 0
+        c_model = 0
+        c_pend = 0
+        c_none = 0
+
+        for g in self.ledger.gates.values():
+            strength = classify_evidence(g)
+            if strength == EvidenceStrength.EXECUTABLE_PROOF:
+                c_exec += 1
+            elif strength == EvidenceStrength.STRING_MATCH:
+                c_str += 1
+            elif strength == EvidenceStrength.MODEL_JUDGMENT:
+                c_model += 1
+            elif strength == EvidenceStrength.PENDING:
+                c_pend += 1
+            else:
+                c_none += 1
+
+        runnable_proof = c_exec + c_str
+        cov_pct = round((runnable_proof / total_gates) * 100.0, 1) if total_gates > 0 else 0.0
+
+        coverage = EvidenceCoverage(
+            total=total_gates,
+            executable_proof=c_exec,
+            string_match=c_str,
+            model_judgment=c_model,
+            pending=c_pend,
+            none=c_none,
+            coverage_pct=cov_pct,
+            percentage=cov_pct,
+        )
 
         # Check structural and lint errors from ledger parsing & linting
         structural_errors: List[str] = []
@@ -105,6 +159,10 @@ class CompletionGuard:
         unverified_gates: List[str] = []
         abandoned_gates: List[str] = []
         invalid_abandonments: List[str] = []
+
+        if self.approval_store and self.ledger and hasattr(self.approval_store, "mode"):
+            if getattr(self.ledger, "mode", None):
+                self.approval_store.mode = self.ledger.mode
 
         for gid, gate in self.ledger.gates.items():
             # If approval store is configured and gate has a check command, verify approval
@@ -137,6 +195,33 @@ class CompletionGuard:
                 # UNMET or any other non-MET status
                 pending_gates.append(gid)
 
+        # Check excessive abandonment
+        total_abandoned = len(abandoned_gates) + len(invalid_abandonments)
+        abandon_rate = total_abandoned / total_gates if total_gates > 0 else 0.0
+        threshold = getattr(self.ledger, "abandon_threshold", 0.5)
+
+        if total_gates > 0 and abandon_rate > threshold:
+            reason = (
+                f"EXCESSIVE_ABANDONMENT: {total_abandoned}/{total_gates} gates abandoned "
+                f"({abandon_rate*100:.1f}%) exceeds threshold of {threshold*100:.1f}%."
+            )
+            if invalid_abandonments:
+                reason += f" {len(invalid_abandonments)} gates abandoned without reason ({', '.join(invalid_abandonments)})."
+
+            decision = StopDecision(
+                allowed=False,
+                decision="block",
+                reason=reason,
+                pending_gates=pending_gates,
+                unapproved_gates=unapproved_gates,
+                unverified_gates=unverified_gates,
+                abandoned_gates=abandoned_gates,
+                outcome_status="EXCESSIVE_ABANDONMENT",
+                coverage=coverage,
+            )
+            self._emit_stop_decision(decision)
+            return decision
+
         has_blocks = bool(
             pending_gates
             or unverified_gates
@@ -146,13 +231,37 @@ class CompletionGuard:
         )
 
         if not has_blocks:
+            if getattr(self.ledger, "mode", "standard") == "strict":
+                strict_unproven = [
+                    gid for gid, gate in self.ledger.gates.items()
+                    if gate.check and gate.status != "ABANDONED" and classify_evidence(gate) != EvidenceStrength.EXECUTABLE_PROOF
+                ]
+                if strict_unproven:
+                    decision = StopDecision(
+                        allowed=False,
+                        decision="block",
+                        reason="STRICT_MODE: All runnable gates must achieve EXECUTABLE_PROOF via mutation testing.",
+                        pending_gates=pending_gates,
+                        unapproved_gates=unapproved_gates,
+                        unverified_gates=strict_unproven,
+                        abandoned_gates=abandoned_gates,
+                        outcome_status="INCOMPLETE_RUN",
+                        coverage=coverage,
+                    )
+                    self._emit_stop_decision(decision)
+                    return decision
+
             # All satisfied
             self._reset_progress_state()
             outcome = "HANDOFF_REQUIRED" if abandoned_gates else "VERIFIED_DELIVERY"
             reason_msg = (
-                f"Completed with {len(abandoned_gates)} abandoned gate(s); handoff required."
+                f"Completed with {len(abandoned_gates)} abandoned gate(s); handoff required. "
+                f"{runnable_proof}/{total_gates} gates have runnable proof ({cov_pct:.1f}%), {c_model} rely on MODEL_JUDGMENT."
                 if abandoned_gates
-                else "All acceptance gates are met with evidence or validly abandoned."
+                else (
+                    f"All acceptance gates are met with evidence or validly abandoned. "
+                    f"{runnable_proof}/{total_gates} gates have runnable proof ({cov_pct:.1f}%), {c_model} rely on MODEL_JUDGMENT."
+                )
             )
             decision = StopDecision(
                 allowed=True,
@@ -160,6 +269,7 @@ class CompletionGuard:
                 reason=reason_msg,
                 abandoned_gates=abandoned_gates,
                 outcome_status=outcome,
+                coverage=coverage,
             )
             self._emit_stop_decision(decision)
             return decision
@@ -194,6 +304,7 @@ class CompletionGuard:
                 abandoned_gates=abandoned_gates,
                 progress_guard_released=True,
                 outcome_status="INCOMPLETE_RUN",
+                coverage=coverage,
             )
             self._emit_stop_decision(decision)
             return decision
@@ -207,14 +318,16 @@ class CompletionGuard:
             unverified_gates=unverified_gates,
             abandoned_gates=abandoned_gates,
             outcome_status="INCOMPLETE_RUN",
+            coverage=coverage,
         )
         self._emit_stop_decision(decision)
         return decision
 
+
     def _emit_stop_decision(self, decision: StopDecision) -> None:
         """DOF: emit stop_hook.evaluated event if fabric is attached."""
         if self._fabric:
-            self._fabric.emit_event("stop_hook.evaluated", {
+            payload = {
                 "decision": decision.decision,
                 "allowed": decision.allowed,
                 "pending_count": len(decision.pending_gates),
@@ -222,7 +335,11 @@ class CompletionGuard:
                 "unapproved_count": len(decision.unapproved_gates),
                 "abandoned_count": len(decision.abandoned_gates),
                 "outcome_status": decision.outcome_status,
-            })
+            }
+            if decision.coverage:
+                payload["coverage"] = decision.coverage.to_dict()
+            self._fabric.emit_event("stop_hook.evaluated", payload)
+
 
     def _update_progress_state(self, current_sig: str) -> int:
         if not self.state_file:
@@ -281,15 +398,20 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     decision = guard.evaluate()
 
-    if args.json or not sys.stdout.isatty():
+    if args.json:
         print(decision.to_json())
     else:
         if decision.allowed:
             print(f"✓ STOP ALLOWED: {decision.reason}")
         else:
             print(f"✗ STOP BLOCKED: {decision.reason}")
+        if decision.coverage:
+            cov = decision.coverage
+            runnable = cov.executable_proof + cov.string_match
+            print(f"Evidence Coverage: {runnable}/{cov.total} gates have runnable proof ({cov.coverage_pct:.1f}%), {cov.model_judgment} rely on MODEL_JUDGMENT")
 
     return 0 if decision.allowed else 1
+
 
 
 if __name__ == "__main__":
