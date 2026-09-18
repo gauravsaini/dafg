@@ -35,7 +35,12 @@ from dafg.mutation import (
     MutationStrategy,
 )
 from dafg.observe import InMemoryProbe, ObservabilityFabric, parse_observe_flag
-from dafg.persona import PersonaCompiler, PersonaProfile
+from dafg.persona import (
+    ArchetypeDeriver,
+    PersonaArchetype,
+    PersonaCompiler,
+    PersonaProfile,
+)
 from dafg.repair import RepairBudget, RepairDiagnoser, RepairLoop
 from dafg.runtime import (
     DAFG,
@@ -1673,10 +1678,13 @@ class AutonomousOrganism:
         fabric: Optional[ObservabilityFabric] = None,
         auto_approve: bool = False,
         evolution_policy: Optional[EvolutionPolicy] = None,
+        multi_persona: bool = False,
     ):
         self.goal = goal.strip()
         self.workdir = Path(workdir) if workdir else Path(f"./organism_{int(time.time())}")
         self.auto_approve = auto_approve
+        self.multi_persona = multi_persona
+        self.derived_archetypes: List[Tuple[Any, Dict[str, Any]]] = []
 
         self.policy = evolution_policy or EvolutionPolicy(
             target_score=target_score,
@@ -1712,6 +1720,9 @@ class AutonomousOrganism:
 
         # Load ledger
         ledger = GateLedger.load(gates_md_path)
+
+        # Wire ArchetypeDeriver from gate ledger signals
+        self.derived_archetypes = ArchetypeDeriver.from_ledger(ledger)
 
         # Pre-approve synthesized gates ONLY IF explicit auto_approve opt-in was provided
         # AND every synthesized check passes SafeCommandPolicy sandboxing!
@@ -1766,6 +1777,18 @@ class AutonomousOrganism:
             # === STEP 1: Runtime executes the graph ===
             run_status = graph.run()
 
+            # === Multi-Persona Iteration Loop (if active) ===
+            if self.multi_persona:
+                compiler = PersonaCompiler()
+                iteration_loop = GateIterationLoop(
+                    ledger=ledger,
+                    engine=graph.engine,
+                    compiler=compiler,
+                    workdir=self.workdir,
+                    fabric=self.fabric,
+                )
+                loop_passed, persona_verdicts = iteration_loop.iterate_all(generation=gen)
+
             # === STEP 2: Judge scores it ===
             report = RunJudge.evaluate(graph, trend_store_path=trend_store_path)
             latest_report = report
@@ -1812,6 +1835,14 @@ class AutonomousOrganism:
 
             # Also require independent oracle to pass for final convergence
             is_converged = policy_converged and contract_valid and indep_passed
+
+            # If multi-persona is active, require fresh-context VictoryAudit to certify delivery
+            if is_converged and self.multi_persona:
+                victory_auditor = VictoryAudit(ledger=ledger, engine=graph.engine, workdir=self.workdir)
+                audit_report = victory_auditor.audit()
+                if audit_report.verdict != "CLEAN":
+                    is_converged = False
+                    blocking_reasons.append(f"VictoryAudit rejected convergence: {audit_report.conclusion}")
 
             # === STEP 4: Mutation proposes changes (ALWAYS — even if empty) ===
             proposal = OrganismEvolver.evolve_proposal(
@@ -1874,10 +1905,15 @@ class AutonomousOrganism:
             self.lineage.final_score = latest_report.score
             self.lineage.final_verdict = latest_report.verdict.value
 
-        # Persist lineage with mutation proposals and Goodhart warnings
+        # Persist lineage with mutation proposals, Goodhart warnings, and multi-persona audit trail
         lineage_data = self.lineage.to_dict()
         lineage_data["mutation_proposals"] = [p.to_dict() for p in self.mutation_proposals]
         lineage_data["goodhart_warnings"] = self.goodhart_warnings
+        lineage_data["multi_persona"] = self.multi_persona
+        lineage_data["derived_archetypes"] = [
+            {"archetype": getattr(a, "value", str(a)), "context": ctx}
+            for a, ctx in self.derived_archetypes
+        ]
         lineage_file = self.workdir / "lineage.json"
         lineage_file.write_text(json.dumps(lineage_data, indent=2), encoding="utf-8")
 
@@ -1891,6 +1927,7 @@ class AutonomousOrganism:
             "=" * 72,
             f"  Goal:       {self.goal}",
             f"  System:     {self.lineage.system_name}",
+            f"  Multi-Persona: {'Active (Explorer→Worker→Reviewer→Challenger→Auditor)' if self.multi_persona else 'Off'}",
             f"  Converged:  {'YES (Verified Delivery)' if self.lineage.converged else 'NO (Max Generations)'}",
             f"  Final Score: {self.lineage.final_score:.1f}/100 ({self.lineage.final_verdict})",
             f"  Mutations:  {self.lineage.total_mutations} across {len(self.lineage.generations)} generation(s)",

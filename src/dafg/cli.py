@@ -273,6 +273,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             max_generations=args.generations,
             target_score=args.target_score,
             auto_approve=args.auto_approve,
+            multi_persona=args.multi_persona,
         )
 
         def print_gen_update(record):
@@ -285,6 +286,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             print("=" * 72)
             print(f"Goal: {args.goal}")
             print(f"Target Quality Score: {args.target_score} | Max Generations: {args.generations}")
+            if args.multi_persona:
+                print("👥 Multi-Persona: Active (Explorer → Worker → Reviewer → Challenger → Auditor).")
             if args.auto_approve:
                 print("🔒 Security: --auto-approve enabled under SafeCommandPolicy sandbox.")
             else:
