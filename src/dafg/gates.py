@@ -28,7 +28,7 @@ GATE_HEADER_RE = re.compile(
 )
 MALFORMED_HEADER_RE = re.compile(r"^[ \t]*-\s*\[.*\]")
 PROPERTY_RE = re.compile(
-    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS_READ|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET|AUTHOR):\s*(?P<value>.*)$",
+    r"^[ \t]*(?P<key>CHECK|EXPECT|CWD|EVIDENCE|OWNS_READ|OWNS|ABANDON|TIMEOUT|VISUAL_REF|VISUAL_DIFF|VISUAL_RETRIES|VISUAL_ASSERTIONS|DETERMINISM|ADVERSARIAL|ADVERSARIAL_BUDGET|AUTHOR|GATE_MODE):\s*(?P<value>.*)$",
     re.IGNORECASE,
 )
 TOP_ABANDON_RE = re.compile(
@@ -112,6 +112,7 @@ class Gate:
     adversarial: Optional[str] = None
     adversarial_budget: Optional[int] = None
     author: Optional[str] = None  # human, planner, implementer, external
+    gate_mode: Optional[str] = None  # per-gate mode override: quick, standard, strict
     header_index: int = -1
     evidence_index: Optional[int] = None
     abandon_index: Optional[int] = None
@@ -400,6 +401,10 @@ class GateLedger:
                             pass
                     elif key_upper == "AUTHOR":
                         current_gate.author = val.strip().lower()
+                    elif key_upper == "GATE_MODE":
+                        mode_val = val.strip().lower()
+                        if mode_val in ("quick", "standard", "strict"):
+                            current_gate.gate_mode = mode_val
                 continue
 
             if current_gate is not None:
@@ -901,16 +906,18 @@ class GateLinter:
                     )
 
             # Authorship separation check (R4, R6)
+            # Effective mode: per-gate GATE_MODE override takes precedence over ledger mode
+            effective_mode = getattr(gate, "gate_mode", None) or getattr(ledger, "mode", "standard")
             if gate.author and gate.author.lower() == "implementer":
                 issues.append(
                     LintIssue(
-                        severity="ERROR" if getattr(ledger, "mode", "standard") == "strict" else "WARNING",
+                        severity="ERROR" if effective_mode == "strict" else "WARNING",
                         gate_id=gid,
                         message=f"Gate '{gid}' has AUTHOR: implementer on deliverable (violates authorship separation)",
                         line_number=gate.line_number,
                     )
                 )
-            elif getattr(ledger, "mode", "standard") == "strict" and gate.status != "ABANDONED":
+            elif effective_mode == "strict" and gate.status != "ABANDONED":
                 if not gate.author or not gate.author.strip():
                     issues.append(
                         LintIssue(
@@ -985,6 +992,93 @@ class GateLinter:
         # Quick mode filter: errors only
         if getattr(ledger, "mode", "standard") == "quick":
             issues = [i for i in issues if i.severity == "ERROR"]
+
+        return issues
+
+    @staticmethod
+    def detect_regressions(old: GateLedger, new: GateLedger) -> List[LintIssue]:
+        """Detect regressions between two ledger versions.
+
+        Flags:
+        - Weakened EXPECT patterns (longer pattern replaced by shorter/weaker one)
+        - Removed OWNS declarations
+        - Downgraded GATE_MODE (strict -> standard -> quick)
+        - Removed gates (without ABANDON)
+        """
+        issues: List[LintIssue] = []
+        mode_rank = {"strict": 3, "standard": 2, "quick": 1}
+
+        for gid, old_gate in old.gates.items():
+            if gid not in new.gates:
+                # Gate removed entirely — regression unless abandoned in old
+                if old_gate.status != "ABANDONED":
+                    issues.append(LintIssue(
+                        severity="ERROR",
+                        gate_id=gid,
+                        message=f"Gate '{gid}' was removed without ABANDON (gate deletion regression)",
+                        line_number=old_gate.line_number,
+                    ))
+                continue
+
+            new_gate = new.gates[gid]
+
+            # Weakened EXPECT pattern
+            if old_gate.expect and new_gate.expect:
+                old_exp = old_gate.expect.strip()
+                new_exp = new_gate.expect.strip()
+                if old_exp != new_exp and len(new_exp) < len(old_exp):
+                    # Shorter pattern is suspicious — could be weakening
+                    issues.append(LintIssue(
+                        severity="WARNING",
+                        gate_id=gid,
+                        message=f"Gate '{gid}' EXPECT pattern shortened from '{old_exp}' to '{new_exp}' (possible weakening)",
+                        line_number=new_gate.line_number,
+                    ))
+            elif old_gate.expect and not new_gate.expect:
+                issues.append(LintIssue(
+                    severity="ERROR",
+                    gate_id=gid,
+                    message=f"Gate '{gid}' EXPECT pattern removed (was '{old_gate.expect.strip()}')",
+                    line_number=new_gate.line_number,
+                ))
+
+            # Removed OWNS declaration
+            if old_gate.owns and old_gate.owns.strip():
+                if not new_gate.owns or not new_gate.owns.strip():
+                    issues.append(LintIssue(
+                        severity="WARNING",
+                        gate_id=gid,
+                        message=f"Gate '{gid}' OWNS declaration removed (was '{old_gate.owns.strip()}')",
+                        line_number=new_gate.line_number,
+                    ))
+
+            # Downgraded per-gate mode
+            old_mode = getattr(old_gate, 'gate_mode', None)
+            new_mode = getattr(new_gate, 'gate_mode', None)
+            if old_mode and new_mode:
+                if mode_rank.get(new_mode, 2) < mode_rank.get(old_mode, 2):
+                    issues.append(LintIssue(
+                        severity="WARNING",
+                        gate_id=gid,
+                        message=f"Gate '{gid}' GATE_MODE downgraded from '{old_mode}' to '{new_mode}'",
+                        line_number=new_gate.line_number,
+                    ))
+            elif old_mode and not new_mode:
+                issues.append(LintIssue(
+                    severity="WARNING",
+                    gate_id=gid,
+                    message=f"Gate '{gid}' GATE_MODE removed (was '{old_mode}')",
+                    line_number=new_gate.line_number,
+                ))
+
+            # Removed CHECK command
+            if old_gate.check and old_gate.check.strip() and (not new_gate.check or not new_gate.check.strip()):
+                issues.append(LintIssue(
+                    severity="ERROR",
+                    gate_id=gid,
+                    message=f"Gate '{gid}' CHECK command removed (was runnable, now manual)",
+                    line_number=new_gate.line_number,
+                ))
 
         return issues
 

@@ -151,6 +151,9 @@ class CompletionGuard:
                     continue
                 if "Malformed gate header" in issue.message or "Orphaned gate property" in issue.message:
                     continue
+                # Authorship issues handled by dedicated implementer blocker
+                if "AUTHOR: implementer" in issue.message or "missing AUTHOR:" in issue.message:
+                    continue
                 if issue.message not in structural_errors:
                     structural_errors.append(issue.message)
 
@@ -231,25 +234,54 @@ class CompletionGuard:
         )
 
         if not has_blocks:
-            if getattr(self.ledger, "mode", "standard") == "strict":
-                strict_unproven = [
-                    gid for gid, gate in self.ledger.gates.items()
-                    if gate.check and gate.status != "ABANDONED" and classify_evidence(gate) != EvidenceStrength.EXECUTABLE_PROOF
-                ]
-                if strict_unproven:
-                    decision = StopDecision(
-                        allowed=False,
-                        decision="block",
-                        reason="STRICT_MODE: All runnable gates must achieve EXECUTABLE_PROOF via mutation testing.",
-                        pending_gates=pending_gates,
-                        unapproved_gates=unapproved_gates,
-                        unverified_gates=strict_unproven,
-                        abandoned_gates=abandoned_gates,
-                        outcome_status="INCOMPLETE_RUN",
-                        coverage=coverage,
-                    )
-                    self._emit_stop_decision(decision)
-                    return decision
+            ledger_mode = getattr(self.ledger, "mode", "standard")
+
+            # Block AUTHOR:implementer gates in strict mode (ledger-level or per-gate)
+            implementer_gates = []
+            for gid, gate in self.ledger.gates.items():
+                if gate.status == "ABANDONED":
+                    continue
+                effective_mode = getattr(gate, "gate_mode", None) or ledger_mode
+                if effective_mode == "strict" and gate.author and gate.author.lower() == "implementer":
+                    implementer_gates.append(gid)
+            if implementer_gates:
+                decision = StopDecision(
+                    allowed=False,
+                    decision="block",
+                    reason=f"STRICT_MODE: AUTHOR: implementer gates blocked in strict mode ({', '.join(implementer_gates)}). Reassign authorship to human, planner, or external.",
+                    pending_gates=pending_gates,
+                    unapproved_gates=unapproved_gates,
+                    unverified_gates=implementer_gates,
+                    abandoned_gates=abandoned_gates,
+                    outcome_status="IMPLEMENTER_AUTHORSHIP_BLOCKED",
+                    coverage=coverage,
+                )
+                self._emit_stop_decision(decision)
+                return decision
+
+            # Collect gates requiring EXECUTABLE_PROOF (ledger-level strict or per-gate GATE_MODE: strict)
+            strict_unproven = []
+            for gid, gate in self.ledger.gates.items():
+                if not gate.check or gate.status == "ABANDONED":
+                    continue
+                effective_mode = getattr(gate, "gate_mode", None) or ledger_mode
+                if effective_mode == "strict" and classify_evidence(gate) != EvidenceStrength.EXECUTABLE_PROOF:
+                    strict_unproven.append(gid)
+
+            if strict_unproven:
+                decision = StopDecision(
+                    allowed=False,
+                    decision="block",
+                    reason="STRICT_MODE: All runnable gates must achieve EXECUTABLE_PROOF via mutation testing.",
+                    pending_gates=pending_gates,
+                    unapproved_gates=unapproved_gates,
+                    unverified_gates=strict_unproven,
+                    abandoned_gates=abandoned_gates,
+                    outcome_status="INCOMPLETE_RUN",
+                    coverage=coverage,
+                )
+                self._emit_stop_decision(decision)
+                return decision
 
             # All satisfied
             self._reset_progress_state()
