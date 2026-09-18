@@ -22,6 +22,15 @@ class FailureKind(str, Enum):
     MISSING_PERMISSION = "MISSING_PERMISSION"
 
 
+class PersonaArchetype(str, Enum):
+    """Classification of persona archetypes for multi-perspective task execution."""
+    EXPLORER = "explorer"      # Surveys codebase, maps dependencies, identifies risks
+    WORKER = "worker"          # Implements code changes
+    REVIEWER = "reviewer"      # Reviews correctness, standards compliance
+    CHALLENGER = "challenger"  # Stress-tests with adversarial inputs, concurrency
+    AUDITOR = "auditor"        # Forensic integrity audit with zero shared context
+
+
 class RoutingBlockedError(Exception):
     """Raised when no registered backend satisfies capability, policy, or budget constraints."""
     pass
@@ -143,6 +152,232 @@ class PersonaCompiler:
             version=attempt,
             metadata={"assigned_gates": assigned_gates, "owns": owns},
         )
+
+    # -- Archetype factory methods -------------------------------------------
+
+    def compile_explorer(
+        self,
+        task: Any,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PersonaProfile:
+        """Compile an explorer persona that surveys codebase and maps dependencies.
+
+        The explorer focuses on discovery: scanning owned files, mapping the
+        dependency graph, and identifying risk areas before implementation begins.
+        """
+        task_id = getattr(task, "id", "T1")
+        title = getattr(task, "title", "Perform task")
+        owns = getattr(task, "owns", [])
+        assigned_gates = getattr(task, "assigned_gates", [])
+
+        return PersonaProfile(
+            persona_id=f"P-{task_id}-{PersonaArchetype.EXPLORER.value}-v1",
+            role="Explorer",
+            mission=f"Survey and map dependencies for task: {title}",
+            expertise=["dependency analysis", "codebase navigation", "risk assessment"],
+            method=[
+                "Survey owned files and their imports",
+                "Map dependency graph",
+                "Identify risk areas and missing coverage",
+            ],
+            required_capabilities=["technical_reasoning"],
+            requested_tools=["repository_read"],
+            review_focus=[
+                "missing dependencies",
+                "architectural boundaries",
+                "hidden coupling",
+            ],
+            version=1,
+            metadata={
+                "archetype": PersonaArchetype.EXPLORER.value,
+                "assigned_gates": assigned_gates,
+                "owns": owns,
+            },
+        )
+
+    def compile_worker(
+        self,
+        task: Any,
+        context: Optional[Dict[str, Any]] = None,
+        previous_feedback: Optional[str] = None,
+        attempt: int = 1,
+    ) -> PersonaProfile:
+        """Compile a worker persona for implementation.
+
+        Delegates to the existing ``compile()`` method which already generates
+        worker-style profiles, augmenting metadata with the archetype tag.
+        """
+        profile = self.compile(
+            task,
+            context=context,
+            previous_feedback=previous_feedback,
+            attempt=attempt,
+        )
+        profile.metadata["archetype"] = PersonaArchetype.WORKER.value
+        profile.persona_id = f"P-{getattr(task, 'id', 'T1')}-{PersonaArchetype.WORKER.value}-v{attempt}"
+        return profile
+
+    def compile_reviewer(
+        self,
+        task: Any,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PersonaProfile:
+        """Compile a reviewer persona focused on correctness and standards.
+
+        The reviewer reads implementation against specification, traces error
+        paths, and verifies interface contracts.
+        """
+        task_id = getattr(task, "id", "T1")
+        title = getattr(task, "title", "Perform task")
+        owns = getattr(task, "owns", [])
+        assigned_gates = getattr(task, "assigned_gates", [])
+
+        return PersonaProfile(
+            persona_id=f"P-{task_id}-{PersonaArchetype.REVIEWER.value}-v1",
+            role="Reviewer",
+            mission=f"Review correctness and standards for task: {title}",
+            expertise=["code review", "correctness analysis"],
+            method=[
+                "Read implementation against specification",
+                "Trace error paths",
+                "Verify interface contracts",
+            ],
+            required_capabilities=["technical_reasoning", "code_analysis"],
+            requested_tools=["repository_read"],
+            review_focus=[
+                "off-by-one errors",
+                "error handling gaps",
+                "API contract violations",
+                "missing edge cases",
+            ],
+            version=1,
+            metadata={
+                "archetype": PersonaArchetype.REVIEWER.value,
+                "assigned_gates": assigned_gates,
+                "owns": owns,
+            },
+        )
+
+    def compile_challenger(
+        self,
+        task: Any,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PersonaProfile:
+        """Compile a challenger persona for adversarial stress testing.
+
+        The challenger designs adversarial test scenarios, stress tests with
+        concurrent load, and injects faults to verify recovery.
+        """
+        task_id = getattr(task, "id", "T1")
+        title = getattr(task, "title", "Perform task")
+        owns = getattr(task, "owns", [])
+        assigned_gates = getattr(task, "assigned_gates", [])
+
+        return PersonaProfile(
+            persona_id=f"P-{task_id}-{PersonaArchetype.CHALLENGER.value}-v1",
+            role="Challenger",
+            mission=f"Adversarial stress testing for task: {title}",
+            expertise=["adversarial testing", "concurrency analysis"],
+            method=[
+                "Design adversarial test scenarios",
+                "Stress test with concurrent load",
+                "Inject faults and verify recovery",
+            ],
+            required_capabilities=["technical_reasoning", "code_analysis"],
+            requested_tools=["repository_read", "test_runner"],
+            review_focus=[
+                "concurrency races",
+                "resource exhaustion",
+                "boundary inputs",
+                "error injection",
+            ],
+            version=1,
+            metadata={
+                "archetype": PersonaArchetype.CHALLENGER.value,
+                "assigned_gates": assigned_gates,
+                "owns": owns,
+            },
+        )
+
+    def compile_auditor(
+        self,
+        task: Any,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PersonaProfile:
+        """Compile an auditor persona for forensic integrity audit.
+
+        The auditor operates with zero shared context, independently runs all
+        verification commands, and cross-references evidence with source to
+        detect fabricated or stub artifacts.
+        """
+        task_id = getattr(task, "id", "T1")
+        title = getattr(task, "title", "Perform task")
+        owns = getattr(task, "owns", [])
+        assigned_gates = getattr(task, "assigned_gates", [])
+
+        return PersonaProfile(
+            persona_id=f"P-{task_id}-{PersonaArchetype.AUDITOR.value}-v1",
+            role="Auditor",
+            mission=f"Forensic integrity audit for task: {title}",
+            expertise=["forensic auditing", "evidence verification"],
+            method=[
+                "Independently run all verification commands",
+                "Cross-reference evidence with source",
+                "Verify no fabricated or stub artifacts",
+            ],
+            required_capabilities=["technical_reasoning", "code_analysis"],
+            requested_tools=["repository_read", "test_runner"],
+            review_focus=[
+                "test adequacy",
+                "evidence authenticity",
+                "gate coverage gaps",
+            ],
+            version=1,
+            metadata={
+                "archetype": PersonaArchetype.AUDITOR.value,
+                "assigned_gates": assigned_gates,
+                "owns": owns,
+            },
+        )
+
+    # -- Archetype dispatch --------------------------------------------------
+
+    def compile_for_archetype(
+        self,
+        archetype: PersonaArchetype,
+        task: Any,
+        context: Optional[Dict[str, Any]] = None,
+        previous_feedback: Optional[str] = None,
+        attempt: int = 1,
+    ) -> PersonaProfile:
+        """Dispatch to the correct archetype factory method.
+
+        Args:
+            archetype: The persona archetype to compile.
+            task: Task specification object.
+            context: Optional context dict.
+            previous_feedback: Feedback from previous attempt (worker only).
+            attempt: Attempt number (worker only).
+
+        Returns:
+            A PersonaProfile configured for the requested archetype.
+
+        Raises:
+            ValueError: If the archetype is not recognized.
+        """
+        dispatch = {
+            PersonaArchetype.EXPLORER: lambda: self.compile_explorer(task, context=context),
+            PersonaArchetype.WORKER: lambda: self.compile_worker(
+                task, context=context, previous_feedback=previous_feedback, attempt=attempt,
+            ),
+            PersonaArchetype.REVIEWER: lambda: self.compile_reviewer(task, context=context),
+            PersonaArchetype.CHALLENGER: lambda: self.compile_challenger(task, context=context),
+            PersonaArchetype.AUDITOR: lambda: self.compile_auditor(task, context=context),
+        }
+        factory = dispatch.get(archetype)
+        if factory is None:
+            raise ValueError(f"Unknown archetype: {archetype!r}")
+        return factory()
 
 
 @dataclass
@@ -449,3 +684,88 @@ class PersonaSwitcher:
             return new_profile, True
 
         return persona, False
+
+
+class ArchetypeDeriver:
+    """Derives default persona archetypes from gate ledger signals.
+
+    Analyzes a ``GateLedger`` (from ``dafg.gates``) and returns the list
+    of archetypes that should be activated for a given execution run.
+
+    The ledger is typed as ``Any`` to avoid circular imports with the
+    ``dafg.gates`` module.  At runtime it must be a ``GateLedger`` instance
+    with ``.gates`` (dict of gate_id -> Gate), ``.mode`` (str), and
+    ``.abandon_threshold`` (float or None).
+    """
+
+    @staticmethod
+    def from_ledger(ledger: Any) -> List[Tuple[PersonaArchetype, Dict[str, Any]]]:
+        """Analyze a GateLedger and derive which archetypes should be activated.
+
+        Args:
+            ledger: A ``dafg.gates.GateLedger`` instance.  Must expose
+                ``gates`` (dict mapping gate_id to Gate objects),
+                ``mode`` (one of ``'quick'``, ``'standard'``, ``'strict'``),
+                and ``abandon_threshold`` (float or ``None``).
+
+        Returns:
+            A list of ``(PersonaArchetype, context_dict)`` tuples.
+            ``context_dict`` contains ``gate_ids`` — the gate IDs that
+            motivated inclusion of that archetype.
+        """
+        gates: Dict[str, Any] = getattr(ledger, "gates", {})
+        mode: str = getattr(ledger, "mode", "standard")
+        abandon_threshold = getattr(ledger, "abandon_threshold", None)
+
+        result: List[Tuple[PersonaArchetype, Dict[str, Any]]] = []
+        seen: set = set()
+
+        def _add(archetype: PersonaArchetype, gate_ids: List[str]) -> None:
+            if archetype not in seen:
+                seen.add(archetype)
+                result.append((archetype, {"gate_ids": list(gate_ids)}))
+
+        # Always include WORKER and REVIEWER
+        _add(PersonaArchetype.WORKER, list(gates.keys()))
+        _add(PersonaArchetype.REVIEWER, list(gates.keys()))
+
+        explorer_gates: List[str] = []
+        challenger_gates: List[str] = []
+        auditor_gates: List[str] = []
+
+        for gate_id, gate in gates.items():
+            # EXPLORER: any gate that owns files needs dependency survey
+            owns = getattr(gate, "owns", None)
+            if owns:
+                explorer_gates.append(gate_id)
+
+            # CHALLENGER: any gate with test/pytest in its check command
+            check = getattr(gate, "check", None) or ""
+            check_lower = check.lower()
+            if "pytest" in check_lower or "test" in check_lower:
+                challenger_gates.append(gate_id)
+
+            # AUDITOR: self-authored gates need independent audit
+            author = getattr(gate, "author", None) or ""
+            if author.strip().lower() == "implementer":
+                auditor_gates.append(gate_id)
+
+        if explorer_gates:
+            _add(PersonaArchetype.EXPLORER, explorer_gates)
+
+        if challenger_gates:
+            _add(PersonaArchetype.CHALLENGER, challenger_gates)
+
+        # AUDITOR: strict mode requires forensic audit
+        if mode == "strict":
+            _add(PersonaArchetype.AUDITOR, list(gates.keys()))
+
+        # AUDITOR: self-authored gates detected above
+        if auditor_gates:
+            _add(PersonaArchetype.AUDITOR, auditor_gates)
+
+        # AUDITOR: governance monitoring when abandon_threshold is set
+        if abandon_threshold is not None:
+            _add(PersonaArchetype.AUDITOR, list(gates.keys()))
+
+        return result

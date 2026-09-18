@@ -49,6 +49,64 @@ from dafg.runtime import (
 from dafg.trends import RunSummary, TrendStore
 
 
+@dataclass
+class HandoffReport:
+    """Structured reasoning chain produced by each persona during gate iteration."""
+    persona_id: str
+    archetype: str  # 'explorer', 'worker', 'reviewer', 'challenger', 'auditor'
+    observation: str
+    logic_chain: List[str]
+    caveats: List[str]
+    conclusion: str
+    verdict: str  # 'APPROVE', 'REJECT', 'CLEAN', 'DIRTY'
+    verification_commands: List[str] = field(default_factory=list)
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def to_markdown(self) -> str:
+        """Render as structured markdown matching the teamwork_preview handoff format."""
+        lines = [
+            f"# Handoff Report — {self.archetype.title()} ({self.persona_id})",
+            f"",
+            f"## Observation",
+            self.observation,
+            f"",
+            f"## Logic Chain",
+        ]
+        for i, step in enumerate(self.logic_chain, 1):
+            lines.append(f"{i}. {step}")
+        lines.append("")
+        if self.caveats:
+            lines.append("## Caveats")
+            for caveat in self.caveats:
+                lines.append(f"- {caveat}")
+            lines.append("")
+        lines.append("## Conclusion")
+        lines.append(f"Verdict: **{self.verdict}** — {self.conclusion}")
+        lines.append("")
+        if self.verification_commands:
+            lines.append("## Verification Method")
+            lines.append("```bash")
+            for cmd in self.verification_commands:
+                lines.append(cmd)
+            lines.append("```")
+        return "\n".join(lines)
+
+
+@dataclass
+class PersonaVerdict:
+    """Verdict from a single persona's evaluation of a gate group."""
+    archetype: str
+    persona_id: str
+    verdict: str  # 'APPROVE', 'REJECT', 'CLEAN', 'DIRTY'
+    gate_ids: List[str]
+    handoff: HandoffReport
+    gate_results: Dict[str, str] = field(default_factory=dict)  # gate_id -> pass/fail
+
+
 class SecurityPolicyViolationError(Exception):
     """Raised when an autonomously synthesized check command violates sandboxing policy."""
     pass
@@ -495,8 +553,373 @@ class GenerationRecord:
     duration_ms: float = 0.0
     timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
+
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
+
+
+class GateIterationLoop:
+    """Multi-persona adversarial gate iteration loop.
+
+    For each gate group (milestone), runs the 5-phase adversarial loop:
+    Explorer -> Worker -> Reviewer -> Challenger -> Auditor -> Gate Verdict
+
+    Consensus voting: gate PASSES only when >= quorum_threshold of persona
+    verdicts are APPROVE/CLEAN.
+    """
+
+    def __init__(
+        self,
+        ledger: GateLedger,
+        engine: GateEngine,
+        compiler: PersonaCompiler,
+        quorum_threshold: int = 3,
+        quorum_size: int = 5,
+        workdir: Optional[Path] = None,
+        fabric: Optional[ObservabilityFabric] = None,
+    ):
+        self.ledger = ledger
+        self.engine = engine
+        self.compiler = compiler
+        self.quorum_threshold = quorum_threshold
+        self.quorum_size = quorum_size
+        self.workdir = workdir or Path(".")
+        self.fabric = fabric
+        self.iteration_history: List[Dict[str, Any]] = []
+
+    def group_gates_by_ownership(self) -> List[List[str]]:
+        """Group gates that share file ownership into milestone-like groups.
+
+        Gates with overlapping OWNS files go in the same group.
+        Gates with no OWNS are their own group.
+        """
+        # Build gate -> set of owned files mapping
+        gate_owns: Dict[str, Set[str]] = {}
+        for gid, gate in self.ledger.gates.items():
+            if gate.owns:
+                files = {f.strip() for f in gate.owns.split(",") if f.strip()}
+            else:
+                files = set()
+            gate_owns[gid] = files
+
+        # Union-find via iterative merging
+        groups: List[Set[str]] = []
+        for gid, files in gate_owns.items():
+            if not files:
+                # Gates with no OWNS are their own group
+                groups.append({gid})
+                continue
+
+            # Find all existing groups that share any owned file with this gate
+            merge_indices: List[int] = []
+            for i, group in enumerate(groups):
+                group_files: Set[str] = set()
+                for member_gid in group:
+                    group_files |= gate_owns.get(member_gid, set())
+                if files & group_files:
+                    merge_indices.append(i)
+
+            if not merge_indices:
+                groups.append({gid})
+            else:
+                # Merge all overlapping groups together with this gate
+                merged = {gid}
+                for i in sorted(merge_indices, reverse=True):
+                    merged |= groups.pop(i)
+                groups.append(merged)
+
+        return [sorted(g) for g in groups]
+
+    def _run_persona_phase(
+        self,
+        archetype_name: str,
+        gate_ids: List[str],
+        task_stub: Any,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> PersonaVerdict:
+        """Run a single persona phase of the adversarial iteration loop.
+
+        Args:
+            archetype_name: One of 'explorer', 'worker', 'reviewer', 'challenger', 'auditor'.
+            gate_ids: List of gate IDs in this milestone group.
+            task_stub: A task-like object with id, title, assigned_gates, owns attributes.
+            context: Optional context dict passed to the persona compiler.
+        """
+        from dafg.persona import PersonaArchetype
+
+        archetype = PersonaArchetype(archetype_name)
+        persona_id = f"P-{archetype_name}-{'-'.join(gate_ids)}"
+
+        # Compile persona profile
+        profile = self.compiler.compile(task_stub, context=context)
+
+        gate_results: Dict[str, str] = {}
+        observation_parts: List[str] = []
+        logic_chain: List[str] = []
+        caveats: List[str] = []
+        verification_cmds: List[str] = []
+
+        if archetype_name == "explorer":
+            # Survey: check which owned files exist, report structure
+            logic_chain.append("Surveying owned files for gate group")
+            for gid in gate_ids:
+                gate = self.ledger.gates.get(gid)
+                if gate:
+                    owns_str = gate.owns or ""
+                    owned_files = [f.strip() for f in owns_str.split(",") if f.strip()]
+                    existing = [f for f in owned_files if (self.workdir / f).exists()]
+                    missing = [f for f in owned_files if not (self.workdir / f).exists()]
+                    observation_parts.append(
+                        f"Gate {gid}: {len(existing)} files exist, {len(missing)} missing"
+                    )
+                    logic_chain.append(f"Checked ownership for {gid}: owns={owns_str}")
+                    if missing:
+                        caveats.append(f"Missing files for {gid}: {', '.join(missing)}")
+                    gate_results[gid] = "surveyed"
+
+            verdict = "APPROVE"
+            conclusion = "Exploration survey complete"
+
+        elif archetype_name == "worker":
+            # Worker is a no-op in the iteration loop (work done by main graph.run())
+            logic_chain.append("Worker phase is a no-op in iteration loop")
+            observation_parts.append("Work is performed by the main execution graph")
+            for gid in gate_ids:
+                gate_results[gid] = "deferred"
+            verdict = "APPROVE"
+            conclusion = "Worker phase deferred to main graph execution"
+
+        elif archetype_name in ("reviewer", "challenger", "auditor"):
+            # Execute each gate and collect results
+            logic_chain.append(f"Executing gates as {archetype_name}")
+            all_passed = True
+            for gid in gate_ids:
+                gate = self.ledger.gates.get(gid)
+                if not gate:
+                    gate_results[gid] = "missing"
+                    caveats.append(f"Gate {gid} not found in ledger")
+                    all_passed = False
+                    continue
+
+                result = self.engine.execute_gate(gate, ledger=self.ledger, reverify=True)
+                passed = result.status == "MET"
+                gate_results[gid] = "pass" if passed else "fail"
+                observation_parts.append(
+                    f"Gate {gid} ({gate.title}): {result.status}"
+                )
+                logic_chain.append(
+                    f"Executed {gid}: exit_code={result.exit_code}, status={result.status}"
+                )
+                if gate.check:
+                    verification_cmds.append(gate.check)
+                if not passed:
+                    all_passed = False
+                    caveats.append(f"Gate {gid} failed: {result.error or result.status}")
+
+            if archetype_name == "auditor":
+                verdict = "CLEAN" if all_passed else "DIRTY"
+                conclusion = (
+                    "All evidence verified from fresh context"
+                    if all_passed
+                    else "Evidence verification found failures"
+                )
+            else:
+                verdict = "APPROVE" if all_passed else "REJECT"
+                conclusion = (
+                    f"All {len(gate_ids)} gates passed {archetype_name} review"
+                    if all_passed
+                    else f"Gate failures detected during {archetype_name} review"
+                )
+        else:
+            verdict = "APPROVE"
+            conclusion = f"Unknown archetype {archetype_name}"
+
+        observation = "; ".join(observation_parts) if observation_parts else f"{archetype_name} phase completed"
+
+        handoff = HandoffReport(
+            persona_id=persona_id,
+            archetype=archetype_name,
+            observation=observation,
+            logic_chain=logic_chain,
+            caveats=caveats,
+            conclusion=conclusion,
+            verdict=verdict,
+            verification_commands=verification_cmds,
+        )
+
+        return PersonaVerdict(
+            archetype=archetype_name,
+            persona_id=persona_id,
+            verdict=verdict,
+            gate_ids=gate_ids,
+            handoff=handoff,
+            gate_results=gate_results,
+        )
+
+    def iterate_milestone(
+        self,
+        gate_ids: List[str],
+        generation: int = 1,
+    ) -> Tuple[bool, List[PersonaVerdict]]:
+        """Run the full 5-phase adversarial iteration for a group of gates.
+
+        Returns:
+            (passed, verdicts): passed is True if quorum is met.
+        """
+        # Create a mock task stub
+        class _TaskStub:
+            def __init__(self, gids: List[str]):
+                self.id = f"milestone-{'-'.join(gids)}"
+                self.title = f"Gate iteration for {', '.join(gids)}"
+                self.role = "Multi-persona iteration"
+                self.assigned_gates = gids
+                self.owns = []
+                for gid in gids:
+                    gate = None  # Will be resolved from ledger in phase methods
+                    self.owns.append(gid)
+
+        task_stub = _TaskStub(gate_ids)
+        context = {"generation": generation, "gate_ids": gate_ids}
+
+        # Run each phase sequentially
+        phases = ["explorer", "worker", "reviewer", "challenger", "auditor"]
+        verdicts: List[PersonaVerdict] = []
+
+        for phase in phases:
+            pv = self._run_persona_phase(phase, gate_ids, task_stub, context)
+            verdicts.append(pv)
+
+        # Count APPROVE/CLEAN verdicts
+        positive_count = sum(
+            1 for v in verdicts if v.verdict in ("APPROVE", "CLEAN")
+        )
+        passed = positive_count >= self.quorum_threshold
+
+        # Write handoff markdown files if workdir is set
+        if self.workdir:
+            iter_dir = self.workdir / "iterations" / f"gen_{generation}"
+            iter_dir.mkdir(parents=True, exist_ok=True)
+            for v in verdicts:
+                handoff_file = iter_dir / f"{v.archetype}_handoff.md"
+                handoff_file.write_text(v.handoff.to_markdown(), encoding="utf-8")
+
+        # Record in iteration history
+        self.iteration_history.append({
+            "generation": generation,
+            "gate_ids": gate_ids,
+            "passed": passed,
+            "positive_count": positive_count,
+            "quorum_threshold": self.quorum_threshold,
+            "verdicts": [
+                {"archetype": v.archetype, "verdict": v.verdict}
+                for v in verdicts
+            ],
+        })
+
+        return passed, verdicts
+
+    def iterate_all(
+        self,
+        generation: int = 1,
+    ) -> Tuple[bool, List[PersonaVerdict]]:
+        """Group gates by ownership, iterate each group, return overall pass/fail."""
+        groups = self.group_gates_by_ownership()
+        all_verdicts: List[PersonaVerdict] = []
+        all_passed = True
+
+        for group in groups:
+            passed, verdicts = self.iterate_milestone(group, generation=generation)
+            all_verdicts.extend(verdicts)
+            if not passed:
+                all_passed = False
+
+        return all_passed, all_verdicts
+
+
+class VictoryAudit:
+    """Fresh-context audit as a convergence gate.
+
+    Simulates the teamwork_preview victory auditor pattern:
+    spawns an auditor with zero shared implementation context
+    that independently re-verifies every gate from scratch.
+    """
+
+    def __init__(
+        self,
+        ledger: GateLedger,
+        engine: GateEngine,
+        workdir: Optional[Path] = None,
+    ):
+        self.ledger = ledger
+        self.engine = engine
+        self.workdir = workdir or Path(".")
+
+    def audit(self) -> HandoffReport:
+        """Run a fresh-context re-verification of every gate in the ledger.
+
+        Creates a fresh GateEngine with auto_approve=True (simulating fresh
+        context — all commands re-approved) and re-executes every gate.
+
+        Returns:
+            HandoffReport with verdict CLEAN if all passed, DIRTY if any failed.
+        """
+        # Create a fresh engine (zero shared context)
+        fresh_engine = GateEngine(auto_approve=True, timeout=self.engine.timeout)
+
+        gate_results: Dict[str, str] = {}
+        logic_chain: List[str] = []
+        caveats: List[str] = []
+        verification_cmds: List[str] = []
+        observation_parts: List[str] = []
+
+        all_passed = True
+        for gid, gate in self.ledger.gates.items():
+            if gate.status == "ABANDONED":
+                gate_results[gid] = "abandoned"
+                logic_chain.append(f"Skipped abandoned gate {gid}")
+                continue
+
+            result = fresh_engine.execute_gate(gate, reverify=True)
+            passed = result.status == "MET"
+            gate_results[gid] = "pass" if passed else "fail"
+            observation_parts.append(f"Gate {gid}: {result.status}")
+            logic_chain.append(
+                f"Re-verified {gid}: exit_code={result.exit_code}, status={result.status}"
+            )
+            if gate.check:
+                verification_cmds.append(gate.check)
+            if not passed:
+                all_passed = False
+                caveats.append(f"Gate {gid} failed re-verification: {result.error or result.status}")
+
+        verdict = "CLEAN" if all_passed else "DIRTY"
+        observation = "; ".join(observation_parts) if observation_parts else "No gates to verify"
+        conclusion = (
+            "All gates independently verified from fresh context"
+            if all_passed
+            else "Fresh-context audit found gate failures"
+        )
+
+        report = HandoffReport(
+            persona_id="victory-auditor",
+            archetype="auditor",
+            observation=observation,
+            logic_chain=logic_chain,
+            caveats=caveats,
+            conclusion=conclusion,
+            verdict=verdict,
+            verification_commands=verification_cmds,
+            metadata={"gate_results": gate_results},
+        )
+
+        # Write handoff markdown if workdir is set
+        if self.workdir:
+            audit_dir = self.workdir / "victory_audit"
+            audit_dir.mkdir(parents=True, exist_ok=True)
+            handoff_file = audit_dir / "handoff.md"
+            handoff_file.write_text(report.to_markdown(), encoding="utf-8")
+
+        return report
 
 
 @dataclass

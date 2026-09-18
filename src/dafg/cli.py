@@ -260,6 +260,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--target-score", type=float, default=85.0, help="Target quality score for convergence (default: 85.0, aligned with PERFECT threshold)")
         parser.add_argument("--workdir", default=None, help="Directory to scaffold and evolve organism")
         parser.add_argument("--auto-approve", action="store_true", default=False, help="Explicitly authorize auto-approval of sandboxed synthesized checks")
+        parser.add_argument("--multi-persona", action="store_true", default=False, help="Enable multi-persona adversarial gate iteration (Explorer→Worker→Reviewer→Challenger→Auditor)")
         parser.add_argument("--json", action="store_true", help="Output lineage summary as JSON")
         args = parser.parse_args(sub_args)
 
