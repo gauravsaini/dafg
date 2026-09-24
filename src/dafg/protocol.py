@@ -61,6 +61,7 @@ class Action(str, Enum):
     FAIL = "FAIL"
     HALT = "HALT"
     REOPEN = "REOPEN"
+    STREAM_INTERRUPT = "STREAM_INTERRUPT"
 
 
 class IllegalTransitionError(Exception):
@@ -194,9 +195,11 @@ class ProtocolEngine:
         (ProtocolState.PROVING, Action.DISPATCH_PROVE): ProtocolState.PROVING,
         (ProtocolState.PROVING, Action.DISPATCH_FASTPATH): ProtocolState.PROVING,
         (ProtocolState.PROVING, Action.FASTPATH_COMMIT): ProtocolState.ACCEPTED,
+        (ProtocolState.PROVING, Action.STREAM_INTERRUPT): ProtocolState.REVISING,
         (ProtocolState.CHALLENGING, Action.SUBMIT_EVIDENCE): ProtocolState.VERIFYING,
         (ProtocolState.CHALLENGING, Action.REVISE): ProtocolState.REVISING,
         (ProtocolState.CHALLENGING, Action.BLOCK): ProtocolState.IDLE,
+        (ProtocolState.CHALLENGING, Action.STREAM_INTERRUPT): ProtocolState.REVISING,
         (ProtocolState.VERIFYING, Action.ACCEPT_VERDICT): ProtocolState.ACCEPTED,
         (ProtocolState.VERIFYING, Action.FASTPATH_COMMIT): ProtocolState.ACCEPTED,
         (ProtocolState.VERIFYING, Action.REVISE): ProtocolState.REVISING,
@@ -411,9 +414,13 @@ class ProtocolEngine:
                         )
                         return [], record
 
-        # 6. Guard evaluation for INVALIDATE
-        # Invalidation is ALWAYS allowed and never blocked by budget
-        epoch_to_record = node.epoch + 1 if cmd.action == Action.INVALIDATE else node.epoch
+        # 6. Guard evaluation for INVALIDATE and STREAM_INTERRUPT
+        # Invalidation and streaming interrupts always increment epoch
+        epoch_to_record = (
+            node.epoch + 1
+            if cmd.action in (Action.INVALIDATE, Action.STREAM_INTERRUPT)
+            else node.epoch
+        )
 
         event = DomainEvent(
             event_id=seq_generator(),
@@ -465,6 +472,18 @@ class ProtocolReducer:
             else:
                 node.revisions += 1
             node.active_dispatch = None
+
+        elif event.action == Action.STREAM_INTERRUPT.value:
+            node.epoch = event.epoch
+            node.active_dispatch = None
+            if "revisions" in event.payload:
+                node.revisions = event.payload["revisions"]
+            else:
+                node.revisions += 1
+            if hasattr(node, "metadata") and isinstance(node.metadata, dict):
+                reason = event.payload.get("reason") if isinstance(event.payload, dict) else event.reason
+                if reason:
+                    node.metadata["last_abort_reason"] = reason
 
         elif event.action in (Action.DISPATCH_PROVE.value, Action.DISPATCH_FASTPATH.value):
             if "dispatch_identity" in event.payload:

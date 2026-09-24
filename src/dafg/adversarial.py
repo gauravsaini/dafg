@@ -6,6 +6,7 @@ where things break. Integrates with the dormant CHALLENGING protocol state.
 from __future__ import annotations
 
 import itertools
+import json
 import os
 import random
 import re
@@ -14,7 +15,10 @@ import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+
+from dafg.runtime import FailureClass, RevisionDirective
+from dafg.transport import ControlSignal, StreamChannel, StreamFrame
 
 
 class SearchStrategy(str, Enum):
@@ -315,3 +319,219 @@ class AdversarialInspector:
                 new_params[dim] = random.choice(space.dimensions[dim])
             nearby.append(new_params)
         return nearby
+
+
+def check_token_invariants(
+    text: str,
+    allowed_owns: Optional[Sequence[str]] = None,
+    forbidden_imports: Optional[Sequence[str]] = None,
+    forbidden_patterns: Optional[Sequence[str]] = None,
+) -> Optional[Tuple[str, str, FailureClass]]:
+    """Pure invariant checker for streamed token deltas.
+
+    Evaluates incremental token text against boundary and security contracts:
+    - Boundary (OWNS:) contract: disallows modifying or declaring files outside allowed_owns.
+    - Security imports contract: disallows importing modules in forbidden_imports.
+    - Structural patterns contract: disallows matching regexes in forbidden_patterns.
+
+    Returns:
+        Optional tuple of (violation_type, reason, failure_class) if violated, else None.
+    """
+    if forbidden_imports:
+        # Check import statements (e.g. "import os", "from subprocess import Popen", "; import sys")
+        import_pattern = r"(?:^|\n|;)\s*(?:from\s+([a-zA-Z0-9_\.]+)\s+import|import\s+([a-zA-Z0-9_\.]+))"
+        for match in re.finditer(import_pattern, text):
+            mod = match.group(1) or match.group(2)
+            if mod:
+                root_mod = mod.split(".")[0]
+                for fb in forbidden_imports:
+                    if root_mod == fb or mod == fb or mod.startswith(fb + "."):
+                        return (
+                            "FORBIDDEN_IMPORT",
+                            f"Security invariant violation: Forbidden import '{mod}' detected in stream",
+                            FailureClass.PERMISSION_DENIED,
+                        )
+
+        # Check dynamic imports (e.g. __import__('os'))
+        dynamic_pattern = r"__import__\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
+        for match in re.finditer(dynamic_pattern, text):
+            mod = match.group(1)
+            root_mod = mod.split(".")[0]
+            for fb in forbidden_imports:
+                if root_mod == fb or mod == fb or mod.startswith(fb + "."):
+                    return (
+                        "FORBIDDEN_IMPORT",
+                        f"Security invariant violation: Forbidden dynamic import '{mod}' detected in stream",
+                        FailureClass.PERMISSION_DENIED,
+                    )
+
+    if allowed_owns is not None:
+        allowed_set = {os.path.normpath(p.strip()) for p in allowed_owns}
+        allowed_basenames = {os.path.basename(p) for p in allowed_set}
+
+        owns_patterns = [
+            r"(?:OWNS|owns|TARGET|target):\s*([a-zA-Z0-9_\-\./\\]+)",
+            r"(?:writing to|touching|modifying|creating)\s+([a-zA-Z0-9_\-\./\\]+)",
+            r"open\s*\(\s*['\"]([^'\"]+)['\"]\s*,\s*['\"][wa\+][^'\"]*['\"]\)",
+        ]
+        for pat in owns_patterns:
+            for match in re.finditer(pat, text):
+                target_file = match.group(1).strip()
+                norm_target = os.path.normpath(target_file)
+                base_target = os.path.basename(norm_target)
+                if norm_target not in allowed_set and base_target not in allowed_basenames:
+                    return (
+                        "OWNS_VIOLATION",
+                        f"Boundary violation: Stream touched file '{target_file}' outside declared ownership {list(allowed_owns)}",
+                        FailureClass.INTERFACE_MISMATCH,
+                    )
+
+    if forbidden_patterns:
+        for pat in forbidden_patterns:
+            if re.search(pat, text):
+                return (
+                    "STRUCTURAL_GATE_BREACH",
+                    f"Structural gate breach: Stream matched forbidden pattern '{pat}'",
+                    FailureClass.LOCAL_DEFECT,
+                )
+
+    return None
+
+
+@dataclass(frozen=True)
+class InterceptionEvent:
+    """Immutable event representing a challenger interception trigger."""
+
+    violated: bool
+    violation_type: Optional[str] = None
+    reason: str = ""
+    token_delta: str = ""
+    directive: Optional[RevisionDirective] = None
+    abort_frame: Optional[StreamFrame] = None
+    latency_ms: float = 0.0
+
+
+class StreamingTokenInspector:
+    """Hot-Path Challenger Interceptor (Box 2 of Streaming Triad).
+
+    Taps Channel 0x01 (DATA) token deltas in real-time to enforce invariants:
+    - OWNS Invariant: Intercepts when generated tokens declare, touch, or write
+      to files outside node.owns or allowed_owns.
+    - Forbidden Imports: Intercepts blacklisted modules (e.g. os, subprocess).
+    - Structural Gates: Early interception on pattern violations.
+
+    When an invariant is breached, dispatches Channel 0x02 (CONTROL) 0x01 ABORT
+    frame with a structured RevisionDirective payload with sub-millisecond latency.
+    """
+
+    def __init__(
+        self,
+        allowed_owns: Optional[Sequence[str]] = None,
+        forbidden_imports: Optional[Sequence[str]] = None,
+        forbidden_patterns: Optional[Sequence[str]] = None,
+        stream_id: int = 1,
+        epoch: int = 1,
+    ):
+        self.allowed_owns = tuple(allowed_owns) if allowed_owns is not None else None
+        self.forbidden_imports = (
+            tuple(forbidden_imports)
+            if forbidden_imports is not None
+            else ("os", "subprocess", "pty", "shutil", "socket")
+        )
+        self.forbidden_patterns = tuple(forbidden_patterns) if forbidden_patterns is not None else ()
+        self.stream_id = stream_id
+        self.epoch = epoch
+        self._buffer: str = ""
+        self._interceptions_count: int = 0
+        self._total_inspected_tokens: int = 0
+        self._last_event: Optional[InterceptionEvent] = None
+
+    @property
+    def buffer(self) -> str:
+        return self._buffer
+
+    @property
+    def interceptions_count(self) -> int:
+        return self._interceptions_count
+
+    @property
+    def total_inspected_tokens(self) -> int:
+        return self._total_inspected_tokens
+
+    @property
+    def last_event(self) -> Optional[InterceptionEvent]:
+        return self._last_event
+
+    def reset(self) -> None:
+        """Reset internal buffer and tracking state."""
+        self._buffer = ""
+        self._interceptions_count = 0
+        self._total_inspected_tokens = 0
+        self._last_event = None
+
+    def inspect_delta(self, token_delta: str, seq: int = 0) -> InterceptionEvent:
+        """Inspect a single token delta or text chunk in real time.
+
+        Enforces invariants and returns an InterceptionEvent. If a violation is found,
+        constructs a StreamFrame with channel=CONTROL, signal=ABORT and RevisionDirective.
+        """
+        t0 = time.perf_counter()
+        self._buffer += token_delta
+        self._total_inspected_tokens += 1
+
+        check = check_token_invariants(
+            text=self._buffer,
+            allowed_owns=self.allowed_owns,
+            forbidden_imports=self.forbidden_imports,
+            forbidden_patterns=self.forbidden_patterns,
+        )
+
+        latency_ms = (time.perf_counter() - t0) * 1000.0
+
+        if check is not None:
+            violation_type, reason, failure_class = check
+            self._interceptions_count += 1
+            directive = RevisionDirective(
+                verdict="ABORT",
+                failure_class=failure_class,
+                feedback=reason,
+                repair_scope="LOCAL_ONLY",
+            )
+            abort_payload = json.dumps(directive.to_dict()).encode("utf-8")
+            abort_frame = StreamFrame(
+                stream_id=self.stream_id,
+                channel=StreamChannel.CONTROL,
+                seq=seq + 1,
+                signal=ControlSignal.ABORT,
+                epoch=self.epoch,
+                payload=abort_payload,
+            )
+            event = InterceptionEvent(
+                violated=True,
+                violation_type=violation_type,
+                reason=reason,
+                token_delta=token_delta,
+                directive=directive,
+                abort_frame=abort_frame,
+                latency_ms=latency_ms,
+            )
+            self._last_event = event
+            return event
+
+        event = InterceptionEvent(
+            violated=False,
+            token_delta=token_delta,
+            latency_ms=latency_ms,
+        )
+        self._last_event = event
+        return event
+
+    def inspect_frame(self, frame: StreamFrame) -> Optional[StreamFrame]:
+        """Inspect a StreamFrame; returns an ABORT StreamFrame if an invariant is breached."""
+        if frame.channel != StreamChannel.DATA:
+            return None
+        text_chunk = frame.payload.decode("utf-8", errors="replace")
+        event = self.inspect_delta(text_chunk, seq=frame.seq)
+        if event.violated:
+            return event.abort_frame
+        return None

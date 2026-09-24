@@ -8,13 +8,23 @@ and ReAct State Machine) to test true cross-runtime transferability.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import asyncio
 from dataclasses import dataclass, field
 import json
+import os
+import socket
 import time
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from dafg.protocol import DispatchIdentity
-from dafg.runtime import AgentResponse, TaskNode
+from dafg.runtime import AgentResponse, FailureClass, RevisionDirective, TaskNode
+from dafg.transport import (
+    ControlSignal,
+    StreamChannel,
+    StreamFrame,
+    decode_all_frames,
+    encode_frames,
+)
 
 
 class BaseRuntimeAdapter(ABC):
@@ -118,6 +128,24 @@ class BaseRuntimeAdapter(ABC):
         elif source_adapter == "tool-dispatch" and target_adapter == "iterative-cli":
             # ToolDispatch→CLI: flatten structured calls to text
             coerced_meta["coerced_output_schema"] = "raw_text"
+
+        elif source_adapter == "duplex-socket" and target_adapter == "tool-dispatch":
+            coerced_meta["tool_calls_count"] = 0
+            coerced_meta["coerced_output_schema"] = "structured"
+
+        elif source_adapter == "duplex-socket" and target_adapter == "react-state-machine":
+            coerced_meta["trace"] = [
+                {"turn": "1", "thought": "Ingesting duplex streaming output",
+                 "action": "consume_stream", "observation": response.output[:200]}
+            ]
+            coerced_meta["coerced_output_schema"] = "react_trace"
+
+        elif source_adapter == "duplex-socket" and target_adapter == "iterative-cli":
+            coerced_meta["coerced_output_schema"] = "raw_text"
+
+        elif source_adapter in ("iterative-cli", "tool-dispatch", "react-state-machine") and target_adapter == "duplex-socket":
+            coerced_meta["coerced_output_schema"] = "stream_frames"
+            coerced_meta["frames_count"] = 1
 
         return AgentResponse(
             output=response.output,
@@ -533,3 +561,595 @@ class ReActStateAdapter(BaseRuntimeAdapter):
             epoch=epoch,
             dispatch_identity=disp,
         )
+
+
+@dataclass
+class CancellationToken:
+    """Explicit cancellation token for cooperative asynchronous stream interruption."""
+
+    is_cancelled: bool = False
+    reason: str = ""
+
+    def cancel(self, reason: str = "Stream interrupted by cancellation token") -> None:
+        self.is_cancelled = True
+        self.reason = reason
+
+
+class UnixSocketStreamServer:
+    """Async context manager helper for running Unix Domain Socket streaming servers."""
+
+    def __init__(
+        self,
+        socket_path: str,
+        client_handler: Callable[[asyncio.StreamReader, asyncio.StreamWriter], Any],
+    ):
+        self.socket_path = socket_path
+        self.client_handler = client_handler
+        self._server: Optional[asyncio.Server] = None
+
+    async def __aenter__(self) -> UnixSocketStreamServer:
+        if os.path.exists(self.socket_path):
+            try:
+                os.remove(self.socket_path)
+            except OSError:
+                pass
+        self._server = await asyncio.start_unix_server(
+            self.client_handler, path=self.socket_path
+        )
+        return self
+
+    async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        if self._server:
+            self._server.close()
+            await self._server.wait_closed()
+        if os.path.exists(self.socket_path):
+            try:
+                os.remove(self.socket_path)
+            except OSError:
+                pass
+
+
+class DuplexSocketAdapter(BaseRuntimeAdapter):
+    """Full-duplex streaming execution adapter over Unix Domain Sockets (UDS) / async streams.
+
+    Implements Box 1 of the Streaming Triad architecture:
+    - Wraps bi-directional UDS sockets for streaming token deltas and out-of-band control signals.
+    - Consumes StreamChannel.DATA (0x01) for incremental token output.
+    - Monitors StreamChannel.CONTROL (0x02) for real-time barge-in signals (ABORT, STEER, PAUSE, RESUME).
+    - Can attach a StreamingTokenInspector for hot-path challenger aborts.
+    - Supports cooperative cancellation tokens (CancellationToken) and async timeouts.
+    - When ABORT signal is encountered or triggered, halts inference/stream consumption immediately
+      and returns AgentResponse(status='REVISING', epoch=epoch + 1, ...).
+    """
+
+    def __init__(
+        self,
+        name: str = "duplex-socket",
+        socket_path: Optional[str] = None,
+        token_inspector: Optional[Any] = None,
+        cancel_token: Optional[CancellationToken] = None,
+        timeout: float = 30.0,
+        buffer_size: int = 65536,
+        stream_handler: Optional[Callable[[TaskNode, Dict[str, Any]], Any]] = None,
+    ):
+        super().__init__(name)
+        self.socket_path = socket_path
+        self.token_inspector = token_inspector
+        self.cancel_token = cancel_token
+        self.timeout = timeout
+        self.buffer_size = buffer_size
+        self.stream_handler = stream_handler
+        self.total_frames_sent: int = 0
+        self.total_frames_received: int = 0
+        self.total_aborts_handled: int = 0
+
+    async def invoke_stream(
+        self,
+        node: TaskNode,
+        context: Dict[str, Any],
+        cancel_token: Optional[CancellationToken] = None,
+    ) -> AgentResponse:
+        """Asynchronously execute a streaming task node over UDS or duplex stream."""
+        self.total_invocations += 1
+
+        refusal = self.check_refusal(node, context)
+        if refusal:
+            self.total_tokens_consumed += 120
+            return refusal
+
+        disp_raw = context.get("dispatch_identity") if context else getattr(node, "active_dispatch", None)
+        disp = DispatchIdentity.from_dict(disp_raw) if isinstance(disp_raw, dict) else disp_raw
+        epoch = getattr(disp, "epoch", getattr(node, "epoch", 1)) if disp else getattr(node, "epoch", 1)
+
+        active_cancel = cancel_token or self.cancel_token
+        if active_cancel and active_cancel.is_cancelled:
+            self.total_aborts_handled += 1
+            reason = active_cancel.reason or "Pre-cancelled by cancellation token"
+            return AgentResponse(
+                output="",
+                status="REVISING",
+                epoch=epoch + 1,
+                dispatch_identity=disp,
+                files_modified=[],
+                metadata={
+                    "adapter": self.name,
+                    "interrupted": True,
+                    "abort_signal": int(ControlSignal.ABORT),
+                    "abort_reason": reason,
+                },
+                revision_directive=RevisionDirective(
+                    verdict="ABORT",
+                    failure_class=FailureClass.LOCAL_DEFECT,
+                    feedback=reason,
+                ),
+            )
+
+        # 1. Real Unix Domain Socket connection path
+        if self.socket_path and os.path.exists(self.socket_path):
+            return await self._invoke_over_uds(node, context, disp, epoch, active_cancel)
+
+        # 2. Custom stream handler callable
+        if self.stream_handler:
+            return await self._invoke_over_handler(node, context, disp, epoch, active_cancel)
+
+        # 3. Default deterministic streaming simulation
+        return await self._invoke_simulation(node, context, disp, epoch, active_cancel)
+
+    async def _invoke_over_uds(
+        self,
+        node: TaskNode,
+        context: Dict[str, Any],
+        disp: Optional[DispatchIdentity],
+        epoch: int,
+        cancel_token: Optional[CancellationToken],
+    ) -> AgentResponse:
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_unix_connection(self.socket_path),
+                timeout=self.timeout,
+            )
+        except Exception as err:
+            return AgentResponse(
+                output=f"Failed to connect to UDS socket at {self.socket_path}: {err}",
+                status="FAILED",
+                epoch=epoch,
+                dispatch_identity=disp,
+                files_modified=[],
+                metadata={"adapter": self.name, "error": str(err)},
+            )
+
+        req_payload = json.dumps(
+            {"node_id": node.id, "title": node.title, "owns": list(node.owns)}
+        ).encode("utf-8")
+        stream_id = abs(hash(node.id)) % 0xFFFF or 1
+        req_frame = StreamFrame(
+            stream_id=stream_id,
+            channel=StreamChannel.DATA,
+            seq=0,
+            signal=ControlSignal.NOOP,
+            epoch=epoch,
+            payload=req_payload,
+        )
+        writer.write(req_frame.encode())
+        await writer.drain()
+        self.total_frames_sent += 1
+
+        accumulated_output = ""
+        rx_buf = b""
+        frames_received = 0
+        tokens_consumed = 0
+
+        try:
+            while True:
+                if cancel_token and cancel_token.is_cancelled:
+                    abort_frame = StreamFrame(
+                        stream_id=stream_id,
+                        channel=StreamChannel.CONTROL,
+                        seq=frames_received + 1,
+                        signal=ControlSignal.ABORT,
+                        epoch=epoch,
+                        payload=cancel_token.reason.encode("utf-8"),
+                    )
+                    try:
+                        writer.write(abort_frame.encode())
+                        await writer.drain()
+                    except Exception:
+                        pass
+                    writer.close()
+                    await writer.wait_closed()
+                    self.total_aborts_handled += 1
+                    return AgentResponse(
+                        output=accumulated_output,
+                        status="REVISING",
+                        epoch=epoch + 1,
+                        dispatch_identity=disp,
+                        files_modified=[],
+                        metadata={
+                            "adapter": self.name,
+                            "interrupted": True,
+                            "abort_signal": int(ControlSignal.ABORT),
+                            "abort_reason": cancel_token.reason,
+                        },
+                        revision_directive=RevisionDirective(
+                            verdict="ABORT",
+                            failure_class=FailureClass.LOCAL_DEFECT,
+                            feedback=cancel_token.reason,
+                        ),
+                    )
+
+                chunk = await asyncio.wait_for(
+                    reader.read(self.buffer_size), timeout=self.timeout
+                )
+                if not chunk:
+                    break
+
+                rx_buf += chunk
+                frames, rx_buf = decode_all_frames(rx_buf)
+                for f in frames:
+                    frames_received += 1
+                    self.total_frames_received += 1
+
+                    if f.channel == StreamChannel.DATA:
+                        token_text = f.payload.decode("utf-8", errors="replace")
+                        accumulated_output += token_text
+                        tokens_consumed += max(1, len(token_text.split()))
+
+                        if self.token_inspector:
+                            abort_frame = self.token_inspector.inspect_frame(f)
+                            if abort_frame is not None:
+                                try:
+                                    writer.write(abort_frame.encode())
+                                    await writer.drain()
+                                except Exception:
+                                    pass
+                                writer.close()
+                                await writer.wait_closed()
+                                self.total_aborts_handled += 1
+                                rev_dir = None
+                                try:
+                                    rev_dir = RevisionDirective.from_dict(
+                                        json.loads(abort_frame.payload.decode("utf-8"))
+                                    )
+                                except Exception:
+                                    pass
+                                return AgentResponse(
+                                    output=accumulated_output,
+                                    status="REVISING",
+                                    epoch=epoch + 1,
+                                    dispatch_identity=disp,
+                                    files_modified=[],
+                                    metadata={
+                                        "adapter": self.name,
+                                        "interrupted": True,
+                                        "abort_signal": int(ControlSignal.ABORT),
+                                        "abort_reason": "Hot-path challenger interceptor triggered abort",
+                                        "interceptor": "StreamingTokenInspector",
+                                    },
+                                    revision_directive=rev_dir,
+                                )
+
+                    elif f.channel == StreamChannel.CONTROL:
+                        if f.signal == ControlSignal.ABORT:
+                            writer.close()
+                            await writer.wait_closed()
+                            self.total_aborts_handled += 1
+                            abort_str = f.payload.decode("utf-8", errors="replace")
+                            rev_dir = None
+                            try:
+                                rev_dir = RevisionDirective.from_dict(json.loads(abort_str))
+                            except Exception:
+                                pass
+                            return AgentResponse(
+                                output=accumulated_output,
+                                status="REVISING",
+                                epoch=epoch + 1,
+                                dispatch_identity=disp,
+                                files_modified=[],
+                                metadata={
+                                    "adapter": self.name,
+                                    "interrupted": True,
+                                    "abort_signal": int(f.signal),
+                                    "abort_reason": abort_str,
+                                },
+                                revision_directive=rev_dir
+                                or RevisionDirective(verdict="ABORT", feedback=abort_str),
+                            )
+
+            writer.close()
+            await writer.wait_closed()
+            self.total_tokens_consumed += tokens_consumed
+
+            return AgentResponse(
+                output=accumulated_output,
+                status="COMPLETED",
+                files_modified=list(node.owns),
+                epoch=epoch,
+                dispatch_identity=disp,
+                metadata={
+                    "adapter": self.name,
+                    "frames_received": frames_received,
+                    "tokens_consumed": tokens_consumed,
+                },
+            )
+
+        except asyncio.TimeoutError:
+            writer.close()
+            return AgentResponse(
+                output=accumulated_output,
+                status="FAILED",
+                epoch=epoch,
+                dispatch_identity=disp,
+                files_modified=[],
+                metadata={"adapter": self.name, "error": "UDS_STREAM_TIMEOUT"},
+            )
+        except Exception as err:
+            writer.close()
+            return AgentResponse(
+                output=accumulated_output,
+                status="FAILED",
+                epoch=epoch,
+                dispatch_identity=disp,
+                files_modified=[],
+                metadata={"adapter": self.name, "error": str(err)},
+            )
+
+    async def _invoke_over_handler(
+        self,
+        node: TaskNode,
+        context: Dict[str, Any],
+        disp: Optional[DispatchIdentity],
+        epoch: int,
+        cancel_token: Optional[CancellationToken],
+    ) -> AgentResponse:
+        accumulated_output = ""
+        frames_received = 0
+        tokens_consumed = 0
+
+        res = self.stream_handler(node, context)
+        if hasattr(res, "__aiter__"):
+            async_iter = res
+        elif hasattr(res, "__iter__"):
+            async def _wrap_iter(it):
+                for item in it:
+                    yield item
+            async_iter = _wrap_iter(res)
+        else:
+            if isinstance(res, AgentResponse):
+                return res
+            return AgentResponse(
+                output=str(res),
+                status="COMPLETED",
+                files_modified=list(node.owns),
+                epoch=epoch,
+                dispatch_identity=disp,
+                metadata={"adapter": self.name},
+            )
+
+        async for f in async_iter:
+            if cancel_token and cancel_token.is_cancelled:
+                self.total_aborts_handled += 1
+                return AgentResponse(
+                    output=accumulated_output,
+                    status="REVISING",
+                    epoch=epoch + 1,
+                    dispatch_identity=disp,
+                    files_modified=[],
+                    metadata={
+                        "adapter": self.name,
+                        "interrupted": True,
+                        "abort_signal": int(ControlSignal.ABORT),
+                        "abort_reason": cancel_token.reason,
+                    },
+                    revision_directive=RevisionDirective(
+                        verdict="ABORT",
+                        failure_class=FailureClass.LOCAL_DEFECT,
+                        feedback=cancel_token.reason,
+                    ),
+                )
+
+            frames_received += 1
+            self.total_frames_received += 1
+
+            if f.channel == StreamChannel.DATA:
+                token_text = f.payload.decode("utf-8", errors="replace")
+                accumulated_output += token_text
+                tokens_consumed += max(1, len(token_text.split()))
+
+                if self.token_inspector:
+                    abort_frame = self.token_inspector.inspect_frame(f)
+                    if abort_frame is not None:
+                        self.total_aborts_handled += 1
+                        rev_dir = None
+                        try:
+                            rev_dir = RevisionDirective.from_dict(
+                                json.loads(abort_frame.payload.decode("utf-8"))
+                            )
+                        except Exception:
+                            pass
+                        return AgentResponse(
+                            output=accumulated_output,
+                            status="REVISING",
+                            epoch=epoch + 1,
+                            dispatch_identity=disp,
+                            files_modified=[],
+                            metadata={
+                                "adapter": self.name,
+                                "interrupted": True,
+                                "abort_signal": int(ControlSignal.ABORT),
+                                "abort_reason": "Hot-path challenger interceptor triggered abort",
+                                "interceptor": "StreamingTokenInspector",
+                            },
+                            revision_directive=rev_dir,
+                        )
+
+            elif f.channel == StreamChannel.CONTROL:
+                if f.signal == ControlSignal.ABORT:
+                    self.total_aborts_handled += 1
+                    abort_str = f.payload.decode("utf-8", errors="replace")
+                    rev_dir = None
+                    try:
+                        rev_dir = RevisionDirective.from_dict(json.loads(abort_str))
+                    except Exception:
+                        pass
+                    return AgentResponse(
+                        output=accumulated_output,
+                        status="REVISING",
+                        epoch=epoch + 1,
+                        dispatch_identity=disp,
+                        files_modified=[],
+                        metadata={
+                            "adapter": self.name,
+                            "interrupted": True,
+                            "abort_signal": int(f.signal),
+                            "abort_reason": abort_str,
+                        },
+                        revision_directive=rev_dir
+                        or RevisionDirective(verdict="ABORT", feedback=abort_str),
+                    )
+
+        self.total_tokens_consumed += tokens_consumed
+        return AgentResponse(
+            output=accumulated_output,
+            status="COMPLETED",
+            files_modified=list(node.owns),
+            epoch=epoch,
+            dispatch_identity=disp,
+            metadata={
+                "adapter": self.name,
+                "frames_received": frames_received,
+                "tokens_consumed": tokens_consumed,
+            },
+        )
+
+    async def _invoke_simulation(
+        self,
+        node: TaskNode,
+        context: Dict[str, Any],
+        disp: Optional[DispatchIdentity],
+        epoch: int,
+        cancel_token: Optional[CancellationToken],
+    ) -> AgentResponse:
+        stream_id = abs(hash(node.id)) % 0xFFFF or 1
+
+        if node.metadata.get("simulate_abort"):
+            self.total_aborts_handled += 1
+            reason = node.metadata.get("abort_reason", "Simulated out-of-band abort")
+            return AgentResponse(
+                output="[ABORTED MID-STREAM]",
+                status="REVISING",
+                epoch=epoch + 1,
+                dispatch_identity=disp,
+                files_modified=[],
+                metadata={
+                    "adapter": self.name,
+                    "interrupted": True,
+                    "abort_signal": int(ControlSignal.ABORT),
+                    "abort_reason": reason,
+                },
+                revision_directive=RevisionDirective(verdict="ABORT", feedback=reason),
+            )
+
+        stream_content = node.metadata.get("stream_content")
+        if stream_content:
+            chunks = stream_content.splitlines(keepends=True) or [stream_content]
+        else:
+            chunks = [
+                f"# Streaming task {node.id}: {node.title}\n",
+                f"# OWNS: {', '.join(node.owns) if node.owns else 'none'}\n",
+                "def execute():\n",
+                f"    return 'Streamed result for {node.id}'\n",
+            ]
+
+        accumulated = ""
+        for seq, chunk in enumerate(chunks, start=1):
+            if cancel_token and cancel_token.is_cancelled:
+                self.total_aborts_handled += 1
+                return AgentResponse(
+                    output=accumulated,
+                    status="REVISING",
+                    epoch=epoch + 1,
+                    dispatch_identity=disp,
+                    files_modified=[],
+                    metadata={
+                        "adapter": self.name,
+                        "interrupted": True,
+                        "abort_signal": int(ControlSignal.ABORT),
+                        "abort_reason": cancel_token.reason,
+                    },
+                    revision_directive=RevisionDirective(
+                        verdict="ABORT",
+                        failure_class=FailureClass.LOCAL_DEFECT,
+                        feedback=cancel_token.reason,
+                    ),
+                )
+
+            frame = StreamFrame(
+                stream_id=stream_id,
+                channel=StreamChannel.DATA,
+                seq=seq,
+                signal=ControlSignal.NOOP,
+                epoch=epoch,
+                payload=chunk.encode("utf-8"),
+            )
+            self.total_frames_received += 1
+            accumulated += chunk
+
+            if self.token_inspector:
+                abort_frame = self.token_inspector.inspect_frame(frame)
+                if abort_frame is not None:
+                    self.total_aborts_handled += 1
+                    rev_dir = None
+                    try:
+                        rev_dir = RevisionDirective.from_dict(
+                            json.loads(abort_frame.payload.decode("utf-8"))
+                        )
+                    except Exception:
+                        pass
+                    return AgentResponse(
+                        output=accumulated,
+                        status="REVISING",
+                        epoch=epoch + 1,
+                        dispatch_identity=disp,
+                        files_modified=[],
+                        metadata={
+                            "adapter": self.name,
+                            "interrupted": True,
+                            "abort_signal": int(ControlSignal.ABORT),
+                            "abort_reason": "Hot-path challenger interceptor triggered abort",
+                            "interceptor": "StreamingTokenInspector",
+                        },
+                        revision_directive=rev_dir,
+                    )
+
+        tokens = max(1, len(accumulated.split()))
+        self.total_tokens_consumed += tokens
+
+        return AgentResponse(
+            output=accumulated,
+            status="COMPLETED",
+            files_modified=list(node.owns),
+            epoch=epoch,
+            dispatch_identity=disp,
+            metadata={
+                "adapter": self.name,
+                "frames_received": len(chunks),
+                "tokens_consumed": tokens,
+            },
+        )
+
+    def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
+        """Synchronously execute by driving the async stream on an event loop."""
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop and loop.is_running():
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                return pool.submit(
+                    lambda: asyncio.run(self.invoke_stream(node, context))
+                ).result(timeout=self.timeout)
+        else:
+            return asyncio.run(self.invoke_stream(node, context))

@@ -58,8 +58,11 @@ from dafg.adversarial import (
     AdversarialInspector,
     AdversarialResult,
     Evaluation,
+    InterceptionEvent,
     ParameterSpace,
     SearchStrategy,
+    StreamingTokenInspector,
+    check_token_invariants,
 )
 from dafg.init import scaffold_project
 from dafg.runtime import (
@@ -140,9 +143,27 @@ from dafg.persona import (
 
 from dafg.adapters import (
     BaseRuntimeAdapter,
+    CancellationToken,
+    DuplexSocketAdapter,
     IterativeCLIAdapter,
     ReActStateAdapter,
     ToolDispatchAdapter,
+    UnixSocketStreamServer,
+)
+
+from dafg.transport import (
+    ControlSignal,
+    CorruptFrameError,
+    HEADER_FORMAT,
+    HEADER_SIZE,
+    IncompleteFrameError,
+    MAX_PAYLOAD_SIZE,
+    PayloadOverflowError,
+    StreamChannel,
+    StreamFrame,
+    TransportError,
+    decode_all_frames,
+    encode_frames,
 )
 
 from dafg.eval import (
@@ -290,9 +311,12 @@ __all__ = [
     "PolicyEngine",
     "RoutingBlockedError",
     "BaseRuntimeAdapter",
+    "CancellationToken",
+    "DuplexSocketAdapter",
     "IterativeCLIAdapter",
     "ReActStateAdapter",
     "ToolDispatchAdapter",
+    "UnixSocketStreamServer",
     "BenchmarkTask",
     "CompletionClaim",
     "EvaluationHarness",
@@ -346,5 +370,20 @@ __all__ = [
     "SandboxSecurityViolation",
     "SubprocessExecutionBoundary",
     "SubprocessSandbox",
+    "StreamChannel",
+    "ControlSignal",
+    "StreamFrame",
+    "TransportError",
+    "IncompleteFrameError",
+    "CorruptFrameError",
+    "PayloadOverflowError",
+    "HEADER_FORMAT",
+    "HEADER_SIZE",
+    "MAX_PAYLOAD_SIZE",
+    "decode_all_frames",
+    "encode_frames",
+    "StreamingTokenInspector",
+    "InterceptionEvent",
+    "check_token_invariants",
 ]
 

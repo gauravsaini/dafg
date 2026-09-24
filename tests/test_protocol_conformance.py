@@ -335,3 +335,60 @@ def test_dynamic_subagent_spawning_and_protocol_invariants():
     # 4. Parent is blocked waiting for subagents to complete
     assert graph.nodes["parent_task"].status == NodeStatus.BLOCKED
     assert graph.nodes["parent_task"].execution_status == ExecutionStatus.BLOCKED
+
+
+def test_stream_interrupt_transition_and_epoch_bump():
+    """Verify STREAM_INTERRUPT transitions from PROVING to REVISING and increments epoch."""
+    graph = DAFG()
+    node = TaskNode("n_stream", "Streaming Task")
+    graph.add_node(node)
+
+    # Transition to PROVING
+    graph.submit_command(ProtocolCommand("c1", Action.LOAD_CONTEXT, "n_stream", graph.run_id))
+    graph.submit_command(ProtocolCommand("c2", Action.DISPATCH_PROVE, "n_stream", graph.run_id))
+    assert node.protocol_state == ProtocolState.PROVING
+    assert node.epoch == 1
+
+    # Intercept with STREAM_INTERRUPT
+    cmd = ProtocolCommand(
+        idempotency_key="abort_1",
+        action=Action.STREAM_INTERRUPT,
+        node_id="n_stream",
+        run_id=graph.run_id,
+        reason="OWNS boundary violation: modified undeclared file",
+        payload={"reason": "OWNS boundary violation: modified undeclared file"},
+    )
+    events, record = graph.submit_command(cmd)
+    assert record is None
+    assert len(events) == 1
+    assert node.protocol_state == ProtocolState.REVISING
+    assert node.execution_status == ExecutionStatus.BLOCKED
+    assert node.epoch == 2
+    assert node.active_dispatch is None
+    assert node.metadata.get("last_abort_reason") == "OWNS boundary violation: modified undeclared file"
+
+
+def test_stream_interrupt_from_challenging_state():
+    """Verify STREAM_INTERRUPT also transitions from CHALLENGING to REVISING."""
+    graph = DAFG()
+    node = TaskNode("n_chal", "Challenging Task")
+    graph.add_node(node)
+
+    graph.submit_command(ProtocolCommand("c1", Action.LOAD_CONTEXT, "n_chal", graph.run_id))
+    graph.submit_command(ProtocolCommand("c2", Action.DISPATCH_PROVE, "n_chal", graph.run_id))
+    graph.submit_command(ProtocolCommand("c3", Action.CHALLENGE, "n_chal", graph.run_id))
+    assert node.protocol_state == ProtocolState.CHALLENGING
+
+    cmd = ProtocolCommand(
+        idempotency_key="abort_chal",
+        action=Action.STREAM_INTERRUPT,
+        node_id="n_chal",
+        run_id=graph.run_id,
+        reason="Challenger stream interrupted by supervisor",
+    )
+    events, record = graph.submit_command(cmd)
+    assert record is None
+    assert len(events) == 1
+    assert node.protocol_state == ProtocolState.REVISING
+    assert node.epoch == 2
+
