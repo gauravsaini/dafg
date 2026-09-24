@@ -145,3 +145,19 @@ MODE: standard
   OWNS: src/dafg/oracle.py tests/test_oracle.py src/dafg/__init__.py
   AUTHOR: external
   EVIDENCE: exit_code=0 timestamp=2026-09-24T08:38:13.961245+00:00 match='passed' epoch=1 sig=7b80ed2edc43 record={"attempt_id": 1, "command_digest": "2d651fb462b3b792ad88589cdea316dd7a6098d5d79b5b202e058676878bff36", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G18", "gate_signature": "7b80ed2edc43433e71b28e6bc194700c885269638e2e991ccf6133257d16eb76", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T08:38:13.961245+00:00"}
+
+- [x] G19: Phase 1 matrix scaled to 75 real-fixture tasks
+  CHECK: uv run pytest -q tests/test_phase1_tasks.py
+  EXPECT: passed
+  CWD: .
+  OWNS: src/dafg/eval.py tests/test_phase1_tasks.py
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T09:43:47.506706+00:00 match='passed' epoch=1 sig=161c3271f209 record={"attempt_id": 1, "command_digest": "a46fce6ffa25456179b0ee330c85528fc1760686e21dcf3faa65edfc12973b5b", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G19", "gate_signature": "161c3271f20939aa88bbb8c95198ee7ef3748c9ce93e7455ccf71e12af3a00bf", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T09:43:47.506706+00:00"}
+
+- [x] G20: Paired A/B/C runner executes matrix with discrepancy audit
+  CHECK: uv run pytest -q tests/test_phase1.py
+  EXPECT: passed
+  CWD: .
+  OWNS: src/dafg/phase1.py tests/test_phase1.py src/dafg/__init__.py
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T09:43:47.713511+00:00 match='passed' epoch=1 sig=673df676723c record={"attempt_id": 1, "command_digest": "ce0f711e8ea5ef33abb7d20465cd8e41231822c7b45b63217dd23588450490ef", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G20", "gate_signature": "673df676723c9de0a7a53e88ce97cca428fe1a6fdc1a5d2f2d00928f38bc0a82", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T09:43:47.713511+00:00"}

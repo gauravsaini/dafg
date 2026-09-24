@@ -195,6 +195,13 @@ from dafg.oracle import (
     audit_discrepancy,
     run_oracle,
 )
+from dafg.phase1 import (
+    Phase1MatrixResult,
+    Phase1Summary,
+    TaskOutcomeList,
+    run_phase1_matrix,
+    summarize_matrix,
+)
 
 __version__ = "0.4.0"
 __all__ = [
@@ -354,5 +361,10 @@ __all__ = [
     "GroundTruthResult",
     "audit_discrepancy",
     "run_oracle",
+    "Phase1MatrixResult",
+    "Phase1Summary",
+    "TaskOutcomeList",
+    "run_phase1_matrix",
+    "summarize_matrix",
 ]
 

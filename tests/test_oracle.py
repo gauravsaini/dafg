@@ -183,3 +183,43 @@ def test_audit_discrepancy_math():
     assert r8["gt_score"] == 80.0
     assert r8["discrepancy"] == 0.0
     assert r8["flag"] is False
+
+    # 9. GroundTruthResult fraction scale 1.0 vs internal 100.0 -> discrepancy 0
+    gt_frac_1 = GroundTruthResult(total=10, passed=10, failed=0, pass_rate=1.0, duration_s=0.5)
+    r9 = audit_discrepancy(internal_score=100.0, gt_dict=gt_frac_1, threshold=10.0)
+    assert r9["gt_score"] == 100.0
+    assert r9["discrepancy"] == 0.0
+    assert r9["flag"] is False
+
+    # 10. GroundTruthResult fraction scale 0.0 vs internal 0.0 -> discrepancy 0
+    gt_frac_0 = GroundTruthResult(total=10, passed=0, failed=10, pass_rate=0.0, duration_s=0.5)
+    r10 = audit_discrepancy(internal_score=0.0, gt_dict=gt_frac_0, threshold=10.0)
+    assert r10["gt_score"] == 0.0
+    assert r10["discrepancy"] == 0.0
+    assert r10["flag"] is False
+
+    # 11. GroundTruthResult(pass_rate=1.0) with defaults vs internal 100.0 -> discrepancy 0
+    gt_simple_1 = GroundTruthResult(pass_rate=1.0)
+    r11 = audit_discrepancy(internal_score=100.0, gt_dict=gt_simple_1, threshold=10.0)
+    assert r11["gt_score"] == 100.0
+    assert r11["discrepancy"] == 0.0
+    assert r11["flag"] is False
+
+    # 12. GroundTruthResult(pass_rate=0.0) with defaults vs internal 0.0 -> discrepancy 0
+    gt_simple_0 = GroundTruthResult(pass_rate=0.0)
+    r12 = audit_discrepancy(internal_score=0.0, gt_dict=gt_simple_0, threshold=10.0)
+    assert r12["gt_score"] == 0.0
+    assert r12["discrepancy"] == 0.0
+    assert r12["flag"] is False
+
+    # 13. Dict with fraction pass_rate 1.0 and total context vs internal 100.0 -> discrepancy 0
+    r13 = audit_discrepancy(internal_score=100.0, gt_dict={"pass_rate": 1.0, "total": 10}, threshold=10.0)
+    assert r13["gt_score"] == 100.0
+    assert r13["discrepancy"] == 0.0
+    assert r13["flag"] is False
+
+    # 14. Dict with fraction pass_rate 0.0 and total context vs internal 0.0 -> discrepancy 0
+    r14 = audit_discrepancy(internal_score=0.0, gt_dict={"pass_rate": 0.0, "total": 10}, threshold=10.0)
+    assert r14["gt_score"] == 0.0
+    assert r14["discrepancy"] == 0.0
+    assert r14["flag"] is False

@@ -242,12 +242,19 @@ def audit_discrepancy(
 ) -> dict[str, Any]:
     """Audit discrepancy between internal score and ground-truth oracle pass rate."""
     if isinstance(gt_dict, GroundTruthResult):
-        gt_score = float(gt_dict.pass_rate)
+        val = float(gt_dict.pass_rate)
+        gt_score = (val * 100.0) if val <= 1.0 else val
     elif isinstance(gt_dict, dict):
+        has_context = "total" in gt_dict or "passed" in gt_dict
         if "pass_rate" in gt_dict:
-            gt_score = float(gt_dict["pass_rate"])
+            val = float(gt_dict["pass_rate"])
+            gt_score = (val * 100.0) if (val <= 1.0 and has_context) else val
         elif "score" in gt_dict:
-            gt_score = float(gt_dict["score"])
+            val = float(gt_dict["score"])
+            gt_score = (val * 100.0) if (val <= 1.0 and has_context) else val
+        elif "value" in gt_dict:
+            val = float(gt_dict["value"])
+            gt_score = (val * 100.0) if (val <= 1.0 and has_context) else val
         elif "total" in gt_dict and int(gt_dict["total"]) > 0:
             passed = float(gt_dict.get("passed", 0))
             total = float(gt_dict["total"])
