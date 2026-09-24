@@ -1,0 +1,262 @@
+{
+  "suite": "phase1",
+  "generated_at": "2026-09-24T11:13:48.383249+00:00",
+  "tasks": 75,
+  "seeds": [
+    42
+  ],
+  "modes": [
+    "iterative-cli",
+    "tool-dispatch",
+    "react-state-machine"
+  ],
+  "trials": 225,
+  "manifests": 3,
+  "metrics": {
+    "iterative-cli": {
+      "total_trials": 75,
+      "feasible_trials": 55,
+      "impossible_trials": 20,
+      "verified_success": 55,
+      "correct_block": 20,
+      "verified_failure": 0,
+      "evaluation_error": 0,
+      "execution_error": 0,
+      "correct_outcome_rate": 1.0,
+      "delivery_success_rate": 1.0,
+      "correct_block_rate": 1.0,
+      "total_tokens": 45356,
+      "feasible_tokens": 37772,
+      "tokens_per_correct_outcome": 604.7466666666667,
+      "tokens_per_delivery": 686.7636363636364
+    },
+    "tool-dispatch": {
+      "total_trials": 75,
+      "feasible_trials": 55,
+      "impossible_trials": 20,
+      "verified_success": 55,
+      "correct_block": 20,
+      "verified_failure": 0,
+      "evaluation_error": 0,
+      "execution_error": 0,
+      "correct_outcome_rate": 1.0,
+      "delivery_success_rate": 1.0,
+      "correct_block_rate": 1.0,
+      "total_tokens": 56531,
+      "feasible_tokens": 47147,
+      "tokens_per_correct_outcome": 753.7466666666667,
+      "tokens_per_delivery": 857.2181818181818
+    },
+    "react-state-machine": {
+      "total_trials": 75,
+      "feasible_trials": 55,
+      "impossible_trials": 20,
+      "verified_success": 55,
+      "correct_block": 20,
+      "verified_failure": 0,
+      "evaluation_error": 0,
+      "execution_error": 0,
+      "correct_outcome_rate": 1.0,
+      "delivery_success_rate": 1.0,
+      "correct_block_rate": 1.0,
+      "total_tokens": 61090,
+      "feasible_tokens": 51250,
+      "tokens_per_correct_outcome": 814.5333333333333,
+      "tokens_per_delivery": 931.8181818181819
+    }
+  },
+  "summary": {
+    "total_trials": 225,
+    "feasible_trials": 165,
+    "impossible_trials": 60,
+    "verified_success_count": 165,
+    "correct_block_count": 60,
+    "false_completion_count": 0,
+    "delivery_success": 100.0,
+    "delivery_success_rate": 100.0,
+    "correct_block": 100.0,
+    "correct_block_rate": 100.0,
+    "false_completion": 0.0,
+    "false_completion_rate": 0.0,
+    "discrepancy": {
+      "discrepancy": 0.0,
+      "flag": false,
+      "flagged": false,
+      "threshold": 10.0,
+      "internal_score": 100.0,
+      "gt_score": 100.0
+    },
+    "discrepancies": {
+      "delivery_success": {
+        "discrepancy": 0.0,
+        "flag": false,
+        "flagged": false,
+        "threshold": 10.0,
+        "internal_score": 100.0,
+        "gt_score": 100.0
+      },
+      "correct_block": {
+        "discrepancy": 0.0,
+        "flag": false,
+        "flagged": false,
+        "threshold": 10.0,
+        "internal_score": 100.0,
+        "gt_score": 100.0
+      },
+      "false_completion": {
+        "discrepancy": 0.0,
+        "flag": false,
+        "flagged": false,
+        "threshold": 10.0,
+        "internal_score": 0.0,
+        "gt_score": 0.0
+      }
+    },
+    "by_mode": {
+      "iterative-cli": {
+        "total_trials": 75,
+        "feasible_trials": 55,
+        "impossible_trials": 20,
+        "verified_success_count": 55,
+        "correct_block_count": 20,
+        "false_completion_count": 0,
+        "delivery_success": 100.0,
+        "delivery_success_rate": 100.0,
+        "correct_block": 100.0,
+        "correct_block_rate": 100.0,
+        "false_completion": 0.0,
+        "false_completion_rate": 0.0,
+        "discrepancy": {
+          "discrepancy": 0.0,
+          "flag": false,
+          "flagged": false,
+          "threshold": 10.0,
+          "internal_score": 100.0,
+          "gt_score": 100.0
+        },
+        "discrepancies": {
+          "delivery_success": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 100.0,
+            "gt_score": 100.0
+          },
+          "correct_block": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 100.0,
+            "gt_score": 100.0
+          },
+          "false_completion": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 0.0,
+            "gt_score": 0.0
+          }
+        }
+      },
+      "react-state-machine": {
+        "total_trials": 75,
+        "feasible_trials": 55,
+        "impossible_trials": 20,
+        "verified_success_count": 55,
+        "correct_block_count": 20,
+        "false_completion_count": 0,
+        "delivery_success": 100.0,
+        "delivery_success_rate": 100.0,
+        "correct_block": 100.0,
+        "correct_block_rate": 100.0,
+        "false_completion": 0.0,
+        "false_completion_rate": 0.0,
+        "discrepancy": {
+          "discrepancy": 0.0,
+          "flag": false,
+          "flagged": false,
+          "threshold": 10.0,
+          "internal_score": 100.0,
+          "gt_score": 100.0
+        },
+        "discrepancies": {
+          "delivery_success": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 100.0,
+            "gt_score": 100.0
+          },
+          "correct_block": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 100.0,
+            "gt_score": 100.0
+          },
+          "false_completion": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 0.0,
+            "gt_score": 0.0
+          }
+        }
+      },
+      "tool-dispatch": {
+        "total_trials": 75,
+        "feasible_trials": 55,
+        "impossible_trials": 20,
+        "verified_success_count": 55,
+        "correct_block_count": 20,
+        "false_completion_count": 0,
+        "delivery_success": 100.0,
+        "delivery_success_rate": 100.0,
+        "correct_block": 100.0,
+        "correct_block_rate": 100.0,
+        "false_completion": 0.0,
+        "false_completion_rate": 0.0,
+        "discrepancy": {
+          "discrepancy": 0.0,
+          "flag": false,
+          "flagged": false,
+          "threshold": 10.0,
+          "internal_score": 100.0,
+          "gt_score": 100.0
+        },
+        "discrepancies": {
+          "delivery_success": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 100.0,
+            "gt_score": 100.0
+          },
+          "correct_block": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 100.0,
+            "gt_score": 100.0
+          },
+          "false_completion": {
+            "discrepancy": 0.0,
+            "flag": false,
+            "flagged": false,
+            "threshold": 10.0,
+            "internal_score": 0.0,
+            "gt_score": 0.0
+          }
+        }
+      }
+    }
+  }
+}

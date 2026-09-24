@@ -161,3 +161,12 @@ MODE: standard
   OWNS: src/dafg/phase1.py tests/test_phase1.py src/dafg/__init__.py
   AUTHOR: external
   EVIDENCE: exit_code=0 timestamp=2026-09-24T09:43:47.713511+00:00 match='passed' epoch=1 sig=673df676723c record={"attempt_id": 1, "command_digest": "ce0f711e8ea5ef33abb7d20465cd8e41231822c7b45b63217dd23588450490ef", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G20", "gate_signature": "673df676723c9de0a7a53e88ce97cca428fe1a6fdc1a5d2f2d00928f38bc0a82", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T09:43:47.713511+00:00"}
+
+- [x] G21: Phase 1 full matrix executes with recorded report
+  CHECK: uv run python scripts/run_phase1_matrix.py
+  EXPECT: PHASE1_MATRIX:OK
+  CWD: .
+  TIMEOUT: 600.0
+  OWNS: src/dafg/phase1.py scripts/run_phase1_matrix.py eval_results/phase1_matrix_report.json
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T11:13:48.392972+00:00 match='PHASE1_MATRIX:OK' epoch=1 sig=2da278e1c364 record={"attempt_id": 1, "command_digest": "3173f317f7e5eddf3227a7764e3bfb8673776263b7d19c27bf3c8940ccbc8da0", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G21", "gate_signature": "2da278e1c364bfd4ddb1c4e1a43be884d03301f5b9bbf2d848936828fed793eb", "match_preview": "PHASE1_MATRIX:OK", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T11:13:48.392972+00:00"}
