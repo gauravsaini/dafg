@@ -66,7 +66,7 @@ class StreamFrame:
     payload: bytes
 
     def encode(self) -> bytes:
-        header = struct.pack("!HBIHIB", self.stream_id, int(self.channel), self.seq, int(self.signal), self.epoch, len(self.payload))
+        header = struct.pack("!HBIBHH", self.stream_id, int(self.channel), self.seq, int(self.signal), self.epoch, len(self.payload))
         return header + self.payload
 
     @staticmethod
@@ -74,7 +74,7 @@ class StreamFrame:
         HEADER_SIZE = 12
         if len(data) < HEADER_SIZE:
             raise ValueError("Buffer too small for frame header")
-        stream_id, ch, seq, sig, epoch, length = struct.unpack("!HBIHIB", data[:HEADER_SIZE])
+        stream_id, ch, seq, sig, epoch, length = struct.unpack("!HBIBHH", data[:HEADER_SIZE])
         total_len = HEADER_SIZE + length
         if len(data) < total_len:
             raise ValueError("Incomplete frame payload")

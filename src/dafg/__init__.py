@@ -145,6 +145,21 @@ from dafg.adapters import (
     ToolDispatchAdapter,
 )
 
+from dafg.transport import (
+    ControlSignal,
+    CorruptFrameError,
+    HEADER_FORMAT,
+    HEADER_SIZE,
+    IncompleteFrameError,
+    MAX_PAYLOAD_SIZE,
+    PayloadOverflowError,
+    StreamChannel,
+    StreamFrame,
+    TransportError,
+    decode_all_frames,
+    encode_frames,
+)
+
 from dafg.eval import (
     BenchmarkTask,
     CompletionClaim,
@@ -346,5 +361,17 @@ __all__ = [
     "SandboxSecurityViolation",
     "SubprocessExecutionBoundary",
     "SubprocessSandbox",
+    "StreamChannel",
+    "ControlSignal",
+    "StreamFrame",
+    "TransportError",
+    "IncompleteFrameError",
+    "CorruptFrameError",
+    "PayloadOverflowError",
+    "HEADER_FORMAT",
+    "HEADER_SIZE",
+    "MAX_PAYLOAD_SIZE",
+    "decode_all_frames",
+    "encode_frames",
 ]
 
