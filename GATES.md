@@ -170,3 +170,19 @@ MODE: standard
   OWNS: src/dafg/phase1.py scripts/run_phase1_matrix.py eval_results/phase1_matrix_report.json
   AUTHOR: external
   EVIDENCE: exit_code=0 timestamp=2026-09-24T11:13:48.392972+00:00 match='PHASE1_MATRIX:OK' epoch=1 sig=2da278e1c364 record={"attempt_id": 1, "command_digest": "3173f317f7e5eddf3227a7764e3bfb8673776263b7d19c27bf3c8940ccbc8da0", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G21", "gate_signature": "2da278e1c364bfd4ddb1c4e1a43be884d03301f5b9bbf2d848936828fed793eb", "match_preview": "PHASE1_MATRIX:OK", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T11:13:48.392972+00:00"}
+
+- [x] G22: Fault-injection operators create detectable failures
+  CHECK: uv run pytest -q tests/test_fault_injection.py
+  EXPECT: passed
+  CWD: .
+  OWNS: src/dafg/faults.py tests/test_fault_injection.py src/dafg/__init__.py
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T12:28:10.134955+00:00 match='passed' epoch=1 sig=056f079c5ab8 record={"attempt_id": 1, "command_digest": "fccf0302527bcaaafd3fc9dd5b1adaf9754f5fbdcc25b6bdeadccc5b358c358e", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G22", "gate_signature": "056f079c5ab830a16b064d7edd5719819b514eff056a5d520c1fadcca961bd5d", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T12:28:10.134955+00:00"}
+
+- [x] G23: Baseline versus verified comparison exposes false completion
+  CHECK: uv run pytest -q tests/test_phase1_comparison.py
+  EXPECT: passed
+  CWD: .
+  OWNS: src/dafg/phase1_compare.py tests/test_phase1_comparison.py src/dafg/__init__.py
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T13:02:37.712960+00:00 match='passed' epoch=1 sig=ea4630eb8d11 record={"attempt_id": 1, "command_digest": "373f41c5b260d3eb8c226919a88d9003b0f6f46fcc7a6a47ecfbac0af5e05ba3", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G23", "gate_signature": "ea4630eb8d11bebedc2d9164abcb0d5284660a6e930a9503db568d2893bf1e15", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T13:02:37.712960+00:00"}
