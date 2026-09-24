@@ -190,6 +190,11 @@ from dafg.organism import (
     OrganismReactor,
     SafeCommandPolicy,
 )
+from dafg.oracle import (
+    GroundTruthResult,
+    audit_discrepancy,
+    run_oracle,
+)
 
 __version__ = "0.4.0"
 __all__ = [
@@ -346,5 +351,8 @@ __all__ = [
     "SandboxSecurityViolation",
     "SubprocessExecutionBoundary",
     "SubprocessSandbox",
+    "GroundTruthResult",
+    "audit_discrepancy",
+    "run_oracle",
 ]
 

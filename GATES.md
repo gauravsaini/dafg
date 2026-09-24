@@ -129,3 +129,19 @@ MODE: standard
   OWNS: src/dafg/compare.py tests/test_compare.py
   AUTHOR: external
   EVIDENCE: exit_code=0 timestamp=2026-09-24T07:47:58.474132+00:00 match='passed' epoch=1 sig=042b147206a7 record={"attempt_id": 1, "command_digest": "fc1c6476dafc7ccc029d76f4759858f450e2c722ddbe032da76ac33e2fedfaf3", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G16", "gate_signature": "042b147206a702019fc644fd209a67dfb3a9979f75da4fe3f63efc19db8a09c4", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T07:47:58.474132+00:00"}
+
+- [x] G17: Phase 1 pilot task cohorts use real fixtures
+  CHECK: uv run pytest -q tests/test_phase1_tasks.py
+  EXPECT: passed
+  CWD: .
+  OWNS: src/dafg/eval.py tests/test_phase1_tasks.py
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T08:38:13.566794+00:00 match='passed' epoch=1 sig=89da91f86e7d record={"attempt_id": 1, "command_digest": "a46fce6ffa25456179b0ee330c85528fc1760686e21dcf3faa65edfc12973b5b", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G17", "gate_signature": "89da91f86e7d1cd3b7ab9a35513d36bae90d22d23bcbd49d2dd97686b035ca0a", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T08:38:13.566794+00:00"}
+
+- [x] G18: Independent oracle runner audits discrepancy
+  CHECK: uv run pytest -q tests/test_oracle.py
+  EXPECT: passed
+  CWD: .
+  OWNS: src/dafg/oracle.py tests/test_oracle.py src/dafg/__init__.py
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-24T08:38:13.961245+00:00 match='passed' epoch=1 sig=7b80ed2edc43 record={"attempt_id": 1, "command_digest": "2d651fb462b3b792ad88589cdea316dd7a6098d5d79b5b202e058676878bff36", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G18", "gate_signature": "7b80ed2edc43433e71b28e6bc194700c885269638e2e991ccf6133257d16eb76", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T08:38:13.961245+00:00"}

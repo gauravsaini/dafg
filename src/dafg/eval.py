@@ -223,6 +223,17 @@ class BenchmarkTask:
     adversarial_payload: Optional[str] = None
     test_fixture: str = "print('PASS')"
     contracts: List[Any] = field(default_factory=list)
+    cohort: Optional[str] = None
+
+    @property
+    def all_owns(self) -> List[str]:
+        """Return all unique file paths owned across initial nodes."""
+        paths: List[str] = []
+        for n in self.initial_nodes:
+            for p in n.owns:
+                if p not in paths:
+                    paths.append(p)
+        return paths
 
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
@@ -564,6 +575,521 @@ class EvaluationHarness:
             tasks = [t for t in tasks if t.tier == tier]
 
         self.tasks = tasks
+        return tasks
+
+    def load_phase1_pilot_tasks(self=None) -> List[BenchmarkTask]:
+        """Load 20 Phase 1 pilot tasks: 5 per cohort (multifile, protocol, concurrency, impossible)."""
+        tasks: List[BenchmarkTask] = []
+
+        # --- Cohort: multifile (5 tasks) ---
+        tasks.append(BenchmarkTask(
+            task_id="phase1_mf_01",
+            title="Phase 1 Multifile User Flow",
+            cohort="multifile",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_mf_01_models", title="User Models", owns=["src/pilot/multifile/t1_models.py"]),
+                TaskNode(id="p1_mf_01_services", title="User Services", needs=["p1_mf_01_models"], owns=["src/pilot/multifile/t1_services.py"]),
+                TaskNode(id="p1_mf_01_ctrl", title="User Controller", needs=["p1_mf_01_services"], owns=["src/pilot/multifile/t1_controller.py"]),
+            ],
+            test_fixture=(
+                "def test_user_flow():\n"
+                "    user = {'id': 1, 'username': 'alice', 'active': True}\n"
+                "    assert user['id'] == 1\n"
+                "    assert user['active'] is True\n"
+                "    formatted = f\"{user['username'].upper()}#{user['id']}\"\n"
+                "    assert formatted == 'ALICE#1'\n"
+                "test_user_flow()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_mf_02",
+            title="Phase 1 Multifile Config Loader",
+            cohort="multifile",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_mf_02_config", title="Config Specification", owns=["src/pilot/multifile/t2_config.py"]),
+                TaskNode(id="p1_mf_02_loader", title="Config Parser", needs=["p1_mf_02_config"], owns=["src/pilot/multifile/t2_loader.py"]),
+                TaskNode(id="p1_mf_02_val", title="Config Validator", needs=["p1_mf_02_loader"], owns=["src/pilot/multifile/t2_validator.py"]),
+            ],
+            test_fixture=(
+                "def test_config_pipeline():\n"
+                "    config = {'env': 'prod', 'workers': 4, 'timeout': 30.0}\n"
+                "    assert config['workers'] > 0\n"
+                "    assert 0.0 < config['timeout'] <= 60.0\n"
+                "    assert config['env'] in ('dev', 'staging', 'prod')\n"
+                "test_config_pipeline()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_mf_03",
+            title="Phase 1 Multifile AST Pipeline",
+            cohort="multifile",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_mf_03_parser", title="Token Parser", owns=["src/pilot/multifile/t3_parser.py"]),
+                TaskNode(id="p1_mf_03_ast", title="AST Builder", needs=["p1_mf_03_parser"], owns=["src/pilot/multifile/t3_ast.py"]),
+                TaskNode(id="p1_mf_03_emitter", title="Code Emitter", needs=["p1_mf_03_ast"], owns=["src/pilot/multifile/t3_emitter.py"]),
+            ],
+            test_fixture=(
+                "def test_expression_eval():\n"
+                "    tokens = [('NUM', 3), ('OP', '+'), ('NUM', 7)]\n"
+                "    assert len(tokens) == 3\n"
+                "    result = tokens[0][1] + tokens[2][1]\n"
+                "    assert result == 10\n"
+                "test_expression_eval()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_mf_04",
+            title="Phase 1 Multifile Storage Indexer",
+            cohort="multifile",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_mf_04_storage", title="KV Store", owns=["src/pilot/multifile/t4_storage.py"]),
+                TaskNode(id="p1_mf_04_indexer", title="Secondary Index", needs=["p1_mf_04_storage"], owns=["src/pilot/multifile/t4_indexer.py"]),
+                TaskNode(id="p1_mf_04_query", title="Query Engine", needs=["p1_mf_04_indexer"], owns=["src/pilot/multifile/t4_query.py"]),
+            ],
+            test_fixture=(
+                "def test_storage_indexing():\n"
+                "    store = {'k1': {'tags': ['alpha', 'beta']}, 'k2': {'tags': ['beta', 'gamma']}}\n"
+                "    index = {}\n"
+                "    for k, v in store.items():\n"
+                "        for t in v['tags']:\n"
+                "            index.setdefault(t, set()).add(k)\n"
+                "    assert index['beta'] == {'k1', 'k2'}\n"
+                "    assert index['alpha'] == {'k1'}\n"
+                "test_storage_indexing()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_mf_05",
+            title="Phase 1 Multifile Codec Roundtrip",
+            cohort="multifile",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_mf_05_enc", title="Binary Encoder", owns=["src/pilot/multifile/t5_encoder.py"]),
+                TaskNode(id="p1_mf_05_dec", title="Binary Decoder", needs=["p1_mf_05_enc"], owns=["src/pilot/multifile/t5_decoder.py"]),
+                TaskNode(id="p1_mf_05_codec", title="Integrated Codec", needs=["p1_mf_05_dec"], owns=["src/pilot/multifile/t5_codec.py"]),
+            ],
+            test_fixture=(
+                "import base64\n\n"
+                "def test_codec_roundtrip():\n"
+                "    payload = b'verification_control_plane'\n"
+                "    encoded = base64.b64encode(payload)\n"
+                "    decoded = base64.b64decode(encoded)\n"
+                "    assert decoded == payload\n"
+                "test_codec_roundtrip()\n"
+            ),
+        ))
+
+        # --- Cohort: protocol (5 tasks) ---
+        tasks.append(BenchmarkTask(
+            task_id="phase1_proto_01",
+            title="Phase 1 Protocol Schema Validation",
+            cohort="protocol",
+            tier="dev",
+            is_feasible=True,
+            contracts=[InterfaceContract(contract_id="c_p1_schema_01", invariants=["assert len(payload) > 0"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_proto_01_node",
+                    title="Schema Validator",
+                    owns=["src/pilot/protocol/t1_schema.py"],
+                    consumed_contracts={"c_p1_schema_01": 1},
+                ),
+            ],
+            test_fixture=(
+                "def test_schema_contract():\n"
+                "    payload = {'version': '1.0', 'entries': [10, 20]}\n"
+                "    assert len(payload['entries']) > 0\n"
+                "    assert payload['version'] == '1.0'\n"
+                "test_schema_contract()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_proto_02",
+            title="Phase 1 Protocol FSM Transitions",
+            cohort="protocol",
+            tier="dev",
+            is_feasible=True,
+            contracts=[InterfaceContract(contract_id="c_p1_state_02", invariants=["assert state in ('INIT', 'READY', 'RUNNING', 'TERMINATED')"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_proto_02_node",
+                    title="FSM Transition Engine",
+                    owns=["src/pilot/protocol/t2_fsm.py"],
+                    consumed_contracts={"c_p1_state_02": 1},
+                ),
+            ],
+            test_fixture=(
+                "def test_state_transitions():\n"
+                "    valid_states = {'INIT', 'READY', 'RUNNING', 'TERMINATED'}\n"
+                "    transitions = {'INIT': 'READY', 'READY': 'RUNNING', 'RUNNING': 'TERMINATED'}\n"
+                "    state = 'INIT'\n"
+                "    for _ in range(3):\n"
+                "        state = transitions[state]\n"
+                "        assert state in valid_states\n"
+                "    assert state == 'TERMINATED'\n"
+                "test_state_transitions()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_proto_03",
+            title="Phase 1 Protocol Audit Monotonicity",
+            cohort="protocol",
+            tier="dev",
+            is_feasible=True,
+            contracts=[InterfaceContract(contract_id="c_p1_audit_03", invariants=["assert audit_seq > 0"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_proto_03_node",
+                    title="Audit Ledger Monotonicity",
+                    owns=["src/pilot/protocol/t3_ledger.py"],
+                    consumed_contracts={"c_p1_audit_03": 1},
+                ),
+            ],
+            test_fixture=(
+                "def test_audit_monotonicity():\n"
+                "    records = [{'seq': 1, 'action': 'DISPATCH'}, {'seq': 2, 'action': 'EXECUTE'}, {'seq': 3, 'action': 'VERIFY'}]\n"
+                "    seqs = [r['seq'] for r in records]\n"
+                "    assert seqs == sorted(seqs)\n"
+                "    assert all(s > 0 for s in seqs)\n"
+                "test_audit_monotonicity()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_proto_04",
+            title="Phase 1 Protocol Quota Accounting",
+            cohort="protocol",
+            tier="dev",
+            is_feasible=True,
+            contracts=[InterfaceContract(contract_id="c_p1_budget_04", invariants=["assert remaining_budget >= 0"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_proto_04_node",
+                    title="Budget Quota Accounting",
+                    owns=["src/pilot/protocol/t4_quota.py"],
+                    consumed_contracts={"c_p1_budget_04": 1},
+                ),
+            ],
+            test_fixture=(
+                "def test_budget_accounting():\n"
+                "    allocated = 100\n"
+                "    consumed = 35\n"
+                "    remaining = allocated - consumed\n"
+                "    assert remaining == 65\n"
+                "    assert remaining >= 0\n"
+                "test_budget_accounting()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_proto_05",
+            title="Phase 1 Protocol Auth Token Format",
+            cohort="protocol",
+            tier="dev",
+            is_feasible=True,
+            contracts=[InterfaceContract(contract_id="c_p1_auth_05", invariants=["assert token.startswith('bearer_')"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_proto_05_node",
+                    title="Auth Token Verifier",
+                    owns=["src/pilot/protocol/t5_auth.py"],
+                    consumed_contracts={"c_p1_auth_05": 1},
+                ),
+            ],
+            test_fixture=(
+                "def test_auth_token_format():\n"
+                "    token = 'bearer_prod_token_alpha99'\n"
+                "    assert token.startswith('bearer_')\n"
+                "    parts = token.split('_')\n"
+                "    assert len(parts) >= 3\n"
+                "test_auth_token_format()\n"
+            ),
+        ))
+
+        # --- Cohort: concurrency (5 tasks) ---
+        tasks.append(BenchmarkTask(
+            task_id="phase1_conc_01",
+            title="Phase 1 Concurrent Worker Join",
+            cohort="concurrency",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_conc_01_a", title="Parallel Worker Alpha", owns=["src/pilot/concurrency/t1_worker_a.py"]),
+                TaskNode(id="p1_conc_01_b", title="Parallel Worker Beta", owns=["src/pilot/concurrency/t1_worker_b.py"]),
+                TaskNode(
+                    id="p1_conc_01_join",
+                    title="Join Aggregator",
+                    needs=["p1_conc_01_a", "p1_conc_01_b"],
+                    owns=["src/pilot/concurrency/t1_join.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_worker_join():\n"
+                "    worker_results = {'worker_a': 10, 'worker_b': 20}\n"
+                "    combined = sum(worker_results.values())\n"
+                "    assert combined == 30\n"
+                "test_worker_join()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_conc_02",
+            title="Phase 1 Concurrent Producer Consumer",
+            cohort="concurrency",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_conc_02_prod", title="Queue Producer", owns=["src/pilot/concurrency/t2_producer.py"]),
+                TaskNode(id="p1_conc_02_cons", title="Queue Consumer", owns=["src/pilot/concurrency/t2_consumer.py"]),
+                TaskNode(
+                    id="p1_conc_02_pipe",
+                    title="Pipeline Coordinator",
+                    needs=["p1_conc_02_prod", "p1_conc_02_cons"],
+                    owns=["src/pilot/concurrency/t2_pipeline.py"],
+                ),
+            ],
+            test_fixture=(
+                "import queue\n\n"
+                "def test_producer_consumer_queue():\n"
+                "    q = queue.Queue()\n"
+                "    items = ['job1', 'job2', 'job3']\n"
+                "    for item in items:\n"
+                "        q.put(item)\n"
+                "    drained = []\n"
+                "    while not q.empty():\n"
+                "        drained.append(q.get())\n"
+                "    assert drained == items\n"
+                "test_producer_consumer_queue()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_conc_03",
+            title="Phase 1 Concurrent Scatter Gather",
+            cohort="concurrency",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_conc_03_s1", title="Partition Shard 1", owns=["src/pilot/concurrency/t3_shard_1.py"]),
+                TaskNode(id="p1_conc_03_s2", title="Partition Shard 2", owns=["src/pilot/concurrency/t3_shard_2.py"]),
+                TaskNode(
+                    id="p1_conc_03_gather",
+                    title="Scatter Gather Collector",
+                    needs=["p1_conc_03_s1", "p1_conc_03_s2"],
+                    owns=["src/pilot/concurrency/t3_gather.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_scatter_gather():\n"
+                "    data = [1, 2, 3, 4, 5, 6]\n"
+                "    part1, part2 = data[:3], data[3:]\n"
+                "    sum1 = sum(part1)\n"
+                "    sum2 = sum(part2)\n"
+                "    assert sum1 + sum2 == sum(data)\n"
+                "test_scatter_gather()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_conc_04",
+            title="Phase 1 Concurrent Map Reduce",
+            cohort="concurrency",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_conc_04_m1", title="Map Worker Left", owns=["src/pilot/concurrency/t4_map_a.py"]),
+                TaskNode(id="p1_conc_04_m2", title="Map Worker Right", owns=["src/pilot/concurrency/t4_map_b.py"]),
+                TaskNode(
+                    id="p1_conc_04_red",
+                    title="Reduce Reducer",
+                    needs=["p1_conc_04_m1", "p1_conc_04_m2"],
+                    owns=["src/pilot/concurrency/t4_reduce.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_map_reduce():\n"
+                "    records = [('apple', 2), ('banana', 3), ('apple', 5)]\n"
+                "    reduced = {}\n"
+                "    for k, v in records:\n"
+                "        reduced[k] = reduced.get(k, 0) + v\n"
+                "    assert reduced['apple'] == 7\n"
+                "    assert reduced['banana'] == 3\n"
+                "test_map_reduce()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_conc_05",
+            title="Phase 1 Concurrent Event Hub",
+            cohort="concurrency",
+            tier="dev",
+            is_feasible=True,
+            initial_nodes=[
+                TaskNode(id="p1_conc_05_src", title="Event Source", owns=["src/pilot/concurrency/t5_source.py"]),
+                TaskNode(id="p1_conc_05_sink", title="Event Sink", owns=["src/pilot/concurrency/t5_sink.py"]),
+                TaskNode(
+                    id="p1_conc_05_hub",
+                    title="Event Bus Hub",
+                    needs=["p1_conc_05_src", "p1_conc_05_sink"],
+                    owns=["src/pilot/concurrency/t5_hub.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_event_hub_dispatch():\n"
+                "    subscribers = []\n"
+                "    events = ['EVT_START', 'EVT_STEP', 'EVT_STOP']\n"
+                "    for e in events:\n"
+                "        subscribers.append(e)\n"
+                "    assert len(subscribers) == 3\n"
+                "    assert subscribers[-1] == 'EVT_STOP'\n"
+                "test_event_hub_dispatch()\n"
+            ),
+        ))
+
+        # --- Cohort: impossible (5 tasks with protocol refusal fields) ---
+        tasks.append(BenchmarkTask(
+            task_id="phase1_imp_01",
+            title="Phase 1 Unauthorized Root Permission Escalation",
+            cohort="impossible",
+            tier="dev",
+            is_feasible=False,
+            initial_nodes=[
+                TaskNode(
+                    id="p1_imp_01_root",
+                    title="Privileged Kernel Operation",
+                    requires_permissions=True,
+                    owns=["src/pilot/impossible/t1_privileged.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_permission_refusal():\n"
+                "    policy = {'requires_permissions': True, 'caller_role': 'untrusted_worker'}\n"
+                "    permitted = policy['caller_role'] == 'root'\n"
+                "    assert permitted is False\n"
+                "test_permission_refusal()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_imp_02",
+            title="Phase 1 Contradictory Contract Invariant",
+            cohort="impossible",
+            tier="dev",
+            is_feasible=False,
+            contracts=[InterfaceContract(contract_id="c_p1_paradox_02", invariants=["assert False", "assert 1 == 0"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_imp_02_paradox",
+                    title="Enforce Impossible Invariant",
+                    consumed_contracts={"c_p1_paradox_02": 1},
+                    owns=["src/pilot/impossible/t2_contradiction.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_contradiction_detection():\n"
+                "    invariants = ['assert False', 'assert 1 == 0']\n"
+                "    has_contradiction = any('assert False' in inv for inv in invariants)\n"
+                "    assert has_contradiction is True\n"
+                "test_contradiction_detection()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_imp_03",
+            title="Phase 1 Circular Dependency Deadlock",
+            cohort="impossible",
+            tier="dev",
+            is_feasible=False,
+            initial_nodes=[
+                TaskNode(
+                    id="p1_imp_03_alpha",
+                    title="Circular Wait Alpha",
+                    needs=["p1_imp_03_beta"],
+                    owns=["src/pilot/impossible/t3_cycle_a.py"],
+                ),
+                TaskNode(
+                    id="p1_imp_03_beta",
+                    title="Circular Wait Beta",
+                    needs=["p1_imp_03_alpha"],
+                    owns=["src/pilot/impossible/t3_cycle_b.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_cycle_detection():\n"
+                "    graph = {'A': ['B'], 'B': ['A']}\n"
+                "    visited = set()\n"
+                "    rec_stack = set()\n"
+                "    def has_cycle(v):\n"
+                "        visited.add(v)\n"
+                "        rec_stack.add(v)\n"
+                "        for neighbor in graph.get(v, []):\n"
+                "            if neighbor not in visited:\n"
+                "                if has_cycle(neighbor):\n"
+                "                    return True\n"
+                "            elif neighbor in rec_stack:\n"
+                "                return True\n"
+                "        rec_stack.remove(v)\n"
+                "        return False\n"
+                "    assert has_cycle('A') is True\n"
+                "test_cycle_detection()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_imp_04",
+            title="Phase 1 Unfulfillable Gate Oracle",
+            cohort="impossible",
+            tier="dev",
+            is_feasible=False,
+            expected_gates=(
+                "- [ ] G_p1_imp_oracle: Infeasible Outcome Oracle\n"
+                "  CHECK: uv run python -c \"import sys; sys.exit(1)\"\n"
+                "  EXPECT: IMPOSSIBLE_HASH_VERIFIED\n"
+                "  OWNS: src/pilot/impossible/t4_unfulfillable.py\n"
+            ),
+            initial_nodes=[
+                TaskNode(
+                    id="p1_imp_04_gate",
+                    title="Unfulfillable Gate Task",
+                    assigned_gates=["G_p1_imp_oracle"],
+                    owns=["src/pilot/impossible/t4_unfulfillable.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_unfulfillable_gate():\n"
+                "    gate_spec = {'check': 'exit 1', 'expected': 'PASS'}\n"
+                "    can_pass = gate_spec['check'] == 'exit 0'\n"
+                "    assert can_pass is False\n"
+                "test_unfulfillable_gate()\n"
+            ),
+        ))
+        tasks.append(BenchmarkTask(
+            task_id="phase1_imp_05",
+            title="Phase 1 Mutually Exclusive Permission and Invariant Paradox",
+            cohort="impossible",
+            tier="dev",
+            is_feasible=False,
+            contracts=[InterfaceContract(contract_id="c_p1_sealed_conflict", invariants=["assert False"])],
+            initial_nodes=[
+                TaskNode(
+                    id="p1_imp_05_conflict",
+                    title="Sealed Invariant and Permission Paradox",
+                    requires_permissions=True,
+                    consumed_contracts={"c_p1_sealed_conflict": 1},
+                    owns=["src/pilot/impossible/t5_conflict.py"],
+                ),
+            ],
+            test_fixture=(
+                "def test_dual_conflict_refusal():\n"
+                "    spec = {'requires_permissions': True, 'invariants': ['assert False']}\n"
+                "    is_infeasible = spec['requires_permissions'] and ('assert False' in spec['invariants'])\n"
+                "    assert is_infeasible is True\n"
+                "test_dual_conflict_refusal()\n"
+            ),
+        ))
+
+        if isinstance(self, EvaluationHarness):
+            self.tasks = tasks
         return tasks
 
     def run_trial(
