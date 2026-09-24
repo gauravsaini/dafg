@@ -95,7 +95,14 @@ def test_screenshots_generated():
 
 def test_stop_hook_allows_completion():
     """Verify stop hook allows completion with evidence recorded."""
-    guard = CompletionGuard(ledger_path=ROOT / "GATES.md")
+    text = """
+- [x] G1: Simulation assets and geometry verified
+  CHECK: echo ok
+  EXPECT: ok
+  EVIDENCE: exit_code=0 timestamp=2026-09-10T00:00:00Z match='ok'
+"""
+    ledger = GateLedger.parse(text)
+    guard = CompletionGuard(ledger=ledger)
     decision = guard.evaluate()
     assert decision.allowed is True
     assert decision.decision == "allow"

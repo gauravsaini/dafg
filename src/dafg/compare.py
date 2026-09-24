@@ -50,6 +50,8 @@ class ExperimentRecord:
     discrepancy: Optional[float] = None
     verdict: str = "UNKNOWN"
     provenance: str = "unknown"
+    evidence_status: str = "INCOMPLETE"
+    evidence_issues: List[str] = field(default_factory=list)
     artifacts_found: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -86,6 +88,8 @@ class ExperimentComparator:
         report_file = path / "eval_results" / "quality_report.json"
         lineage_file = path / "lineage.json"
         traces_file = path / "traces.jsonl"
+        quality_data: Optional[Dict[str, Any]] = None
+        ground_truth_data: Optional[Dict[str, Any]] = None
 
         if gates_file.exists():
             artifacts.append("GATES.md")
@@ -145,6 +149,7 @@ class ExperimentComparator:
             artifacts.append(rel_gt)
             try:
                 gt_data = json.loads(gt_file.read_text(encoding="utf-8"))
+                ground_truth_data = gt_data
                 recorded_hash = gt_data.get("source_hash")
                 rec.gt_source_hash = recorded_hash
 
@@ -173,7 +178,7 @@ class ExperimentComparator:
 
         if fresh and gates_file.exists():
             # Run a single unified execution that writes matching traces and report
-            rec = cls._run_fresh_evaluation(path, rec)
+            rec = cls._run_fresh_evaluation(path, rec, ground_truth_data=ground_truth_data)
             rec.artifacts_found = artifacts
             return rec
 
@@ -183,6 +188,7 @@ class ExperimentComparator:
             artifacts.append("eval_results/quality_report.json")
             try:
                 qdata = json.loads(report_file.read_text(encoding="utf-8"))
+                quality_data = qdata
                 rec.run_id = qdata.get("run_id", "unknown")
                 rec.composite_score = float(qdata.get("score", 0.0))
                 rec.verdict = str(qdata.get("verdict", "UNKNOWN"))
@@ -273,11 +279,58 @@ class ExperimentComparator:
         if rec.gt_pass_rate is not None:
             rec.discrepancy = round(rec.composite_score - (rec.gt_pass_rate * 100.0), 1)
 
+        rec.evidence_issues = cls._evidence_issues(
+            rec,
+            quality_data=quality_data,
+            ground_truth_data=ground_truth_data,
+        )
+        rec.evidence_status = "VALID" if not rec.evidence_issues else "INCOMPLETE"
+
         rec.artifacts_found = artifacts
         return rec
 
+    @staticmethod
+    def _evidence_issues(
+        record: ExperimentRecord,
+        *,
+        quality_data: Optional[Dict[str, Any]],
+        ground_truth_data: Optional[Dict[str, Any]],
+    ) -> List[str]:
+        """Return explicit evidence defects instead of silently grading them."""
+        issues: List[str] = []
+        if quality_data is not None:
+            run_id = quality_data.get("run_id")
+            if not run_id or run_id == "unknown" or not record.run_id or record.run_id == "unknown":
+                issues.append("quality report is missing run_id")
+        if ground_truth_data is not None:
+            required = {"total", "passed", "failed", "pass_rate"}
+            missing = sorted(required - ground_truth_data.keys())
+            if missing:
+                issues.append(f"ground truth is missing fields: {', '.join(missing)}")
+            else:
+                try:
+                    tot = int(ground_truth_data["total"])
+                    pas = int(ground_truth_data["passed"])
+                    fai = int(ground_truth_data["failed"])
+                    pr = float(ground_truth_data["pass_rate"])
+                    if tot < 0 or pas < 0 or fai < 0 or not (0.0 <= pr <= 1.0) or (tot > 0 and pas + fai > tot):
+                        issues.append("ground truth contains malformed metrics")
+                except (ValueError, TypeError):
+                    issues.append("ground truth fields have malformed types")
+            if record.gt_hash_matched is False:
+                issues.append("ground-truth source hash does not match current source")
+        if record.verdict in {"COMPLETE", "VERIFIED_DELIVERY"} and quality_data is None:
+            issues.append("completion verdict has no quality report")
+        return issues
+
     @classmethod
-    def _run_fresh_evaluation(cls, path: Path, rec: ExperimentRecord, persist: bool = False) -> ExperimentRecord:
+    def _run_fresh_evaluation(
+        cls,
+        path: Path,
+        rec: ExperimentRecord,
+        persist: bool = False,
+        ground_truth_data: Optional[Dict[str, Any]] = None,
+    ) -> ExperimentRecord:
         """Run an atomic, single-provenance in-memory execution without mutating on-disk artifacts."""
         gates_file = path / "GATES.md"
         ledger = GateLedger.load(gates_file, read_only=True)
@@ -315,10 +368,18 @@ class ExperimentComparator:
         if rec.gt_pass_rate is not None:
             rec.discrepancy = round(rec.composite_score - (rec.gt_pass_rate * 100.0), 1)
 
+        quality_data = report.to_dict()
         if persist:
             out_path = path / "eval_results" / "quality_report.json"
             out_path.parent.mkdir(exist_ok=True, parents=True)
-            out_path.write_text(json.dumps(report.to_dict(), indent=2), encoding="utf-8")
+            out_path.write_text(json.dumps(quality_data, indent=2), encoding="utf-8")
+
+        rec.evidence_issues = cls._evidence_issues(
+            rec,
+            quality_data=quality_data,
+            ground_truth_data=ground_truth_data,
+        )
+        rec.evidence_status = "VALID" if not rec.evidence_issues else "INCOMPLETE"
         return rec
 
     @classmethod
@@ -339,6 +400,7 @@ class ExperimentComparator:
             "Discrepancy",
             "Verdict",
             "Provenance",
+            "Evidence",
         ]
 
         lines = [
@@ -381,6 +443,7 @@ class ExperimentComparator:
                 disc_str,
                 f"`{r.verdict}`",
                 f"`{r.provenance}`",
+                f"`{r.evidence_status}`" if r.evidence_status == "VALID" else f"**{r.evidence_status}**",
             ]
             lines.append("| " + " | ".join(row) + " |")
 

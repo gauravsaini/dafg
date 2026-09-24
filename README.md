@@ -1,21 +1,20 @@
-# DAFG: Directed Acyclic Funnel Graph
-### *An Autonomous Computational Organism for Grounded Multi-Agent Convergence*
+# DAFG: Dynamic Autonomous Flow Graph
+### *Verified completion control for autonomous coding agents*
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/)
 [![Package Manager: uv](https://img.shields.io/badge/package%20manager-uv-blueviolet)](https://github.com/astral-sh/uv)
-[![Tests](https://img.shields.io/badge/tests-348%20passed-brightgreen.svg)]()
 [![Runtime Dependencies](https://img.shields.io/badge/dependencies-0%20runtime%20deps-success.svg)]()
 [![Protocol Audit](https://img.shields.io/badge/protocol%20audit-7%2F7%20passed-success.svg)]()
 
 ---
 
-## 1. The Core Philosophy: An Autonomous Organism
+## 1. The Core Product: Verified Completion Control
 
 Most multi-agent systems resemble chaotic chatrooms: agents banter, hallucinate progress, and self-certify completion (*"Looks good to me!"*). When left alone, they either diverge into infinite loops or exit prematurely on false confidence.
 
-**DAFG** is fundamentally different. It is an **autonomous computational organism** designed to operate without human intervention. The organism lives or dies strictly by its own internal rules:
+**DAFG** is a verification and completion-control runtime for autonomous coding agents. It sits between an agent and its target workspace, enforcing execution boundaries, objective acceptance checks, evidence attribution, and honest refusal.
 
-> **A self-governing, self-correcting, bounded-adversarial system that converges to mathematically verifiable delivery—or cleanly collapses under resource exhaustion.**
+> **An agent may work autonomously, but it cannot declare success without reproducible independent evidence.**
 
 ```text
                ┌─────────────────────────────────────────────────────────┐
@@ -55,25 +54,25 @@ Most multi-agent systems resemble chaotic chatrooms: agents banter, hallucinate 
 
 ---
 
-## 2. The Core Biological Pillars
+## 2. The Core Control-Plane Capabilities
 
-The organism is composed of six mutually-reinforcing architectural subsystems:
+DAFG's initial product scope is deliberately narrow:
 
-### Pillar 1: Directed Acyclic Funnel Graph (DAFG)
+### 1. Execution Control
 **Module**: [`src/dafg/runtime.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/runtime.py) (`DAFG`, `TaskNode`, `WaveScheduler`)  
 Open-ended agent intentions are funneled through a strict DAG. 
 - **Prerequisite Expansion**: Nodes dynamically sprout dependencies at runtime (`needs`) when prerequisites are uncovered during execution.
 - **Wave Scheduling**: Tasks declare precise file boundaries (`OWNS:`). Non-interfering nodes execute in parallel waves, preventing workspace race conditions.
 - **Budgets & Invariants**: Total wall-clock time, tool calls, and node revisions are capped via `Budget`. Runaway loops result in explicit node starvation, never infinite token burns.
 
-### Pillar 2: The Per-Node Triad (Prover / Challenger / Verifier)
+### 2. Independent Verification
 **Modules**: [`src/dafg/protocol.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/protocol.py), [`src/dafg/adversarial.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/adversarial.py), [`src/dafg/mutation.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/mutation.py)  
 No task node is trusted to evaluate its own output. Work within every node is mediated by a dialectical triad:
 1. **The Prover**: Executes the creative or functional task, producing code and verifiable artifact proposals.
 2. **The Challenger**: An adversarial critic that subjects the proposal to parameter sweeps, boundary conditions, and gate mutation attacks (`GateMutator`) to discover where assumptions break.
 3. **The Verifier**: The empirical authority. It refuses subjective prose and requires deterministic execution evidence (`exit_code=0` with `EXPECT:` pattern matches) before clearing a node.
 
-### Pillar 3: Formal Finite State Machine & Pure Reducer
+### 3. Evidence and Replay
 **Modules**: [`src/dafg/protocol.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/protocol.py), [`docs/STATE_MACHINE.md`](file:///Users/ektasaini/Desktop/framework/docs/STATE_MACHINE.md)  
 Node lifecycles are governed by a formal 8-state transition machine:
 ```text
@@ -85,19 +84,23 @@ IDLE ──► CONTEXT_LOADED ──► PROVING ◄───► CHALLENGING ─�
 - **Fenced Execution**: Actions are bound by cryptographic `DispatchIdentity`. Workers cannot impersonate roles or skip verification states.
 - **Pure Reducer**: State transitions are pure and idempotent (`ProtocolReducer.apply`). Every execution trajectory can be replayed, audited, or resumed from `state.json`.
 
-### Pillar 4: Dynamic Persona Compilation & Adaptation
+### 4. Bounded Repair and Honest Refusal
 **Module**: [`src/dafg/persona.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/persona.py) (`PersonaCompiler`, `PersonaProfile`, `PersonaSwitcher`)  
 Agent personas are not static prompts. The `PersonaCompiler` synthesizes lightweight, role-specific behavioral profiles based on:
 - Declared node capabilities (toolsets, reasoning depth, policy constraints).
 - Historical defect patterns: When a node hits repeated challenge failures, the `PersonaSwitcher` automatically mutates the agent’s operating posture (e.g., from optimistic code-generation to conservative test-first synthesis).
 
-### Pillar 5: Stigmergic Timeline & Pheromone Decay
+### 5. Completion Interlock
 **Module**: [`src/dafg/trends.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/trends.py) (`TrendStore`, `TrendAnalyzer`)  
 Agents in DAFG do not rely on expensive peer-to-peer chat. Instead, they coordinate **stigmergically**—leaving marks and evidence trails directly in the environment:
 - Every execution appends structured event records to an append-only timeline (`trends.jsonl`).
 - **Decaying Confidence Signals**: Flaky gates and volatile submodules generate warning pheromones (`FlakyGate`). Subsequent nodes read these environmental signals at initialization, allocating more adversarial challenge cycles to historically unstable areas.
 
-### Pillar 6: Strict Autonomy & The Stop Hook Membrane
+Streaming token inspection, duplex early abort, and challenger barge-in are **optional gated performance accelerators**, not the product thesis. They will be promoted only after realistic paired benchmarks show material savings without degrading verified delivery.
+
+The product does not initially own model serving, universal token transport, or a general-purpose multi-agent chat mesh.
+
+### 6. Security Boundary
 **Modules**: [`src/dafg/gates.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/gates.py), [`src/dafg/hook.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/hook.py) (`CompletionGuard`)  
 DAFG treats the outer operating system boundary as a biological membrane:
 - Check commands in `GATES.md` are cryptographically signed in `.approved_gates.json` (SHA-256) to eliminate arbitrary code injection.
@@ -203,10 +206,10 @@ src/dafg/
 DAFG includes a built-in self-test suite and formal conformance auditor to verify that the organism's state machine invariants never break:
 
 ```bash
-# Run formal protocol audit (7/7 formal checks)
+# Run formal protocol audit
 uv run dafg audit
 
-# Run full offline test suite (348 passed in ~5s)
+# Run the full offline test suite
 uv run pytest -q
 ```
 

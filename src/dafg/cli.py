@@ -137,7 +137,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             else:
                 adapter = ReActStateAdapter()
 
-            harness = EvaluationHarness()
+            tier_arg = f" --tier {args.tier}" if args.tier else ""
+            harness = EvaluationHarness(
+                command=f"uv run dafg eval --suite {args.suite}{tier_arg} --adapter {ad_name}",
+                benchmark_revision=args.suite,
+                model_backend=adapter.name,
+            )
             tasks = harness.load_builtin_tasks(suite=args.suite, tier=args.tier)
             if not args.json:
                 print(f"Running benchmark '{args.suite}' (tier: {args.tier or 'all'}) with adapter '{adapter.name}' across {len(tasks)} tasks...")

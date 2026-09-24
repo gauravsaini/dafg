@@ -10,12 +10,14 @@ import ast
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+import hashlib
 import json
 import math
 import os
 from pathlib import Path
 import random
 import sys
+import subprocess
 import time
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -238,12 +240,79 @@ class BenchmarkTask:
         return cls(**d)
 
 
+@dataclass(frozen=True)
+class EvaluationManifest:
+    """Provenance for one persisted benchmark result.
+
+    Unknown values stay explicit instead of being inferred from mutable local
+    state. This keeps reports honest and makes later comparison reproducible.
+    """
+
+    run_id: str
+    source_commit: Optional[str]
+    suite: str
+    tier: str
+    adapter: str
+    benchmark_revision: Optional[str]
+    command: Optional[str]
+    model_backend: Optional[str]
+    seed: Optional[int]
+    oracle_revision: Optional[str]
+    environment_digest: str
+    timestamp: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+def _source_commit() -> Optional[str]:
+    """Return the current commit when this run is inside a Git checkout."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    commit = result.stdout.strip()
+    return commit or None
+
+
+def _environment_digest() -> str:
+    """Hash stable interpreter/platform facts without persisting environment secrets."""
+    import platform
+
+    facts = "\n".join((
+        platform.python_implementation(),
+        platform.python_version(),
+        platform.platform(),
+    ))
+    return hashlib.sha256(facts.encode("utf-8")).hexdigest()
+
+
 class EvaluationHarness:
     """Runs benchmark suites with decoupled adapters and blinded evaluation."""
 
-    def __init__(self, tasks: Optional[List[BenchmarkTask]] = None):
+    def __init__(
+        self,
+        tasks: Optional[List[BenchmarkTask]] = None,
+        *,
+        benchmark_revision: Optional[str] = None,
+        command: Optional[str] = None,
+        model_backend: Optional[str] = None,
+        seed: Optional[int] = None,
+        oracle_revision: Optional[str] = None,
+    ):
         self.tasks: List[BenchmarkTask] = tasks or []
         self.trials: List[EvaluationTrial] = []
+        self.benchmark_revision = benchmark_revision
+        self.command = command
+        self.model_backend = model_backend
+        self.seed = seed
+        self.oracle_revision = oracle_revision
 
     def load_builtin_tasks(self, suite: str = "v03", tier: Optional[str] = None) -> List[BenchmarkTask]:
         """Load benchmark tasks for v0.2 regression or v0.3 difficulty tiers."""
@@ -657,11 +726,32 @@ class EvaluationHarness:
         out_fp.parent.mkdir(parents=True, exist_ok=True)
 
         metrics = self.compute_metrics(condition=adapter_name)
+        run_id = hashlib.sha256(
+            json.dumps(
+                [t.to_dict() for t in self.trials if t.condition == adapter_name],
+                sort_keys=True,
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        manifest = EvaluationManifest(
+            run_id=run_id,
+            source_commit=_source_commit(),
+            suite=suite,
+            tier=tier or "all",
+            adapter=adapter_name,
+            benchmark_revision=self.benchmark_revision,
+            command=self.command,
+            model_backend=self.model_backend,
+            seed=self.seed,
+            oracle_revision=self.oracle_revision,
+            environment_digest=_environment_digest(),
+            timestamp=datetime.now(timezone.utc).isoformat(),
+        )
         data = {
             "suite": suite,
             "tier": tier or "all",
             "adapter": adapter_name,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "manifest": manifest.to_dict(),
             "metrics": metrics.to_dict(),
             "trials": [t.to_dict() for t in self.trials if t.condition == adapter_name],
         }
