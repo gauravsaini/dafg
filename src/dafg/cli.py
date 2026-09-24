@@ -113,6 +113,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         parser.add_argument("--tier", choices=["dev", "calibration", "held_out"], default=None, help="Benchmark tier for v03")
         parser.add_argument("--adapter", choices=["cli", "dispatch", "react", "all"], default="cli", help="Execution adapter (or 'all' for full matrix)")
         parser.add_argument("--all-adapters", action="store_true", help="Evaluate across all three adapters and generate full matrix")
+        parser.add_argument("--seed", type=int, default=None, help="Random seed for benchmark evaluation")
+        parser.add_argument("--oracle-revision", default=None, help="Oracle or ground truth revision identifier")
         parser.add_argument("--out", default=None, help="Output JSON file path")
         parser.add_argument("--json", action="store_true", help="Output summary JSON")
         args = parser.parse_args(sub_args)
@@ -142,6 +144,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                 command=f"uv run dafg eval --suite {args.suite}{tier_arg} --adapter {ad_name}",
                 benchmark_revision=args.suite,
                 model_backend=adapter.name,
+                seed=args.seed,
+                oracle_revision=args.oracle_revision,
             )
             tasks = harness.load_builtin_tasks(suite=args.suite, tier=args.tier)
             if not args.json:

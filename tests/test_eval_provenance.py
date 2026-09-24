@@ -65,6 +65,8 @@ def test_cli_eval_loop_passes_explicit_provenance(monkeypatch, tmp_path):
     assert captured[0]["command"] == "uv run dafg eval --suite v03 --tier dev --adapter cli"
     assert captured[0]["benchmark_revision"] == "v03"
     assert captured[0]["model_backend"] == "iterative-cli"
+    assert captured[0]["seed"] is None
+    assert captured[0]["oracle_revision"] is None
 
 
 def test_cli_eval_loop_passes_explicit_provenance_without_tier(monkeypatch, tmp_path):
@@ -115,3 +117,35 @@ def test_cli_eval_loop_all_adapters(monkeypatch, tmp_path):
     assert captured[2]["command"] == "uv run dafg eval --suite v03 --tier calibration --adapter react"
     assert captured[2]["model_backend"] == "react-state-machine"
 
+
+def test_cli_eval_loop_passes_seed_and_oracle_revision(monkeypatch, tmp_path):
+    from dafg import cli
+
+    captured = []
+    real_init = EvaluationHarness.__init__
+
+    def mock_init(self, *args, **kwargs):
+        captured.append(kwargs)
+        real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(EvaluationHarness, "__init__", mock_init)
+    monkeypatch.setattr(EvaluationHarness, "load_builtin_tasks", lambda self, *a, **kw: [])
+    monkeypatch.setattr(EvaluationHarness, "save_results", lambda *a, **kw: None)
+    monkeypatch.setattr(EvaluationHarness, "update_benchmark_matrix", lambda *a, **kw: None)
+
+    ret = cli.main([
+        "eval",
+        "--suite", "v03",
+        "--tier", "dev",
+        "--adapter", "cli",
+        "--seed", "42",
+        "--oracle-revision", "oracle-v3",
+        "--out", str(tmp_path / "out.json"),
+    ])
+    assert ret == 0
+    assert len(captured) == 1
+    assert captured[0]["command"] == "uv run dafg eval --suite v03 --tier dev --adapter cli"
+    assert captured[0]["benchmark_revision"] == "v03"
+    assert captured[0]["model_backend"] == "iterative-cli"
+    assert captured[0]["seed"] == 42
+    assert captured[0]["oracle_revision"] == "oracle-v3"
