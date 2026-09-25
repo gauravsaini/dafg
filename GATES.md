@@ -186,3 +186,11 @@ MODE: standard
   OWNS: src/dafg/phase1_compare.py tests/test_phase1_comparison.py src/dafg/__init__.py
   AUTHOR: external
   EVIDENCE: exit_code=0 timestamp=2026-09-24T13:02:37.712960+00:00 match='passed' epoch=1 sig=ea4630eb8d11 record={"attempt_id": 1, "command_digest": "373f41c5b260d3eb8c226919a88d9003b0f6f46fcc7a6a47ecfbac0af5e05ba3", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G23", "gate_signature": "ea4630eb8d11bebedc2d9164abcb0d5284660a6e930a9503db568d2893bf1e15", "match_preview": "passed", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-24T13:02:37.712960+00:00"}
+
+- [x] G24: Phase 1 calibrated fault matrix executes with recorded report
+  CHECK: uv run python scripts/run_phase1_faults.py
+  EXPECT: PHASE1_FAULTS:OK
+  CWD: .
+  OWNS: src/dafg/fault_matrix.py scripts/run_phase1_faults.py eval_results/phase1_fault_report.json
+  AUTHOR: external
+  EVIDENCE: exit_code=0 timestamp=2026-09-25T14:08:31.701815+00:00 match='PHASE1_FAULTS:OK' epoch=1 sig=dd59b50be564 record={"attempt_id": 1, "command_digest": "51233083a0e5ee3e35aa64eec10b5c490f961ff4729f6e0ec79312a29db07bc5", "environment_digest": "0f02b903f98f3f8f09441da0dc3087d2e3023b540560d7a2f103eae1ac0b24ea", "gate_id": "G24", "gate_signature": "dd59b50be56499fe21b0dfd6a7672d1f3bff3ad3f2782eb56996a5d269bc2c1c", "match_preview": "PHASE1_FAULTS:OK", "run_epoch": 1, "run_id": "local_run", "timestamp": "2026-09-25T14:08:31.701815+00:00"}

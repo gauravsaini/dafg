@@ -206,6 +206,11 @@ from dafg.phase1_compare import (
     run_comparison,
     summarize_comparison,
 )
+from dafg.fault_matrix import (
+    FaultMatrixResult,
+    FaultMatrixRow,
+    run_calibrated_fault_matrix,
+)
 from dafg.faults import (
     BENCHMARK_FAULT_CLASSES,
     CLASS_1_SYNTAX_PACKAGING,
@@ -402,6 +407,9 @@ __all__ = [
     "summarize_matrix",
     "run_comparison",
     "summarize_comparison",
+    "run_calibrated_fault_matrix",
+    "FaultMatrixResult",
+    "FaultMatrixRow",
     "BENCHMARK_FAULT_CLASSES",
     "CLASS_1_SYNTAX_PACKAGING",
     "CLASS_2_SUBTLE_LOGIC",
