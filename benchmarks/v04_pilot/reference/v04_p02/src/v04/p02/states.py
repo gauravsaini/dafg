@@ -1,0 +1,5 @@
+"""FSM state constants."""
+INIT = "INIT"
+READY = "READY"
+RUNNING = "RUNNING"
+TERMINATED = "TERMINATED"
