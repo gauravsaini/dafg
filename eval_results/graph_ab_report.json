@@ -1,0 +1,869 @@
+{
+  "suite": "graph-ab",
+  "generated_at": "2026-10-07T20:30:35.262648+00:00",
+  "deterministic": true,
+  "network_used": false,
+  "seed": 42,
+  "trials": 33,
+  "wall_s": 30.8,
+  "shapes": {
+    "shape1_fanout": {
+      "modes": {
+        "G-dafg-graph": {
+          "trials": 3,
+          "wall_s_mean": 0.446,
+          "waves_used_mean": 2.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        },
+        "S-sequential": {
+          "trials": 3,
+          "wall_s_mean": 1.282,
+          "waves_used_mean": 6.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        },
+        "P-naive-parallel": {
+          "trials": 3,
+          "wall_s_mean": 0.225,
+          "waves_used_mean": 1.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        }
+      },
+      "deltas": {
+        "speedup_G_vs_S": 2.87,
+        "speedup_P_vs_S": 5.7
+      },
+      "verdict": "G wall=0.446s vs S wall=1.282s (speedup 2.87x); waves_used G=2.0; corruption 0 in all modes (disjoint OWNS)."
+    },
+    "shape2_conflict": {
+      "modes": {
+        "G-dafg-graph": {
+          "trials": 5,
+          "wall_s_mean": 0.451,
+          "waves_used_mean": 3.0,
+          "deferrals_total": 5,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        },
+        "S-sequential": {
+          "trials": 5,
+          "wall_s_mean": 0.881,
+          "waves_used_mean": 4.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        },
+        "P-naive-parallel": {
+          "trials": 5,
+          "wall_s_mean": 0.226,
+          "waves_used_mean": 1.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 5,
+          "corruption_trials": 5,
+          "corruption_rate": 1.0,
+          "starved_total": 0,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        }
+      },
+      "deltas": {
+        "corruption_rate_G_minus_P": -1.0
+      },
+      "verdict": "G deferrals=5 (c2 serialized), corruption_rate G=0.0 S=0.0 P=1.0 over 5 trials."
+    },
+    "shape3_runaway": {
+      "modes": {
+        "G-dafg-graph": {
+          "trials": 3,
+          "wall_s_mean": 1.019,
+          "waves_used_mean": 1.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 3,
+          "hangs_total": 0,
+          "completion_rate": 1.0
+        },
+        "S-sequential": {
+          "trials": 3,
+          "wall_s_mean": 2.648,
+          "waves_used_mean": 4.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 3,
+          "completion_rate": 1.0
+        },
+        "P-naive-parallel": {
+          "trials": 3,
+          "wall_s_mean": 2.02,
+          "waves_used_mean": 1.0,
+          "deferrals_total": 0,
+          "corruption_files_total": 0,
+          "corruption_trials": 0,
+          "corruption_rate": 0.0,
+          "starved_total": 0,
+          "hangs_total": 3,
+          "completion_rate": 1.0
+        }
+      },
+      "deltas": {
+        "G_starved_vs_S_hangs": [
+          3,
+          3
+        ]
+      },
+      "verdict": "G: starved=3 hangs=0 (explicit budget verdict); S: hangs=3; P: hangs=3 (external watchdog)."
+    }
+  },
+  "per_trial": [
+    {
+      "shape": "shape1_fanout",
+      "mode": "G-dafg-graph",
+      "rep": 0,
+      "wall_s": 0.45,
+      "waves_used": 2,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "G-dafg-graph",
+      "rep": 1,
+      "wall_s": 0.439,
+      "waves_used": 2,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "G-dafg-graph",
+      "rep": 2,
+      "wall_s": 0.447,
+      "waves_used": 2,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "S-sequential",
+      "rep": 0,
+      "wall_s": 1.285,
+      "waves_used": 6,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "S-sequential",
+      "rep": 1,
+      "wall_s": 1.279,
+      "waves_used": 6,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "S-sequential",
+      "rep": 2,
+      "wall_s": 1.281,
+      "waves_used": 6,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "P-naive-parallel",
+      "rep": 0,
+      "wall_s": 0.225,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "P-naive-parallel",
+      "rep": 1,
+      "wall_s": 0.224,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape1_fanout",
+      "mode": "P-naive-parallel",
+      "rep": 2,
+      "wall_s": 0.226,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 6,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 6,
+      "total_nodes": 6,
+      "verdicts": {
+        "s1_n1": "COMPLETED",
+        "s1_n2": "COMPLETED",
+        "s1_n3": "COMPLETED",
+        "s1_n4": "COMPLETED",
+        "s1_n5": "COMPLETED",
+        "s1_n6": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "G-dafg-graph",
+      "rep": 0,
+      "wall_s": 0.452,
+      "waves_used": 3,
+      "deferrals": 1,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED",
+        "s2_c2": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "G-dafg-graph",
+      "rep": 1,
+      "wall_s": 0.446,
+      "waves_used": 3,
+      "deferrals": 1,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED",
+        "s2_c2": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "G-dafg-graph",
+      "rep": 2,
+      "wall_s": 0.448,
+      "waves_used": 3,
+      "deferrals": 1,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED",
+        "s2_c2": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "G-dafg-graph",
+      "rep": 3,
+      "wall_s": 0.461,
+      "waves_used": 3,
+      "deferrals": 1,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED",
+        "s2_c2": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "G-dafg-graph",
+      "rep": 4,
+      "wall_s": 0.449,
+      "waves_used": 3,
+      "deferrals": 1,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED",
+        "s2_c2": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "S-sequential",
+      "rep": 0,
+      "wall_s": 0.882,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "S-sequential",
+      "rep": 1,
+      "wall_s": 0.878,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "S-sequential",
+      "rep": 2,
+      "wall_s": 0.879,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "S-sequential",
+      "rep": 3,
+      "wall_s": 0.883,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "S-sequential",
+      "rep": 4,
+      "wall_s": 0.881,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "P-naive-parallel",
+      "rep": 0,
+      "wall_s": 0.223,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 1,
+      "corruption_incidents": 15,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "P-naive-parallel",
+      "rep": 1,
+      "wall_s": 0.223,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 1,
+      "corruption_incidents": 17,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "P-naive-parallel",
+      "rep": 2,
+      "wall_s": 0.224,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 1,
+      "corruption_incidents": 17,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "P-naive-parallel",
+      "rep": 3,
+      "wall_s": 0.234,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 1,
+      "corruption_incidents": 13,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape2_conflict",
+      "mode": "P-naive-parallel",
+      "rep": 4,
+      "wall_s": 0.224,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 1,
+      "corruption_incidents": 17,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 0,
+      "completed_nodes": 4,
+      "total_nodes": 4,
+      "verdicts": {
+        "s2_c1": "COMPLETED",
+        "s2_c2": "COMPLETED",
+        "s2_c3": "COMPLETED",
+        "s2_c4": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "G-dafg-graph",
+      "rep": 0,
+      "wall_s": 1.019,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 1,
+      "hangs": 0,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_r1": "STARVED",
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "G-dafg-graph",
+      "rep": 1,
+      "wall_s": 1.019,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 1,
+      "hangs": 0,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_r1": "STARVED",
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "G-dafg-graph",
+      "rep": 2,
+      "wall_s": 1.018,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 1,
+      "hangs": 0,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_r1": "STARVED",
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "S-sequential",
+      "rep": 0,
+      "wall_s": 2.658,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 1,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED",
+        "s3_r1": "HANG"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "S-sequential",
+      "rep": 1,
+      "wall_s": 2.646,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 1,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED",
+        "s3_r1": "HANG"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "S-sequential",
+      "rep": 2,
+      "wall_s": 2.642,
+      "waves_used": 4,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 1,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED",
+        "s3_r1": "HANG"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "P-naive-parallel",
+      "rep": 0,
+      "wall_s": 2.017,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 1,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_r1": "HANG",
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "P-naive-parallel",
+      "rep": 1,
+      "wall_s": 2.021,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 1,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_r1": "HANG",
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED"
+      }
+    },
+    {
+      "shape": "shape3_runaway",
+      "mode": "P-naive-parallel",
+      "rep": 2,
+      "wall_s": 2.022,
+      "waves_used": 1,
+      "deferrals": 0,
+      "corruption_files": 0,
+      "corruption_incidents": 0,
+      "files_checked": 3,
+      "starved": 0,
+      "hangs": 1,
+      "completed_nodes": 3,
+      "total_nodes": 3,
+      "verdicts": {
+        "s3_r1": "HANG",
+        "s3_n1": "COMPLETED",
+        "s3_n2": "COMPLETED",
+        "s3_n3": "COMPLETED"
+      }
+    }
+  ],
+  "limitations": [
+    "Stub executors (fixed sleep + marker writes) measure the scheduler, not real agent behavior: no planning variance, no tool-call patterns, no genuine stalls.",
+    "File-write races are a proxy for workspace races: real agents race on reads, partial edits, and git state, not just appends.",
+    "The runaway is a tight loop with per-iteration stop polling; the experiment measures supervisor verdict/timing discipline, not uncooperative-thread killing (Python threads cannot be killed). DAFG's real Budget is likewise cooperative (checked at dispatch); the supervisor here enforces it per-node via Budget.check_deadline().",
+    "Mode G uses DAFG.compute_waves/nodes_conflict/Budget directly, bypassing the protocol state machine and gate ledger: this is the requested isolation, but full DAFG.run() adds dispatch overhead not measured here.",
+    "Shape-2 corruption is timing-dependent; 5 repetitions bound but do not eliminate sampling noise. Interleaving pressure (8 markers, 1ms gaps) is modest by design.",
+    "Single seed; wall-time comparisons are hardware-specific (this sandbox)."
+  ],
+  "overall_verdict": "SUPPORTS graph value: G matches S on safety (0 corruption both), beats S on speed (shape-1 speedup), serializes OWNS: conflicts P corrupts, and converts runaway hangs into explicit budget starvation."
+}
