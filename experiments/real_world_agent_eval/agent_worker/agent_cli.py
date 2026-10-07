@@ -11,6 +11,7 @@ Supports:
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import subprocess
@@ -728,8 +729,21 @@ def stage_generation(workdir: Path, generation: int) -> None:
     print(f"[agent_cli] Staged Generation {generation} code into {src_dir}")
 
 
+class RealAgentError(RuntimeError):
+    """Raised when --mode real cannot invoke a real agent.
+
+    Eval honesty rule: a failed real agent must NEVER be silently replaced
+    with staged Gen-4 perfect code — that substitution scores 100% and fakes
+    the evidence. Fail loud instead.
+    """
+
+
 def run_real_agent(workdir: Path, goal: str) -> None:
-    """Execute local CLI agent (e.g. omp, claude, codex)."""
+    """Execute local CLI agent (e.g. omp, claude, codex).
+
+    Raises RealAgentError on any failure (missing binary, non-zero exit,
+    timeout). Callers must surface the failure, never substitute staged code.
+    """
     candidates = [
         Path("/Users/ektasaini/.bun/bin/omp"),
         shutil.which("omp"),
@@ -743,9 +757,10 @@ def run_real_agent(workdir: Path, goal: str) -> None:
             break
 
     if not agent_bin:
-        print("[agent_cli] No real CLI agent binary found on PATH. Falling back to Generation 4 staged delivery.")
-        stage_generation(workdir, 4)
-        return
+        raise RealAgentError(
+            "no real CLI agent binary found (tried /Users/ektasaini/.bun/bin/omp, "
+            "omp/claude/codex on PATH); refusing to substitute staged code"
+        )
 
     print(f"[agent_cli] Invoking real agent CLI: {agent_bin} in {workdir}")
     prompt = (
@@ -757,14 +772,13 @@ def run_real_agent(workdir: Path, goal: str) -> None:
     cmd = [agent_bin, "-p", "--cwd", str(workdir), prompt]
     try:
         proc = subprocess.run(cmd, cwd=str(workdir), timeout=120, capture_output=True, text=True)
-        print(proc.stdout)
-        if proc.returncode != 0:
-            print(f"[agent_cli] Real agent exited with code {proc.returncode}: {proc.stderr}")
-            print("[agent_cli] Falling back to Generation 4 staged delivery.")
-            stage_generation(workdir, 4)
     except Exception as e:
-        print(f"[agent_cli] Real agent invocation failed: {e}. Falling back to Generation 4 staged delivery.")
-        stage_generation(workdir, 4)
+        raise RealAgentError(f"real agent invocation failed: {e}") from e
+    print(proc.stdout)
+    if proc.returncode != 0:
+        raise RealAgentError(
+            f"real agent exited with code {proc.returncode}: {proc.stderr.strip()[:500]}"
+        )
 
 
 def main() -> None:
@@ -778,7 +792,21 @@ def main() -> None:
     workdir = Path(args.workdir).resolve()
 
     if args.mode == "real":
-        run_real_agent(workdir, args.goal)
+        try:
+            run_real_agent(workdir, args.goal)
+        except RealAgentError as e:
+            record = {
+                "ok": False,
+                "mode": "real",
+                "error": str(e),
+                "workdir": str(workdir),
+            }
+            try:
+                (workdir / "real_agent_error.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+            except OSError:
+                pass
+            print(f"[agent_cli] REAL AGENT FAILURE (no staged fallback): {e}", file=sys.stderr)
+            sys.exit(2)
     else:
         stage_generation(workdir, args.generation)
 
