@@ -1,0 +1,877 @@
+{
+  "suite": "ab-pilot",
+  "dry_run": true,
+  "model": "dry-run-stub",
+  "generated_at": "2026-10-07T19:39:35.332529+00:00",
+  "tasks": [
+    "phase1_mf_01",
+    "phase1_mf_02",
+    "phase1_mf_03",
+    "phase1_proto_01",
+    "phase1_proto_02",
+    "phase1_proto_03",
+    "phase1_conc_01",
+    "phase1_conc_02",
+    "phase1_imp_01",
+    "phase1_imp_02"
+  ],
+  "seeds": [
+    42,
+    43
+  ],
+  "modes": [
+    "A-baseline",
+    "B-dafg"
+  ],
+  "trials": 40,
+  "wall_s": 1.2,
+  "per_trial": [
+    {
+      "task_id": "phase1_mf_01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t1_controller.py",
+        "src/pilot/multifile/t1_models.py",
+        "src/pilot/multifile/t1_services.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t1_controller.py",
+        "src/pilot/multifile/t1_models.py",
+        "src/pilot/multifile/t1_services.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_01",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t1_controller.py",
+        "src/pilot/multifile/t1_models.py",
+        "src/pilot/multifile/t1_services.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_01",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t1_controller.py",
+        "src/pilot/multifile/t1_models.py",
+        "src/pilot/multifile/t1_services.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t2_config.py",
+        "src/pilot/multifile/t2_loader.py",
+        "src/pilot/multifile/t2_validator.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t2_config.py",
+        "src/pilot/multifile/t2_loader.py",
+        "src/pilot/multifile/t2_validator.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_02",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t2_config.py",
+        "src/pilot/multifile/t2_loader.py",
+        "src/pilot/multifile/t2_validator.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_02",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.01,
+      "files_materialized": [
+        "src/pilot/multifile/t2_config.py",
+        "src/pilot/multifile/t2_loader.py",
+        "src/pilot/multifile/t2_validator.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_03",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t3_ast.py",
+        "src/pilot/multifile/t3_emitter.py",
+        "src/pilot/multifile/t3_parser.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_03",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.01,
+      "files_materialized": [
+        "src/pilot/multifile/t3_ast.py",
+        "src/pilot/multifile/t3_emitter.py",
+        "src/pilot/multifile/t3_parser.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_03",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t3_ast.py",
+        "src/pilot/multifile/t3_emitter.py",
+        "src/pilot/multifile/t3_parser.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_mf_03",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/multifile/t3_ast.py",
+        "src/pilot/multifile/t3_emitter.py",
+        "src/pilot/multifile/t3_parser.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t1_schema.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t1_schema.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_01",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t1_schema.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_01",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t1_schema.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t2_fsm.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t2_fsm.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_02",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t2_fsm.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_02",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t2_fsm.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_03",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t3_ledger.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_03",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t3_ledger.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_03",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t3_ledger.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_proto_03",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 2000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/protocol/t3_ledger.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/concurrency/t1_join.py",
+        "src/pilot/concurrency/t1_worker_a.py",
+        "src/pilot/concurrency/t1_worker_b.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.01,
+      "files_materialized": [
+        "src/pilot/concurrency/t1_join.py",
+        "src/pilot/concurrency/t1_worker_a.py",
+        "src/pilot/concurrency/t1_worker_b.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_01",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/concurrency/t1_join.py",
+        "src/pilot/concurrency/t1_worker_a.py",
+        "src/pilot/concurrency/t1_worker_b.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_01",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.01,
+      "files_materialized": [
+        "src/pilot/concurrency/t1_join.py",
+        "src/pilot/concurrency/t1_worker_a.py",
+        "src/pilot/concurrency/t1_worker_b.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/concurrency/t2_consumer.py",
+        "src/pilot/concurrency/t2_pipeline.py",
+        "src/pilot/concurrency/t2_producer.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.01,
+      "files_materialized": [
+        "src/pilot/concurrency/t2_consumer.py",
+        "src/pilot/concurrency/t2_pipeline.py",
+        "src/pilot/concurrency/t2_producer.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_02",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.0,
+      "files_materialized": [
+        "src/pilot/concurrency/t2_consumer.py",
+        "src/pilot/concurrency/t2_pipeline.py",
+        "src/pilot/concurrency/t2_producer.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_conc_02",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "dry-run-stub",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 6000,
+      "duration_s": 0.01,
+      "files_materialized": [
+        "src/pilot/concurrency/t2_consumer.py",
+        "src/pilot/concurrency/t2_pipeline.py",
+        "src/pilot/concurrency/t2_producer.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 288,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 0,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_01",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 288,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_01",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 0,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 960,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 0,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_02",
+      "seed": 43,
+      "mode": "A-baseline",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 960,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    },
+    {
+      "task_id": "phase1_imp_02",
+      "seed": 43,
+      "mode": "B-dafg",
+      "is_feasible": false,
+      "model": "dry-run-stub",
+      "judge_outcome": "CORRECT_BLOCK",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 0,
+      "duration_s": 0.0,
+      "files_materialized": [],
+      "internal_outcome": "CORRECT_BLOCK",
+      "discrepancy": false,
+      "owns_satisfied": false,
+      "error": null
+    }
+  ],
+  "metrics": {
+    "A-baseline": {
+      "n": 20,
+      "evd": 1.0,
+      "fcr": 0.0,
+      "cbr": 1.0,
+      "cpad_tokens": 4656.0,
+      "total_tokens": 74496,
+      "ttr_s": 0.0
+    },
+    "B-dafg": {
+      "n": 20,
+      "evd": 1.0,
+      "fcr": 0.0,
+      "cbr": 1.0,
+      "cpad_tokens": 4500.0,
+      "total_tokens": 72000,
+      "ttr_s": 0.003
+    }
+  },
+  "deltas_B_minus_A": {
+    "evd": 0.0,
+    "fcr": 0.0,
+    "cbr": 0.0,
+    "cpad_tokens": -156.0,
+    "ttr_s": 0.003
+  },
+  "discrepancy_audit": {
+    "mismatches": 0,
+    "mismatch_rate": 0.0
+  },
+  "fixture_vacuity": {
+    "phase1_mf_01": {
+      "references_workspace": false
+    },
+    "phase1_mf_02": {
+      "references_workspace": false
+    },
+    "phase1_mf_03": {
+      "references_workspace": false
+    },
+    "phase1_proto_01": {
+      "references_workspace": false
+    },
+    "phase1_proto_02": {
+      "references_workspace": false
+    },
+    "phase1_proto_03": {
+      "references_workspace": false
+    },
+    "phase1_conc_01": {
+      "references_workspace": false
+    },
+    "phase1_conc_02": {
+      "references_workspace": false
+    },
+    "phase1_imp_01": {
+      "references_workspace": false
+    },
+    "phase1_imp_02": {
+      "references_workspace": false
+    }
+  }
+}
