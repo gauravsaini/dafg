@@ -14,7 +14,23 @@ from datetime import datetime, timezone
 from enum import Enum
 import hashlib
 import json
+import os
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+
+from dafg.artifacts import KnowledgeArtifact, ScopeKind, WitnessRefutedError
+
+
+def _artifact_scope_within_owns(scope: str, owns: List[str]) -> bool:
+    """Minimal scope-within-OWNS check for the protocol guard (no runtime import)."""
+    def norm(p: str) -> str:
+        p = os.path.normpath(p.strip()).replace(chr(92), "/")
+        return p[2:] if p.startswith("./") else p
+    s = norm(scope)
+    for owned in owns:
+        o = norm(owned)
+        if s == o or s.startswith(o + "/") or o.startswith(s + "/"):
+            return True
+    return False
 
 
 class ProtocolState(str, Enum):
@@ -61,6 +77,9 @@ class Action(str, Enum):
     FAIL = "FAIL"
     HALT = "HALT"
     REOPEN = "REOPEN"
+    # AECP artifact-exclusive communication: state-preserving harness actions
+    PUBLISH_KNOWLEDGE = "PUBLISH_KNOWLEDGE"
+    FLAG_KNOWLEDGE = "FLAG_KNOWLEDGE"
 
 
 class IllegalTransitionError(Exception):
@@ -298,6 +317,58 @@ class ProtocolEngine:
         if isinstance(current_p_state, str):
             current_p_state = ProtocolState(current_p_state)
 
+        # 2b. AECP knowledge actions: state-preserving, guard-validated.
+        # Agents communicate exclusively through artifacts; the harness
+        # validates the producer and the scope-within-OWNS rule here and
+        # the reducer applies the publication below. No protocol state change.
+        if cmd.action in (Action.PUBLISH_KNOWLEDGE, Action.FLAG_KNOWLEDGE):
+            def _reject(reason: str):
+                record = AuditRecord(
+                    timestamp=datetime.now(timezone.utc).isoformat(),
+                    idempotency_key=cmd.idempotency_key,
+                    action=cmd.action.value,
+                    node_id=cmd.node_id,
+                    reason=reason,
+                )
+                return [], record
+
+            artifact_payload = cmd.payload.get("artifact")
+            if not isinstance(artifact_payload, dict):
+                return _reject(f"{cmd.action.value} requires payload['artifact'] as a dict")
+            producer = artifact_payload.get("producer") or cmd.node_id
+            if producer != cmd.node_id:
+                return _reject(
+                    f"Artifact producer '{producer}' != command node '{cmd.node_id}'"
+                )
+            if cmd.action == Action.PUBLISH_KNOWLEDGE:
+                scope_kind = str(artifact_payload.get("scope_kind", ScopeKind.GLOBAL.value))
+                scope = str(artifact_payload.get("scope", ""))
+                if scope_kind not in (ScopeKind.GLOBAL.value, ScopeKind.SYMBOL.value):
+                    owns = list(getattr(node, "owns", []) or []) + list(getattr(node, "owns_read", []) or [])
+                    if not scope or not _artifact_scope_within_owns(scope, owns):
+                        return _reject(
+                            f"Artifact scope {scope_kind}:{scope} outside OWNS of node '{cmd.node_id}'"
+                        )
+            payload = dict(cmd.payload)
+            payload["artifact"] = dict(artifact_payload)
+            payload["artifact"]["producer"] = cmd.node_id
+            event = DomainEvent(
+                event_id=seq_generator(),
+                seq=seq_generator(),
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                event_type=f"NODE_{cmd.action.value}",
+                run_id=cmd.run_id,
+                node_id=cmd.node_id,
+                from_state=current_p_state.value,
+                to_state=current_p_state.value,
+                epoch=node.epoch,
+                action=cmd.action.value,
+                idempotency_key=cmd.idempotency_key,
+                reason=cmd.reason,
+                payload=payload,
+            )
+            return [event], None
+
         # 3. Transition rule lookup
         rule_key = (current_p_state, cmd.action)
         if rule_key not in cls.TRANSITION_MAP:
@@ -505,6 +576,22 @@ class ProtocolReducer:
             else:
                 node.revisions += 1
             node.active_dispatch = None
+
+        elif event.action in (Action.PUBLISH_KNOWLEDGE.value, Action.FLAG_KNOWLEDGE.value):
+            # AECP: apply the knowledge action against the harness store.
+            # No protocol state change; a malformed/refuting witness rejects
+            # the publication and is recorded in the store audit.
+            if hasattr(graph, "knowledge"):
+                art_data = (event.payload or {}).get("artifact", {})
+                workdir = (event.payload or {}).get("workdir") or os.getcwd()
+                try:
+                    ka = art_data if isinstance(art_data, KnowledgeArtifact) else KnowledgeArtifact.from_dict(art_data)
+                    if event.action == Action.PUBLISH_KNOWLEDGE.value:
+                        graph.knowledge.publish(ka, workdir)
+                    else:
+                        graph.knowledge.flag(ka.artifact_id, event.reason or "flagged", workdir)
+                except (WitnessRefutedError, ValueError, KeyError) as e:
+                    graph.knowledge.audit.append(f"{event.timestamp} reducer rejected: {e}")
 
         # Synchronize legacy NodeStatus if the node carries it
         if hasattr(node, "status"):
