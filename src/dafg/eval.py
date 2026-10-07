@@ -2404,6 +2404,36 @@ class EvaluationHarness:
             self.tasks = tasks
         return tasks
 
+    def load_v04_pilot_tasks(self=None) -> List[BenchmarkTask]:
+        """Load the v04 fixture-redesign pilot suite (20 tasks, behavior-pinning fixtures).
+
+        Tasks are defined in benchmarks/v04_pilot/tasks.json; each fixture is a
+        real Python file (fixtures/<task_id>.py) that imports the task's owns
+        modules from the trial workdir and asserts on behavior — the fix for
+        the machine-verified fixture vacuity of the Phase-1 suite (0/75
+        fixtures referenced workspace code).
+        """
+        here = Path(__file__).resolve()
+        suite_path = None
+        for parent in here.parents:
+            candidate = parent / "benchmarks" / "v04_pilot" / "tasks.json"
+            if candidate.exists():
+                suite_path = candidate
+                break
+        if suite_path is None:
+            raise FileNotFoundError("benchmarks/v04_pilot/tasks.json not found")
+        raw = json.loads(suite_path.read_text(encoding="utf-8"))
+        tasks: List[BenchmarkTask] = []
+        for td in raw:
+            td = dict(td)
+            fixture_rel = td.pop("fixture_file")
+            fixture_path = suite_path.parent / fixture_rel
+            td["test_fixture"] = fixture_path.read_text(encoding="utf-8")
+            tasks.append(BenchmarkTask.from_dict(td))
+        if isinstance(self, EvaluationHarness):
+            self.tasks = tasks
+        return tasks
+
     def run_trial(
         self,
         task: BenchmarkTask,

@@ -1,0 +1,210 @@
+{
+  "suite": "v04-fixture-validation",
+  "generated_at": "2026-10-07T21:00:56+00:00",
+  "tasks": 20,
+  "gates_passed": 20,
+  "gates_failed": 0,
+  "wall_s": 3.0,
+  "results": [
+    {
+      "task_id": "v04_mf_01",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_02",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_03",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_04",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_05",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_06",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_07",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_mf_08",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_p01",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_p02",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_p03",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_p04",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_p05",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_p06",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_c01",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_c02",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_c03",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_c04",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_c05",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    },
+    {
+      "task_id": "v04_c06",
+      "checks": {
+        "reference_pass": true,
+        "broken_v1_fails": true,
+        "broken_v2_fails": true
+      },
+      "gate": "PASS",
+      "notes": []
+    }
+  ]
+}

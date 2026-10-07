@@ -1,0 +1,1005 @@
+{
+  "suite": "v04-pilot",
+  "model": "gpt-6-luna",
+  "backend": "mac-codex",
+  "generated_at": "2026-10-07T22:03:31.387205+00:00",
+  "tasks": [
+    "v04_mf_01",
+    "v04_mf_02",
+    "v04_mf_03",
+    "v04_mf_04",
+    "v04_mf_05",
+    "v04_mf_06",
+    "v04_mf_07",
+    "v04_mf_08",
+    "v04_p01",
+    "v04_p02",
+    "v04_p03",
+    "v04_p04",
+    "v04_p05",
+    "v04_p06",
+    "v04_c01",
+    "v04_c02",
+    "v04_c03",
+    "v04_c04",
+    "v04_c05",
+    "v04_c06"
+  ],
+  "seeds": [
+    42
+  ],
+  "modes": [
+    "A-baseline",
+    "B-dafg"
+  ],
+  "trials": 40,
+  "trials_expected": 40,
+  "partial": false,
+  "wall_s": 3565.3,
+  "per_trial": [
+    {
+      "task_id": "v04_mf_01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 311233,
+      "duration_s": 146.62,
+      "files_materialized": [
+        "src/v04/mf01/controller.py",
+        "src/v04/mf01/models.py",
+        "src/v04/mf01/services.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 349001,
+      "duration_s": 143.01,
+      "files_materialized": [
+        "src/v04/mf01/controller.py",
+        "src/v04/mf01/models.py",
+        "src/v04/mf01/services.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 212514,
+      "duration_s": 129.7,
+      "files_materialized": [
+        "src/v04/mf02/config.py",
+        "src/v04/mf02/loader.py",
+        "src/v04/mf02/validator.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 321104,
+      "duration_s": 108.95,
+      "files_materialized": [
+        "src/v04/mf02/config.py",
+        "src/v04/mf02/loader.py",
+        "src/v04/mf02/validator.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_03",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "judge_passed": false,
+      "false_success": true,
+      "tokens": 135473,
+      "duration_s": 147.06,
+      "files_materialized": [
+        "src/v04/mf03/ledger.py",
+        "src/v04/mf03/money.py",
+        "src/v04/mf03/report.py"
+      ],
+      "internal_outcome": "VERIFIED_FAILURE",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": "false completion: external oracle failed (Stdout: \nStderr: Traceback (most recent call last):\n  File \"/tmp/v04_pilot_v04_mf_03_42_A-baseline_3q_xit2w/.hidden_eval.py\", line 19, in <module>\n    tb = trial_balance(led, \"USD\")\n         ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/v04_pilot_v04_mf_03_42_A-baseline_3q_xit2w/src/v04/mf03/report.py\", line 52, in trial_balance\n    source = source()\n             ^^^^^^^^\nTypeError: Ledger.balances() missing 1 required positional argument: 'currency'\n)"
+    },
+    {
+      "task_id": "v04_mf_03",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 171222,
+      "duration_s": 131.24,
+      "files_materialized": [
+        "src/v04/mf03/ledger.py",
+        "src/v04/mf03/money.py",
+        "src/v04/mf03/report.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_04",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "judge_passed": false,
+      "false_success": true,
+      "tokens": 164834,
+      "duration_s": 121.94,
+      "files_materialized": [
+        "src/v04/mf04/filters.py",
+        "src/v04/mf04/stats.py",
+        "src/v04/mf04/store.py"
+      ],
+      "internal_outcome": "VERIFIED_FAILURE",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": "false completion: external oracle failed (Stdout: \nStderr: Traceback (most recent call last):\n  File \"/tmp/v04_pilot_v04_mf_04_42_A-baseline_4mag0fo_/.hidden_eval.py\", line 13, in <module>\n    assert [t.id for t in od] == [b], [t.id for t in od]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: [2]\n)"
+    },
+    {
+      "task_id": "v04_mf_04",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "judge_passed": false,
+      "false_success": true,
+      "tokens": 62984,
+      "duration_s": 70.88,
+      "files_materialized": [
+        "src/v04/mf04/filters.py",
+        "src/v04/mf04/stats.py",
+        "src/v04/mf04/store.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": true,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_05",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 60852,
+      "duration_s": 83.82,
+      "files_materialized": [
+        "src/v04/mf05/count.py",
+        "src/v04/mf05/normalize.py",
+        "src/v04/mf05/tokenize.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_05",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 60668,
+      "duration_s": 82.37,
+      "files_materialized": [
+        "src/v04/mf05/count.py",
+        "src/v04/mf05/normalize.py",
+        "src/v04/mf05/tokenize.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_06",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 270702,
+      "duration_s": 148.92,
+      "files_materialized": [
+        "src/v04/mf06/inventory.py",
+        "src/v04/mf06/pricing.py",
+        "src/v04/mf06/product.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_06",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 64085,
+      "duration_s": 76.61,
+      "files_materialized": [
+        "src/v04/mf06/inventory.py",
+        "src/v04/mf06/pricing.py",
+        "src/v04/mf06/product.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_07",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 107063,
+      "duration_s": 118.47,
+      "files_materialized": [
+        "src/v04/mf07/store.py",
+        "src/v04/mf07/tokens.py",
+        "src/v04/mf07/verify.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_07",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 208854,
+      "duration_s": 85.28,
+      "files_materialized": [
+        "src/v04/mf07/store.py",
+        "src/v04/mf07/tokens.py",
+        "src/v04/mf07/verify.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_08",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 196400,
+      "duration_s": 115.81,
+      "files_materialized": [
+        "src/v04/mf08/aggregate.py",
+        "src/v04/mf08/parse.py",
+        "src/v04/mf08/render.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_mf_08",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 62565,
+      "duration_s": 64.36,
+      "files_materialized": [
+        "src/v04/mf08/aggregate.py",
+        "src/v04/mf08/parse.py",
+        "src/v04/mf08/render.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41168,
+      "duration_s": 60.62,
+      "files_materialized": [
+        "src/v04/p01/errors.py",
+        "src/v04/p01/schema.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41755,
+      "duration_s": 64.44,
+      "files_materialized": [
+        "src/v04/p01/errors.py",
+        "src/v04/p01/schema.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 40683,
+      "duration_s": 56.37,
+      "files_materialized": [
+        "src/v04/p02/fsm.py",
+        "src/v04/p02/states.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 40725,
+      "duration_s": 56.96,
+      "files_materialized": [
+        "src/v04/p02/fsm.py",
+        "src/v04/p02/states.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p03",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41988,
+      "duration_s": 72.66,
+      "files_materialized": [
+        "src/v04/p03/audit.py",
+        "src/v04/p03/verify.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p03",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41198,
+      "duration_s": 62.66,
+      "files_materialized": [
+        "src/v04/p03/audit.py",
+        "src/v04/p03/verify.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p04",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41738,
+      "duration_s": 64.22,
+      "files_materialized": [
+        "src/v04/p04/decode.py",
+        "src/v04/p04/frame.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p04",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 85380,
+      "duration_s": 68.36,
+      "files_materialized": [
+        "src/v04/p04/decode.py",
+        "src/v04/p04/frame.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p05",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41249,
+      "duration_s": 60.5,
+      "files_materialized": [
+        "src/v04/p05/policy.py",
+        "src/v04/p05/should_retry.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p05",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41103,
+      "duration_s": 60.6,
+      "files_materialized": [
+        "src/v04/p05/policy.py",
+        "src/v04/p05/should_retry.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p06",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 126516,
+      "duration_s": 93.5,
+      "files_materialized": [
+        "src/v04/p06/cursor.py",
+        "src/v04/p06/page.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_p06",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 137102,
+      "duration_s": 92.23,
+      "files_materialized": [
+        "src/v04/p06/cursor.py",
+        "src/v04/p06/page.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c01",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41507,
+      "duration_s": 64.5,
+      "files_materialized": [
+        "src/v04/c01/counter.py",
+        "src/v04/c01/workers.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c01",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 114335,
+      "duration_s": 74.05,
+      "files_materialized": [
+        "src/v04/c01/counter.py",
+        "src/v04/c01/workers.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c02",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 112945,
+      "duration_s": 86.18,
+      "files_materialized": [
+        "src/v04/c02/channel.py",
+        "src/v04/c02/pipeline.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c02",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 146759,
+      "duration_s": 86.35,
+      "files_materialized": [
+        "src/v04/c02/channel.py",
+        "src/v04/c02/pipeline.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c03",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "judge_passed": false,
+      "false_success": true,
+      "tokens": 43959,
+      "duration_s": 82.3,
+      "files_materialized": [
+        "src/v04/c03/cache.py",
+        "src/v04/c03/evict.py"
+      ],
+      "internal_outcome": "VERIFIED_FAILURE",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": "false completion: external oracle failed (Stdout: \nStderr: Traceback (most recent call last):\n  File \"/tmp/v04_pilot_v04_c03_42_A-baseline_jlvsuxop/.hidden_eval.py\", line 26, in <module>\n    assert evict_expired(c) == 1\n           ^^^^^^^^^^^^^^^^\n  File \"/tmp/v04_pilot_v04_c03_42_A-baseline_jlvsuxop/src/v04/c03/evict.py\", line 8, in evict_expired\n    for key, (_, expires_at) in cache._data.items()\n                                ^^^^^^^^^^^\nAttributeError: 'TTLCache' object has no attribute '_data'\n)"
+    },
+    {
+      "task_id": "v04_c03",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 44288,
+      "duration_s": 95.32,
+      "files_materialized": [
+        "src/v04/c03/cache.py",
+        "src/v04/c03/evict.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c04",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 85307,
+      "duration_s": 69.92,
+      "files_materialized": [
+        "src/v04/c04/barrier.py",
+        "src/v04/c04/collect.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c04",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 85927,
+      "duration_s": 75.93,
+      "files_materialized": [
+        "src/v04/c04/barrier.py",
+        "src/v04/c04/collect.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c05",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41423,
+      "duration_s": 68.48,
+      "files_materialized": [
+        "src/v04/c05/api.py",
+        "src/v04/c05/bucket.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c05",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 41861,
+      "duration_s": 67.72,
+      "files_materialized": [
+        "src/v04/c05/api.py",
+        "src/v04/c05/bucket.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c06",
+      "seed": 42,
+      "mode": "A-baseline",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 147125,
+      "duration_s": 103.16,
+      "files_materialized": [
+        "src/v04/c06/rwlock.py",
+        "src/v04/c06/store.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    },
+    {
+      "task_id": "v04_c06",
+      "seed": 42,
+      "mode": "B-dafg",
+      "is_feasible": true,
+      "model": "gpt-6-luna",
+      "backend": "mac-codex",
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "judge_passed": true,
+      "false_success": false,
+      "tokens": 122179,
+      "duration_s": 99.12,
+      "files_materialized": [
+        "src/v04/c06/rwlock.py",
+        "src/v04/c06/store.py"
+      ],
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "discrepancy": false,
+      "owns_satisfied": true,
+      "error": null
+    }
+  ],
+  "metrics": {
+    "A-baseline": {
+      "n": 20,
+      "evd": 0.85,
+      "fcr": 0.15,
+      "cbr": 0.0,
+      "cpad_tokens": 133216.4,
+      "total_tokens": 2264679,
+      "ttr_s": 94.7
+    },
+    "B-dafg": {
+      "n": 20,
+      "evd": 0.95,
+      "fcr": 0.05,
+      "cbr": 0.0,
+      "cpad_tokens": 118057.6,
+      "total_tokens": 2243095,
+      "ttr_s": 83.3
+    }
+  },
+  "deltas_B_minus_A": {
+    "evd": 0.1,
+    "fcr": -0.1,
+    "cbr": 0.0,
+    "ttr_s": -11.4,
+    "cpad_tokens": -15158.8
+  },
+  "discrepancy_audit": {
+    "mismatches": 1,
+    "mismatch_rate": 0.025
+  },
+  "fixture_vacuity": {
+    "v04_mf_01": {
+      "references_workspace": true
+    },
+    "v04_mf_02": {
+      "references_workspace": true
+    },
+    "v04_mf_03": {
+      "references_workspace": true
+    },
+    "v04_mf_04": {
+      "references_workspace": true
+    },
+    "v04_mf_05": {
+      "references_workspace": true
+    },
+    "v04_mf_06": {
+      "references_workspace": true
+    },
+    "v04_mf_07": {
+      "references_workspace": true
+    },
+    "v04_mf_08": {
+      "references_workspace": true
+    },
+    "v04_p01": {
+      "references_workspace": true
+    },
+    "v04_p02": {
+      "references_workspace": true
+    },
+    "v04_p03": {
+      "references_workspace": true
+    },
+    "v04_p04": {
+      "references_workspace": true
+    },
+    "v04_p05": {
+      "references_workspace": true
+    },
+    "v04_p06": {
+      "references_workspace": true
+    },
+    "v04_c01": {
+      "references_workspace": true
+    },
+    "v04_c02": {
+      "references_workspace": true
+    },
+    "v04_c03": {
+      "references_workspace": true
+    },
+    "v04_c04": {
+      "references_workspace": true
+    },
+    "v04_c05": {
+      "references_workspace": true
+    },
+    "v04_c06": {
+      "references_workspace": true
+    }
+  },
+  "vacuous_fixtures": 0,
+  "runner_stats": {
+    "calls": 96,
+    "timeouts": 0,
+    "failures": 0,
+    "total_prompt_tokens": 4395808,
+    "total_completion_tokens": 111966,
+    "max_concurrent": 2
+  },
+  "limitations": [
+    "All 20 v04 fixtures are feasible-task behavior fixtures (no impossible tasks in v04); CBR is not measured here \u2014 see the codex pilot for CBR.",
+    "Per-node prompts: the adapter invokes runner_fn once per node; each call carries only its own OWNS files. Multi-file interface coherence across nodes is not assisted.",
+    "Single seed; wall-clock includes Mac codex latency under shared load with kernel-debug tracks.",
+    "CPAD is None when the --json stream carries no usage events."
+  ]
+}

@@ -1,0 +1,698 @@
+[
+  {
+    "task_id": "v04_mf_01",
+    "title": "V04 User Create/Get/Deactivate Flow",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_01_models",
+        "title": "User Models",
+        "owns": [
+          "src/v04/mf01/models.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_01_services",
+        "title": "User Services",
+        "owns": [
+          "src/v04/mf01/services.py"
+        ],
+        "needs": [
+          "v04_mf_01_models"
+        ]
+      },
+      {
+        "id": "v04_mf_01_ctrl",
+        "title": "User Controller",
+        "owns": [
+          "src/v04/mf01/controller.py"
+        ],
+        "needs": [
+          "v04_mf_01_services"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_01.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_02",
+    "title": "V04 Config Load/Coerce/Validate",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_02_config",
+        "title": "Config Value Object",
+        "owns": [
+          "src/v04/mf02/config.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_02_loader",
+        "title": "Env Loader",
+        "owns": [
+          "src/v04/mf02/loader.py"
+        ],
+        "needs": [
+          "v04_mf_02_config"
+        ]
+      },
+      {
+        "id": "v04_mf_02_validator",
+        "title": "Config Validator",
+        "owns": [
+          "src/v04/mf02/validator.py"
+        ],
+        "needs": [
+          "v04_mf_02_config"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_02.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_03",
+    "title": "V04 Money Arithmetic and Trial Balance",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_03_money",
+        "title": "Money Value Object",
+        "owns": [
+          "src/v04/mf03/money.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_03_ledger",
+        "title": "Ledger",
+        "owns": [
+          "src/v04/mf03/ledger.py"
+        ],
+        "needs": [
+          "v04_mf_03_money"
+        ]
+      },
+      {
+        "id": "v04_mf_03_report",
+        "title": "Trial Balance",
+        "owns": [
+          "src/v04/mf03/report.py"
+        ],
+        "needs": [
+          "v04_mf_03_ledger"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_03.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_04",
+    "title": "V04 Todo Store, Overdue Filter, Stats",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_04_store",
+        "title": "Todo Store",
+        "owns": [
+          "src/v04/mf04/store.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_04_filters",
+        "title": "Todo Filters",
+        "owns": [
+          "src/v04/mf04/filters.py"
+        ],
+        "needs": [
+          "v04_mf_04_store"
+        ]
+      },
+      {
+        "id": "v04_mf_04_stats",
+        "title": "Todo Stats",
+        "owns": [
+          "src/v04/mf04/stats.py"
+        ],
+        "needs": [
+          "v04_mf_04_store"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_04.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_05",
+    "title": "V04 Text Pipeline Tokenize/Normalize/Count",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_05_tok",
+        "title": "Tokenizer",
+        "owns": [
+          "src/v04/mf05/tokenize.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_05_norm",
+        "title": "Normalizer",
+        "owns": [
+          "src/v04/mf05/normalize.py"
+        ],
+        "needs": [
+          "v04_mf_05_tok"
+        ]
+      },
+      {
+        "id": "v04_mf_05_count",
+        "title": "Word Counter",
+        "owns": [
+          "src/v04/mf05/count.py"
+        ],
+        "needs": [
+          "v04_mf_05_norm"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_05.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_06",
+    "title": "V04 Inventory Reserve/Release/Pricing",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_06_product",
+        "title": "Product",
+        "owns": [
+          "src/v04/mf06/product.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_06_inv",
+        "title": "Inventory",
+        "owns": [
+          "src/v04/mf06/inventory.py"
+        ],
+        "needs": [
+          "v04_mf_06_product"
+        ]
+      },
+      {
+        "id": "v04_mf_06_pricing",
+        "title": "Pricing",
+        "owns": [
+          "src/v04/mf06/pricing.py"
+        ],
+        "needs": []
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_06.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_07",
+    "title": "V04 HMAC Token Issue/Verify/Revoke",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_07_tokens",
+        "title": "Token Issuance",
+        "owns": [
+          "src/v04/mf07/tokens.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_07_verify",
+        "title": "Token Verification",
+        "owns": [
+          "src/v04/mf07/verify.py"
+        ],
+        "needs": [
+          "v04_mf_07_tokens"
+        ]
+      },
+      {
+        "id": "v04_mf_07_store",
+        "title": "Revocation Store",
+        "owns": [
+          "src/v04/mf07/store.py"
+        ],
+        "needs": []
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_07.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_mf_08",
+    "title": "V04 CSV Parse/Aggregate/Render",
+    "tier": "pilot",
+    "cohort": "multifile",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_mf_08_parse",
+        "title": "CSV Parser",
+        "owns": [
+          "src/v04/mf08/parse.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_mf_08_agg",
+        "title": "Aggregator",
+        "owns": [
+          "src/v04/mf08/aggregate.py"
+        ],
+        "needs": [
+          "v04_mf_08_parse"
+        ]
+      },
+      {
+        "id": "v04_mf_08_render",
+        "title": "CSV Renderer",
+        "owns": [
+          "src/v04/mf08/render.py"
+        ],
+        "needs": [
+          "v04_mf_08_parse"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_mf_08.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_p01",
+    "title": "V04 Nested Schema Validation",
+    "tier": "pilot",
+    "cohort": "protocol",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_p01_schema",
+        "title": "Schema Validator",
+        "owns": [
+          "src/v04/p01/schema.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_p01_errors",
+        "title": "Error Formatter",
+        "owns": [
+          "src/v04/p01/errors.py"
+        ],
+        "needs": [
+          "v04_p01_schema"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_p01.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_p02",
+    "title": "V04 FSM Transitions",
+    "tier": "pilot",
+    "cohort": "protocol",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_p02_states",
+        "title": "State Constants",
+        "owns": [
+          "src/v04/p02/states.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_p02_fsm",
+        "title": "FSM Engine",
+        "owns": [
+          "src/v04/p02/fsm.py"
+        ],
+        "needs": [
+          "v04_p02_states"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_p02.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_p03",
+    "title": "V04 Audit Log Monotonicity",
+    "tier": "pilot",
+    "cohort": "protocol",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_p03_audit",
+        "title": "Audit Log",
+        "owns": [
+          "src/v04/p03/audit.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_p03_verify",
+        "title": "Monotonicity Verifier",
+        "owns": [
+          "src/v04/p03/verify.py"
+        ],
+        "needs": [
+          "v04_p03_audit"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_p03.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_p04",
+    "title": "V04 Length-Prefixed Framing",
+    "tier": "pilot",
+    "cohort": "protocol",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_p04_frame",
+        "title": "Frame Encoder",
+        "owns": [
+          "src/v04/p04/frame.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_p04_decode",
+        "title": "Frame Decoder",
+        "owns": [
+          "src/v04/p04/decode.py"
+        ],
+        "needs": [
+          "v04_p04_frame"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_p04.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_p05",
+    "title": "V04 Exponential Backoff and Retry Decisions",
+    "tier": "pilot",
+    "cohort": "protocol",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_p05_policy",
+        "title": "Backoff Policy",
+        "owns": [
+          "src/v04/p05/policy.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_p05_retry",
+        "title": "Retry Decisions",
+        "owns": [
+          "src/v04/p05/should_retry.py"
+        ],
+        "needs": [
+          "v04_p05_policy"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_p05.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_p06",
+    "title": "V04 Cursor Pagination",
+    "tier": "pilot",
+    "cohort": "protocol",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_p06_cursor",
+        "title": "Cursor Codec",
+        "owns": [
+          "src/v04/p06/cursor.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_p06_page",
+        "title": "Paginator",
+        "owns": [
+          "src/v04/p06/page.py"
+        ],
+        "needs": [
+          "v04_p06_cursor"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_p06.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_c01",
+    "title": "V04 Atomic Counter Under Threads",
+    "tier": "pilot",
+    "cohort": "concurrency",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_c01_counter",
+        "title": "Atomic Counter",
+        "owns": [
+          "src/v04/c01/counter.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_c01_workers",
+        "title": "Thread Workers",
+        "owns": [
+          "src/v04/c01/workers.py"
+        ],
+        "needs": [
+          "v04_c01_counter"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_c01.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_c02",
+    "title": "V04 Producer Consumer Pipeline",
+    "tier": "pilot",
+    "cohort": "concurrency",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_c02_channel",
+        "title": "Closeable Channel",
+        "owns": [
+          "src/v04/c02/channel.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_c02_pipeline",
+        "title": "Pipeline",
+        "owns": [
+          "src/v04/c02/pipeline.py"
+        ],
+        "needs": [
+          "v04_c02_channel"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_c02.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_c03",
+    "title": "V04 TTL Cache with Injected Clock",
+    "tier": "pilot",
+    "cohort": "concurrency",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_c03_cache",
+        "title": "TTL Cache",
+        "owns": [
+          "src/v04/c03/cache.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_c03_evict",
+        "title": "Expiry Eviction",
+        "owns": [
+          "src/v04/c03/evict.py"
+        ],
+        "needs": [
+          "v04_c03_cache"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_c03.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_c04",
+    "title": "V04 Reusable Barrier and Ordered Gather",
+    "tier": "pilot",
+    "cohort": "concurrency",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_c04_barrier",
+        "title": "Reusable Barrier",
+        "owns": [
+          "src/v04/c04/barrier.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_c04_collect",
+        "title": "Ordered Gather",
+        "owns": [
+          "src/v04/c04/collect.py"
+        ],
+        "needs": [
+          "v04_c04_barrier"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_c04.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_c05",
+    "title": "V04 Token Bucket Rate Limiter",
+    "tier": "pilot",
+    "cohort": "concurrency",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_c05_bucket",
+        "title": "Token Bucket",
+        "owns": [
+          "src/v04/c05/bucket.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_c05_api",
+        "title": "Limited Calls",
+        "owns": [
+          "src/v04/c05/api.py"
+        ],
+        "needs": [
+          "v04_c05_bucket"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_c05.py",
+    "contracts": []
+  },
+  {
+    "task_id": "v04_c06",
+    "title": "V04 RWLock Shared Store",
+    "tier": "pilot",
+    "cohort": "concurrency",
+    "is_feasible": true,
+    "difficulty_dimension": "standard",
+    "initial_nodes": [
+      {
+        "id": "v04_c06_rwlock",
+        "title": "RWLock",
+        "owns": [
+          "src/v04/c06/rwlock.py"
+        ],
+        "needs": []
+      },
+      {
+        "id": "v04_c06_store",
+        "title": "Shared Store",
+        "owns": [
+          "src/v04/c06/store.py"
+        ],
+        "needs": [
+          "v04_c06_rwlock"
+        ]
+      }
+    ],
+    "expected_gates": "",
+    "fixture_file": "fixtures/v04_c06.py",
+    "contracts": []
+  }
+]
