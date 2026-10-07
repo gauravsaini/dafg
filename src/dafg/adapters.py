@@ -152,11 +152,14 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
 
     def invoke(self, node: TaskNode, context: Dict[str, Any]) -> AgentResponse:
         self.total_invocations += 1
+        # Legacy stub accounting: kept ONLY when no real usage is available.
+        # When runner_fn returns true usage, real tokens replace the formula
+        # (eval honesty: CPAD must come from the API, not len(title)*4+180).
         prompt_tokens = len(node.title) * 4 + 180
-        self.total_tokens_consumed += prompt_tokens
 
         refusal = self.check_refusal(node, context)
         if refusal:
+            self.total_tokens_consumed += prompt_tokens
             return refusal
 
         disp_raw = context.get("dispatch_identity") if context else getattr(node, "active_dispatch", None)
@@ -166,10 +169,14 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
         files_modified = list(node.owns)
         cmd = f"run_task_{node.id}"
         self.command_history.append(cmd)
-        self.total_tokens_consumed += 60
 
         if self.runner_fn:
             res = self.runner_fn(f"CLI session completed for {node.id}: {node.title}", node)
+            usage = res.get("usage") if isinstance(res, dict) else None
+            if usage and usage.get("total_tokens"):
+                self.total_tokens_consumed += int(usage["total_tokens"])
+            else:
+                self.total_tokens_consumed += prompt_tokens + 60
             if isinstance(res, AgentResponse):
                 if res.epoch is None:
                     res.epoch = epoch
@@ -187,6 +194,8 @@ class IterativeCLIAdapter(BaseRuntimeAdapter):
             )
 
         # Structural vulnerability 1: hostile flaky tools / shell command failure
+        # (stub path: legacy formula, unchanged from before the real-usage fix)
+        self.total_tokens_consumed += prompt_tokens + 60
         if node.metadata.get("flaky_tools") or node.metadata.get("flaky_environment"):
             return AgentResponse(
                 output=f"CLI execution failed: command '{cmd}' exited with code 1 (unhandled shell error)",
