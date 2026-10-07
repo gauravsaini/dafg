@@ -25,6 +25,16 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
 
 from dafg.observe import ObservabilityFabric
 
+from dafg.artifacts import (
+    ArtifactState,
+    ArtifactStore,
+    ContractArtifact,
+    ContractSymbol,
+    KnowledgeArtifact,
+    ScopeKind,
+    WitnessRefutedError,
+)
+
 from dafg.gates import EvidenceStrength, Gate, GateEngine, GateLedger, GateResult, classify_evidence
 from dafg.protocol import (
     Action,
@@ -741,6 +751,7 @@ class AgentResponse:
     revision_directive: Optional[Union[RevisionDirective, Dict[str, Any]]] = None
     published_contracts: List[Union[InterfaceContract, Dict[str, Any]]] = field(default_factory=list)
     criterion_evidence: List[Union[CriterionEvidence, Dict[str, Any]]] = field(default_factory=list)
+    knowledge_artifacts: List[Union[KnowledgeArtifact, Dict[str, Any]]] = field(default_factory=list)
 
     def __post_init__(self):
         if isinstance(self.dispatch_identity, dict):
@@ -765,6 +776,8 @@ class AgentResponse:
             d["published_contracts"] = [c.to_dict() if hasattr(c, "to_dict") else c for c in self.published_contracts]
         if self.criterion_evidence:
             d["criterion_evidence"] = [e.to_dict() if hasattr(e, "to_dict") else e for e in self.criterion_evidence]
+        if self.knowledge_artifacts:
+            d["knowledge_artifacts"] = [k.to_dict() if hasattr(k, "to_dict") else k for k in self.knowledge_artifacts]
         return d
 
     @classmethod
@@ -786,6 +799,7 @@ class AgentResponse:
             revision_directive=d.get("revision_directive"),
             published_contracts=d.get("published_contracts", []),
             criterion_evidence=d.get("criterion_evidence", []),
+            knowledge_artifacts=d.get("knowledge_artifacts", []),
         )
 
 
@@ -967,6 +981,13 @@ class DAFG:
         # v0.2 Enhancements
         self.contracts: Dict[str, InterfaceContract] = {}
         self.contract_history: Dict[str, List[InterfaceContract]] = {}
+
+        # AECP artifact-exclusive communication: the runtime is the harness.
+        # Knowledge artifacts (claim+scope+witness) are delivered at
+        # scope-access; contract artifacts hold symbol-level interface
+        # commitments with revision-tracked stale-consumer sync.
+        self.knowledge: ArtifactStore = ArtifactStore()
+        self.artifact_contracts: Dict[str, ContractArtifact] = {}
         self.outcome_status: OutcomeStatus = OutcomeStatus.INCOMPLETE_RUN
         self.intermediate_false_acceptances: int = 0
         self._last_step_time: float = time.time()
@@ -1521,6 +1542,11 @@ class DAFG:
         node.manifest.checks["references_resolve"] = True
         node.manifest.checks["versions_are_current"] = True
         node.manifest.checks["unresolved_dependencies"] = []
+
+        # AECP scope-triggered delivery: inject knowledge artifacts whose scope
+        # matches this node's OWNS into the dispatch context before PROVING.
+        delivered = self.deliver_knowledge(node)
+        node.metadata["delivered_knowledge"] = [a.to_dict() for a in delivered]
         return True, []
 
     def _get_downstream_dependents(self, root_node_id: str, visited: Optional[Set[str]] = None) -> List[str]:
@@ -1608,6 +1634,125 @@ class DAFG:
                     )
         self.save_state()
         return invalidated
+
+    # ------------------------------------------------------------------
+    # AECP artifact-exclusive communication (harness rules)
+    # ------------------------------------------------------------------
+
+    def deliver_knowledge(self, node: TaskNode) -> List[KnowledgeArtifact]:
+        """Scope-triggered knowledge delivery (AECP).
+
+        Derive query scopes from the node's OWNS/owns_read file paths and
+        collect every non-refuted artifact matching those scopes (exact
+        file, enclosing directory, or GLOBAL). Deduped by artifact_id.
+        """
+        delivered: Dict[str, KnowledgeArtifact] = {}
+        owned_paths = list(getattr(node, "owns", []) or []) + list(getattr(node, "owns_read", []) or [])
+        for path in owned_paths:
+            for artifact in self.knowledge.deliver(ScopeKind.FILE, path):
+                delivered[artifact.artifact_id] = artifact
+        return list(delivered.values())
+
+    def _knowledge_scope_allowed(self, node: TaskNode, artifact: KnowledgeArtifact) -> bool:
+        """Validate that an artifact's scope is within the node's OWNS.
+
+        GLOBAL is always allowed; SYMBOL is scoped to the producer's own
+        module (allowed outright); FILE/DIRECTORY must overlap OWNS/owns_read.
+        """
+        if artifact.scope_kind in (ScopeKind.GLOBAL, ScopeKind.SYMBOL):
+            return True
+        owned_paths = list(getattr(node, "owns", []) or []) + list(getattr(node, "owns_read", []) or [])
+        return any(paths_overlap(owned, artifact.scope) for owned in owned_paths)
+
+    def publish_knowledge(self, node: TaskNode, artifact: KnowledgeArtifact, workdir: Optional[str] = None) -> KnowledgeArtifact:
+        """Publish one knowledge artifact from a node, running its witness.
+
+        Guards: the producer must be the node itself and the scope must be
+        within the node's OWNS (else IllegalTransitionError). A malformed or
+        refuting witness rejects the publication (WitnessRejectedError).
+        """
+        if artifact.producer and artifact.producer != node.id:
+            raise IllegalTransitionError(
+                f"Knowledge artifact producer '{artifact.producer}' != publishing node '{node.id}'"
+            )
+        artifact.producer = node.id
+        if not self._knowledge_scope_allowed(node, artifact):
+            raise IllegalTransitionError(
+                f"Knowledge artifact scope {artifact.scope_kind.value}:{artifact.scope} "
+                f"outside OWNS of node '{node.id}'"
+            )
+        return self.knowledge.publish(artifact, workdir or os.getcwd())
+
+    def flag_knowledge(self, artifact_id: str, reason: str, workdir: Optional[str] = None) -> KnowledgeArtifact:
+        """Consumer flags a claim; harness reruns the witness."""
+        return self.knowledge.flag(artifact_id, reason, workdir or os.getcwd())
+
+    def register_artifact_contract(self, contract: ContractArtifact) -> bool:
+        """Register a new AECP contract artifact (symbol-level commitments)."""
+        if not contract.contract_id:
+            raise IllegalTransitionError("ContractArtifact requires a contract_id")
+        if contract.contract_id in self.artifact_contracts:
+            return False
+        self.artifact_contracts[contract.contract_id] = contract
+        self._record_event(
+            self.nodes.get(contract.module) or TaskNode(id=contract.module or "system", title="Artifact Contract Registry"),
+            "CONTRACT_ARTIFACT_REGISTERED",
+            f"Registered contract artifact {contract.contract_id} v{contract.revision} for module '{contract.module}'",
+        )
+        self.save_state()
+        return True
+
+    def subscribe_artifact_contract(self, contract_id: str, consumer_id: str) -> bool:
+        """Register a node as a consumer of a contract artifact."""
+        contract = self.artifact_contracts.get(contract_id)
+        if contract is None:
+            raise IllegalTransitionError(f"Unknown contract artifact '{contract_id}'")
+        contract.register_consumer(consumer_id)
+        self.save_state()
+        return True
+
+    def revise_artifact_contract(
+        self,
+        contract_id: str,
+        symbols: Optional[List[ContractSymbol]] = None,
+        purpose: Optional[str] = None,
+        dependencies: Optional[List[str]] = None,
+        reason: str = "",
+    ) -> List[str]:
+        """Revise a contract artifact; mark registered consumers stale.
+
+        Reuses the protocol's INVALIDATE action so affected nodes enter
+        ProtocolState.STALE (epoch bump) and must acknowledge the new
+        revision before completing.
+        """
+        contract = self.artifact_contracts.get(contract_id)
+        if contract is None:
+            raise IllegalTransitionError(f"Unknown contract artifact '{contract_id}'")
+        affected = contract.revise(symbols=symbols, purpose=purpose, dependencies=dependencies, reason=reason)
+        for nid in affected:
+            node = self.nodes.get(nid)
+            if node is None:
+                continue
+            self.submit_command(
+                ProtocolCommand(
+                    idempotency_key=f"aecp_rev_{contract_id}_{contract.revision}_{nid}_{self.next_seq()}",
+                    action=Action.INVALIDATE,
+                    node_id=nid,
+                    run_id=self.run_id,
+                    reason=reason or f"ContractArtifact '{contract_id}' revised to v{contract.revision}",
+                )
+            )
+        self.save_state()
+        return sorted(affected)
+
+    def acknowledge_artifact_contract(self, contract_id: str, consumer_id: str) -> bool:
+        """Consumer acknowledges the current revision; clears its stale mark."""
+        contract = self.artifact_contracts.get(contract_id)
+        if contract is None:
+            raise IllegalTransitionError(f"Unknown contract artifact '{contract_id}'")
+        contract.acknowledge(consumer_id)
+        self.save_state()
+        return True
 
     def apply_revision_directive(self, node: TaskNode, directive: Union[RevisionDirective, Dict[str, Any]]) -> bool:
         """Apply a diagnostic revision directive to guide targeted repair."""
@@ -1956,6 +2101,9 @@ class DAFG:
             "contracts": self.contracts,
             "dispatch_identity": dispatch_identity.to_dict(),
             "epoch": node.epoch,
+            # AECP scope-triggered delivery: knowledge artifacts whose scope
+            # matches this node's OWNS, supplied at the point of use.
+            "knowledge_artifacts": [a.to_dict() for a in self.deliver_knowledge(node)],
         }
 
         # Persona Compilation & Capability-Aware Routing
@@ -2053,6 +2201,17 @@ class DAFG:
             if response.published_contracts:
                 for contract_def in response.published_contracts:
                     self.register_contract(contract_def)
+
+            # AECP: publish knowledge artifacts through the harness store.
+            # The witness runs here; a malformed/refuting witness rejects the
+            # publication but never fails the node's own response.
+            if response.knowledge_artifacts:
+                for ka_def in response.knowledge_artifacts:
+                    ka = ka_def if isinstance(ka_def, KnowledgeArtifact) else KnowledgeArtifact.from_dict(ka_def)
+                    try:
+                        self.publish_knowledge(node, ka)
+                    except (WitnessRefutedError, IllegalTransitionError) as e:
+                        self._record_event(node, "KNOWLEDGE_REJECTED", str(e))
 
             # Record custom criterion evidence
             if response.criterion_evidence:
@@ -3096,6 +3255,8 @@ class DAFG:
                     "adaptations_consumed": self.budget.adaptations_consumed,
                 },
                 "contracts": {cid: c.to_dict() for cid, c in self.contracts.items()},
+                "knowledge_artifacts": self.knowledge.to_dict(),
+                "artifact_contracts": {cid: c.to_dict() for cid, c in self.artifact_contracts.items()},
                 "bypass_policy": self.bypass_policy.to_dict(),
                 "bypass_telemetry": self.bypass_telemetry.to_dict(),
                 "nodes": {nid: n.to_dict() for nid, n in self.nodes.items()},
@@ -3196,6 +3357,13 @@ class DAFG:
         # Restore contracts
         for cid, cdata in data.get("contracts", {}).items():
             dafg.contracts[cid] = InterfaceContract.from_dict(cdata)
+
+        # Restore AECP knowledge artifacts + contract artifacts
+        k_data = data.get("knowledge_artifacts")
+        if isinstance(k_data, dict):
+            dafg.knowledge = ArtifactStore.from_dict(k_data)
+        for cid, cdata in data.get("artifact_contracts", {}).items():
+            dafg.artifact_contracts[cid] = ContractArtifact.from_dict(cdata)
 
         # Restore bypass state
         if "bypass_policy" in data:

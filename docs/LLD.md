@@ -600,6 +600,13 @@ When `task.persona_switches >= max_persona_switches` (default: 2), adaptation fr
   4. `EVALUATION_ERROR`: Pre-flight ast-checked test fixture defect.
   5. `EXECUTION_ERROR`: Environment or harness crash.
 
+### 9.13 Artifact-Exclusive Communication (AECP) (`artifacts.py`)
+- New module `src/dafg/artifacts.py` (stdlib only, absolute imports): `ScopeKind` (`SYMBOL`/`FILE`/`DIRECTORY`/`GLOBAL`), `ArtifactState` (`UNCHECKED`/`WITNESS_CHECKED`/`REFUTED`), `KnowledgeArtifact` (artifact_id uuid4 hex, claim, scope_kind, scope, optional witness `{command, marker, timeout_s}`, state, producer, created_at, revision, audit), `ArtifactStore` (publish/deliver/flag/history), `ContractSymbol`, `ContractArtifact`.
+- Harness seams: `DAFG.knowledge` (`ArtifactStore`) + `DAFG.artifact_contracts` in `__init__`; `AgentResponse.knowledge_artifacts` field with a publish loop next to `published_contracts` (witness failures reject the artifact, never the node's response); `check_input_manifest` scope-triggered delivery from `OWNS`/`owns_read` into the dispatch context before PROVING.
+- Protocol: `Action.PUBLISH_KNOWLEDGE` / `Action.FLAG_KNOWLEDGE`, guarded in `ProtocolEngine.decide` (producer == node, scope within `OWNS`), applied in `ProtocolReducer.apply` — state-preserving (no protocol-state change).
+- Contract revision: `DAFG.revise_artifact_contract` bumps `revision`, returns affected consumers, and issues `INVALIDATE` per consumer (→ `ProtocolState.STALE` + epoch bump); `acknowledge_artifact_contract` clears the stale mark. Mirrors the existing `invalidate_contract_consumers` lifecycle.
+- Persistence: `knowledge_artifacts` + `artifact_contracts` serialized in `save_state` and restored in `load_state` (both dataclasses carry `to_dict`/`from_dict`).
+
 ---
 
 ## 10. Directory Structure & File Map

@@ -100,6 +100,15 @@ Streaming token inspection, duplex early abort, and challenger barge-in are **op
 
 The product does not initially own model serving, universal token transport, or a general-purpose multi-agent chat mesh.
 
+### 7. Artifact-Exclusive Communication (AECP)
+**Module**: `src/dafg/artifacts.py` (`ArtifactStore`, `KnowledgeArtifact`, `ContractArtifact`, `ScopeKind`)  \
+Agents never message each other; all coordination is mediated by the runtime as harness, following AECP (arXiv 2610.06481):
+- **Knowledge artifacts** (`claim` + `scope` + executable `witness` + harness `state`): a node publishes findings in `AgentResponse.knowledge_artifacts`; the harness runs the witness at publication (success = exit 0 AND marker in stdout). Malformed witnesses are rejected; refuting witnesses mark the claim `REFUTED` and reject publication. Consumers flag claims to force a witness re-run; refuted claims are excluded from delivery but retained in the audit log.
+- **Scope-triggered delivery**: before dispatch, `check_input_manifest` derives scopes from the node's `OWNS`/`owns_read` and injects matching artifacts (`SYMBOL`=same symbol, `FILE`=same file, `DIRECTORY`=enclosing dir, `GLOBAL`=all) into the dispatch context — findings arrive at the point of use, never via chat.
+- **Contract artifacts** (symbol-level interface commitments with `revision`): a revision marks all registered consumers stale via the protocol's `INVALIDATE` action (`ProtocolState.STALE`, epoch bump); a consumer must `acknowledge()` the new revision before completing. Reuses the existing `invalidate_contract_consumers` stale-consumer machinery.
+- **Protocol actions** `PUBLISH_KNOWLEDGE` / `FLAG_KNOWLEDGE` (`protocol.py`): state-preserving harness actions guarded in `ProtocolEngine.decide` (producer must be the node, scope must be within the node's `OWNS`) and applied in `ProtocolReducer.apply`.
+- Both stores round-trip through `state.json` (`save_state` / `load_state`), so artifact knowledge survives resume.
+
 ### 6. Security Boundary
 **Modules**: [`src/dafg/gates.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/gates.py), [`src/dafg/hook.py`](file:///Users/ektasaini/Desktop/framework/src/dafg/hook.py) (`CompletionGuard`)  
 DAFG treats the outer operating system boundary as a biological membrane:
