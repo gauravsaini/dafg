@@ -46,3 +46,33 @@ def test_scaffold_no_overwrite_without_force(tmp_path: Path):
     ret_force = scaffold_project(target_dir=tmp_path, agents="all", force=True)
     assert ret_force == 0
     assert "Baseline environment" in gates.read_text()
+
+
+def test_interlock_templates_are_concrete(tmp_path: Path):
+    """Interlock templates must carry concrete commands, not vague advice.
+
+    Regression guard: the Copilot template was once three vague bullets with
+    no workflow. Every agent template must name the exact gate commands.
+    """
+    from dafg.init import COPILOT_INSTRUCTIONS_TEMPLATE, CLAUDE_MD_TEMPLATE, AGENTS_MD_TEMPLATE
+
+    required_commands = [
+        "uv run gates --lint GATES.md",
+        "uv run gates --approve GATES.md",
+        "uv run gates --run GATES.md",
+        "uv run stop-hook GATES.md --json",
+    ]
+    for name, template in [
+        ("copilot", COPILOT_INSTRUCTIONS_TEMPLATE),
+        ("claude", CLAUDE_MD_TEMPLATE),
+        ("agents", AGENTS_MD_TEMPLATE),
+    ]:
+        for cmd in required_commands:
+            assert cmd in template, f"{name} template missing concrete command: {cmd}"
+        assert "ABANDON:" in template, f"{name} template missing gate-retraction rule"
+
+    # scaffolded files carry the concrete templates
+    ret = scaffold_project(target_dir=tmp_path, agents="copilot,claude")
+    assert ret == 0
+    copilot_text = (tmp_path / ".github" / "copilot-instructions.md").read_text()
+    assert "uv run stop-hook GATES.md --json" in copilot_text

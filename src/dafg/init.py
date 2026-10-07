@@ -49,23 +49,64 @@ You cannot declare completion based on conversational self-reports. Work is only
 CLAUDE_MD_TEMPLATE = """# Claude Code Project Guidelines
 
 This project uses **DAFG** (Dynamic Autonomous Flow Graph) for objective completion verification.
-A StopHook is registered in `.claude/settings.json` that will automatically intercept and block exit attempts if any gate in `GATES.md` is unmet or unverified.
+A StopHook is registered in `.claude/settings.json` that will automatically intercept and block exit attempts if any gate in `GATES.md` is unmet or unverified. You cannot declare completion based on conversational self-reports.
 
 ## Required Workflow
-1. Declare verifiable acceptance criteria in `GATES.md`.
-2. Approve check commands: `uv run gates --approve GATES.md`.
-3. Implement your changes.
-4. Verify gates: `uv run gates --run GATES.md`.
-5. Check stop readiness: `uv run stop-hook GATES.md --json`.
-Do not attempt to complete the session while gates are unverified.
+1. Declare verifiable acceptance criteria in `GATES.md` before coding:
+   ```markdown
+   - [ ] G1: Description of verifiable outcome
+     CHECK: command to run
+     EXPECT: regex pattern matching stdout/stderr
+     OWNS: src/modified_file.py
+   ```
+2. Lint the ledger: `uv run gates --lint GATES.md`.
+3. Approve check commands: `uv run gates --approve GATES.md`.
+4. Implement your changes.
+5. Verify gates: `uv run gates --run GATES.md`.
+6. Check stop readiness: `uv run stop-hook GATES.md --json`.
+Do not attempt to complete the session while gates are unverified. If the decision is `block`, remain in the loop and fix the failures.
+
+## Rules
+- Never delete a gate; use `ABANDON: <id> <reason>` if a requirement is legitimately retracted.
+- Never mark a gate as met manually without running its `CHECK:` command and verifying its `EXPECT:` output.
 """
 
 COPILOT_INSTRUCTIONS_TEMPLATE = """# GitHub Copilot Instructions
 
-This project adheres to the DAFG completion discipline protocol.
-- All tasks must have corresponding verifiable acceptance criteria in `GATES.md`.
-- Before claiming a task is done, run `uv run gates --run GATES.md` and ensure all gates are `MET`.
-- Run `uv run stop-hook GATES.md --json` to verify completion readiness.
+This project enforces **grounded completion discipline** via DAFG.
+You cannot declare a task complete based on conversational self-reports. Work is only complete when all acceptance gates in `GATES.md` are objectively verified with machine evidence.
+
+## Core Workflow
+
+1. **Review or Author Gates**: Check `GATES.md`. If new capabilities or bugfixes are requested, define verifiable outcomes before coding:
+   ```markdown
+   - [ ] G1: Description of verifiable outcome
+     CHECK: command to run
+     EXPECT: regex pattern matching stdout/stderr
+     OWNS: src/modified_file.py
+   ```
+2. **Lint the Ledger**:
+   ```bash
+   uv run gates --lint GATES.md
+   ```
+3. **Approve Gate Commands**:
+   ```bash
+   uv run gates --approve GATES.md
+   ```
+4. **Implement & Execute**: Write the code, then verify:
+   ```bash
+   uv run gates --run GATES.md
+   ```
+5. **Verify Stop Readiness**:
+   ```bash
+   uv run stop-hook GATES.md --json
+   ```
+   If the decision is `block`, you MUST remain in the loop and fix the failures. Completion is only valid when the decision is `allow`.
+
+## Rules
+- Never delete a gate; use `ABANDON: <id> <reason>` if a requirement is legitimately retracted.
+- Never mark a gate as met manually without running its `CHECK:` command and verifying its `EXPECT:` output.
+- All gate commands must be approved with `uv run gates --approve GATES.md` before execution.
 """
 
 CURSOR_RULE_TEMPLATE = """---
