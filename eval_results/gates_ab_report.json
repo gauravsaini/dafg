@@ -1,0 +1,1167 @@
+{
+  "suite": "gates-ab",
+  "generated_at": "2026-10-07T21:48:24.415541+00:00",
+  "deterministic": true,
+  "network_used": false,
+  "seed": 42,
+  "trials": 72,
+  "wall_s": 10.8,
+  "experiments": {
+    "exp1_defect_catching": {
+      "description": "Staged GEN_1..GEN_4 outputs; agent claims COMPLETED; B1 = graph+gates, B2 = graph only (all gate evaluation bypassed).",
+      "modes": {
+        "A-baseline": {
+          "n": 4,
+          "false_completion_rate": 0.75,
+          "verified_delivery_rate": 0.25,
+          "false_completions": 3,
+          "verified_deliveries": 1,
+          "per_gen": {
+            "1": {
+              "system_accepted": true,
+              "oracle_passed": false,
+              "false_completion": true
+            },
+            "2": {
+              "system_accepted": true,
+              "oracle_passed": false,
+              "false_completion": true
+            },
+            "3": {
+              "system_accepted": true,
+              "oracle_passed": false,
+              "false_completion": true
+            },
+            "4": {
+              "system_accepted": true,
+              "oracle_passed": true,
+              "false_completion": false
+            }
+          }
+        },
+        "B1-full": {
+          "n": 4,
+          "false_completion_rate": 0.0,
+          "verified_delivery_rate": 0.25,
+          "false_completions": 0,
+          "verified_deliveries": 1,
+          "per_gen": {
+            "1": {
+              "system_accepted": false,
+              "oracle_passed": false,
+              "false_completion": false
+            },
+            "2": {
+              "system_accepted": false,
+              "oracle_passed": false,
+              "false_completion": false
+            },
+            "3": {
+              "system_accepted": false,
+              "oracle_passed": false,
+              "false_completion": false
+            },
+            "4": {
+              "system_accepted": true,
+              "oracle_passed": true,
+              "false_completion": false
+            }
+          }
+        },
+        "B2-graph-only": {
+          "n": 4,
+          "false_completion_rate": 0.75,
+          "verified_delivery_rate": 0.25,
+          "false_completions": 3,
+          "verified_deliveries": 1,
+          "per_gen": {
+            "1": {
+              "system_accepted": true,
+              "oracle_passed": false,
+              "false_completion": true
+            },
+            "2": {
+              "system_accepted": true,
+              "oracle_passed": false,
+              "false_completion": true
+            },
+            "3": {
+              "system_accepted": true,
+              "oracle_passed": false,
+              "false_completion": true
+            },
+            "4": {
+              "system_accepted": true,
+              "oracle_passed": true,
+              "false_completion": false
+            }
+          }
+        }
+      },
+      "deltas": {
+        "false_completion_rate": {
+          "gates_marginal_B1_minus_B2": -0.75,
+          "graph_marginal_B2_minus_A": 0.0
+        },
+        "verified_delivery_rate": {
+          "gates_marginal_B1_minus_B2": 0.0,
+          "graph_marginal_B2_minus_A": 0.0
+        }
+      },
+      "verdict": "B1 FCR=0.00 vs B2 FCR=0.75 vs A FCR=0.75; gates marginal (B1-B2)=-0.75, graph marginal (B2-A)=0.00"
+    },
+    "exp2_impossible_blocking": {
+      "description": "All 20 phase-1 impossible tasks; agent claims COMPLETED; B1 = graph+gates+contracts+refusal, B2 = graph only.",
+      "modes": {
+        "A-baseline": {
+          "n": 20,
+          "correct_block_rate": 0.35,
+          "correct_blocks": 7,
+          "false_successes": 9,
+          "by_mechanism": {
+            "adapter_refusal": {
+              "n": 7,
+              "correct_block_rate": 1.0
+            },
+            "dafg_contradiction_gate": {
+              "n": 5,
+              "correct_block_rate": 0.0
+            },
+            "dafg_deadlock_cycle": {
+              "n": 4,
+              "correct_block_rate": 0.0
+            },
+            "dafg_gate_oracle": {
+              "n": 4,
+              "correct_block_rate": 0.0
+            }
+          }
+        },
+        "B1-full": {
+          "n": 20,
+          "correct_block_rate": 1.0,
+          "correct_blocks": 20,
+          "false_successes": 0,
+          "by_mechanism": {
+            "adapter_refusal": {
+              "n": 7,
+              "correct_block_rate": 1.0
+            },
+            "dafg_contradiction_gate": {
+              "n": 5,
+              "correct_block_rate": 1.0
+            },
+            "dafg_deadlock_cycle": {
+              "n": 4,
+              "correct_block_rate": 1.0
+            },
+            "dafg_gate_oracle": {
+              "n": 4,
+              "correct_block_rate": 1.0
+            }
+          }
+        },
+        "B2-graph-only": {
+          "n": 20,
+          "correct_block_rate": 0.2,
+          "correct_blocks": 4,
+          "false_successes": 16,
+          "by_mechanism": {
+            "adapter_refusal": {
+              "n": 7,
+              "correct_block_rate": 0.0
+            },
+            "dafg_contradiction_gate": {
+              "n": 5,
+              "correct_block_rate": 0.0
+            },
+            "dafg_deadlock_cycle": {
+              "n": 4,
+              "correct_block_rate": 1.0
+            },
+            "dafg_gate_oracle": {
+              "n": 4,
+              "correct_block_rate": 0.0
+            }
+          }
+        }
+      },
+      "deltas": {
+        "correct_block_rate": {
+          "gates_marginal_B1_minus_B2": 0.8,
+          "graph_marginal_B2_minus_A": -0.15
+        }
+      },
+      "verdict": "B1 CBR=1.00 vs B2 CBR=0.20 vs A CBR=0.35; gates marginal (B1-B2)=0.80, graph marginal (B2-A)=-0.15"
+    }
+  },
+  "per_trial": [
+    {
+      "experiment": "exp1",
+      "gen": 1,
+      "mode": "A-baseline",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": false,
+      "judge_outcome": "VERIFIED_FAILURE",
+      "false_completion": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 1,
+      "mode": "B1-full",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": false,
+      "oracle_passed": false,
+      "judge_outcome": "EXECUTION_ERROR",
+      "false_completion": false,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 7500,
+      "duration_s": 2.15
+    },
+    {
+      "experiment": "exp1",
+      "gen": 1,
+      "mode": "B2-graph-only",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": false,
+      "judge_outcome": "VERIFIED_FAILURE",
+      "false_completion": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 2,
+      "mode": "A-baseline",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": false,
+      "judge_outcome": "VERIFIED_FAILURE",
+      "false_completion": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 2,
+      "mode": "B1-full",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": false,
+      "oracle_passed": false,
+      "judge_outcome": "EXECUTION_ERROR",
+      "false_completion": false,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 7500,
+      "duration_s": 0.61
+    },
+    {
+      "experiment": "exp1",
+      "gen": 2,
+      "mode": "B2-graph-only",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": false,
+      "judge_outcome": "VERIFIED_FAILURE",
+      "false_completion": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 3,
+      "mode": "A-baseline",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": false,
+      "judge_outcome": "VERIFIED_FAILURE",
+      "false_completion": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 3,
+      "mode": "B1-full",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": false,
+      "oracle_passed": false,
+      "judge_outcome": "EXECUTION_ERROR",
+      "false_completion": false,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 7500,
+      "duration_s": 2.14
+    },
+    {
+      "experiment": "exp1",
+      "gen": 3,
+      "mode": "B2-graph-only",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": false,
+      "judge_outcome": "VERIFIED_FAILURE",
+      "false_completion": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 4,
+      "mode": "A-baseline",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": true,
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "false_completion": false,
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp1",
+      "gen": 4,
+      "mode": "B1-full",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": true,
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "false_completion": false,
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "tokens": 2500,
+      "duration_s": 0.68
+    },
+    {
+      "experiment": "exp1",
+      "gen": 4,
+      "mode": "B2-graph-only",
+      "agent_claimed": "COMPLETED",
+      "system_accepted": true,
+      "oracle_passed": true,
+      "judge_outcome": "VERIFIED_SUCCESS",
+      "false_completion": false,
+      "internal_outcome": "VERIFIED_SUCCESS",
+      "tokens": 2500,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_01",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 288,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_01",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_01",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_02",
+      "mode": "A-baseline",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_02",
+      "mode": "B1-full",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_02",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_03",
+      "mode": "A-baseline",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "EXECUTION_ERROR",
+      "oracle_passed": false,
+      "false_success": false,
+      "internal_outcome": "EXECUTION_ERROR",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_03",
+      "mode": "B1-full",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_03",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_04",
+      "mode": "A-baseline",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_04",
+      "mode": "B1-full",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 6000,
+      "duration_s": 0.43
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_04",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_05",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 336,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_05",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_05",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_06",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 264,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_06",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_06",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_07",
+      "mode": "A-baseline",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_07",
+      "mode": "B1-full",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_07",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_08",
+      "mode": "A-baseline",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "EXECUTION_ERROR",
+      "oracle_passed": false,
+      "false_success": false,
+      "internal_outcome": "EXECUTION_ERROR",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_08",
+      "mode": "B1-full",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_08",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_09",
+      "mode": "A-baseline",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_09",
+      "mode": "B1-full",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 6000,
+      "duration_s": 0.41
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_09",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_10",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 268,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_10",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_10",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_11",
+      "mode": "A-baseline",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_11",
+      "mode": "B1-full",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_11",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_12",
+      "mode": "A-baseline",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "EXECUTION_ERROR",
+      "oracle_passed": false,
+      "false_success": false,
+      "internal_outcome": "EXECUTION_ERROR",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_12",
+      "mode": "B1-full",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_12",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_13",
+      "mode": "A-baseline",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_13",
+      "mode": "B1-full",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 6000,
+      "duration_s": 0.47
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_13",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_14",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 244,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_14",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_14",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_15",
+      "mode": "A-baseline",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_15",
+      "mode": "B1-full",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_15",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_16",
+      "mode": "A-baseline",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "EXECUTION_ERROR",
+      "oracle_passed": false,
+      "false_success": false,
+      "internal_outcome": "EXECUTION_ERROR",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_16",
+      "mode": "B1-full",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_16",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_deadlock_cycle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_17",
+      "mode": "A-baseline",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_17",
+      "mode": "B1-full",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 6000,
+      "duration_s": 0.5
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_17",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_gate_oracle",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_18",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 260,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_18",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_18",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_19",
+      "mode": "A-baseline",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_19",
+      "mode": "B1-full",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_19",
+      "mode": "B2-graph-only",
+      "mechanism": "dafg_contradiction_gate",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_20",
+      "mode": "A-baseline",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 272,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_20",
+      "mode": "B1-full",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "CORRECT_BLOCK",
+      "oracle_passed": true,
+      "false_success": false,
+      "internal_outcome": "CORRECT_BLOCK",
+      "tokens": 0,
+      "duration_s": 0.0
+    },
+    {
+      "experiment": "exp2",
+      "task_id": "phase1_imp_20",
+      "mode": "B2-graph-only",
+      "mechanism": "adapter_refusal",
+      "agent_claimed": "COMPLETED",
+      "judge_outcome": "VERIFIED_FAILURE",
+      "oracle_passed": false,
+      "false_success": true,
+      "internal_outcome": "VERIFIED_FAILURE",
+      "tokens": 1000,
+      "duration_s": 0.0
+    }
+  ],
+  "limitations": [
+    "Staged defects are synthetic (GEN_1..GEN_4): measures the gates' catch rate on known defect classes, not discovery of unknown defects in real agent output.",
+    "The simulated agent claims success unconditionally: models a non-self-verifying agent; the measured deltas are the control plane's marginal value when the agent does not catch its own defects.",
+    "B2's 'no refusal logic' also drops the adapter-level check_refusal shared by A and B1 on 7 tasks: the B1-B2 delta therefore bundles gate-ledger, contract, and adapter-refusal effects under 'gates broadly construed'.",
+    "Scheduler deadlocks on circular `needs` are graph behavior, not gate behavior: B2 deadlocks on those tasks exactly like B1 (both via compute_waves), so the deadlock-cycle delta correctly attributes to the graph.",
+    "Single seed; fully deterministic by construction \u2014 no sampling variance to report.",
+    "No real-model feasible-task EVD comparison (fixture vacuity); deferred pending the v04 fixture-redesign pilot."
+  ],
+  "overall_verdict": "DECOMPOSITION HOLDS with one nuance. Exp 1 (defects): gates own the entire verification delta (B1-B2 FCR -0.75) and the graph contributes exactly nothing (B2-A FCR 0.00) \u2014 as predicted. EVD unchanged at 0.25 in all modes. Exp 2 (impossible): the headline B2-A CBR -0.15 is NOT 'the graph hurts verification' \u2014 the mechanism table shows each blocker belongs to exactly one layer: contradiction-gate and gate-oracles fire only in B1 (gates), adapter-refusal fires in A and B1 but was deliberately stripped from B2, and scheduler-deadlock fires in B1 and B2 but not A (A errors instead). So the graph's marginal on verification is the deadlock delta (B2 blocks 4/4 where A errors 4/4), and the gates' marginal (B1-B2 +0.80) bundles gate-ledger, contract, and adapter-refusal effects. Orthogonal layers confirmed: gates verify content, the graph schedules execution.",
+  "mechanism_attribution_CBR": {
+    "adapter_refusal": {
+      "A": 1.0,
+      "B1": 1.0,
+      "B2": 0.0
+    },
+    "dafg_contradiction_gate": {
+      "A": 0.0,
+      "B1": 1.0,
+      "B2": 0.0
+    },
+    "dafg_deadlock_cycle": {
+      "A": 0.0,
+      "B1": 1.0,
+      "B2": 1.0
+    },
+    "dafg_gate_oracle": {
+      "A": 0.0,
+      "B1": 1.0,
+      "B2": 0.0
+    }
+  }
+}
